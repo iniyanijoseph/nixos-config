@@ -1,0 +1,32 @@
+{...}:
+{
+  imports = [
+    ./arandr.nix
+    ./bat.nix
+    ./browser.nix
+    ./btop.nix 
+    ./dev.nix
+    ./fish.nix
+    ./git.nix
+    ./gnome.nix 
+    ./gtk.nix
+    ./helix.nix
+    ./hyprland
+    ./kitty.nix
+    ./nemo.nix 
+    ./office.nix
+    ./rofi.nix
+    ./thunderbird.nix
+    ./todo.nix
+    ./typset.nix
+    ./superfile/superfile.nix
+    ./swaylock.nix
+    ./swaync/swaync.nix
+    ./swayosd.nix
+    ./user.nix
+    ./viewnior.nix
+    ./waybar
+    ./waypaper.nix
+    ./xdg-mimes.nix
+  ];
+}
