@@ -149,7 +149,8 @@ in
         # clipboard manager
         "$mainMod, V, exec, cliphist list | rofi -dmenu -theme-str 'window {width: 50%;} listview {columns: 1;}' | cliphist decode | wl-copy"
       ];
-
+      source="~/.config/hypr/monitors.conf";
+      # source="~/.config/hypr/workspaces.conf";
       # binds that repeat when held
       binde = [
         ",XF86AudioRaiseVolume,exec, pamixer -i 2"
