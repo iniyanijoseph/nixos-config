@@ -68,7 +68,9 @@
   environment.systemPackages = with pkgs; [
     wget
     git
+    gh
     zip
+    unzip
     kitty
     power-profiles-daemon
     pavucontrol
@@ -105,8 +107,6 @@
   hardware = {
     graphics.enable = true;
   };
-
-  programs.waybar.enable = true;
 
   services.pulseaudio.enable = false;
   services.pipewire = {

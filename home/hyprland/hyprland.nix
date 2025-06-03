@@ -5,7 +5,7 @@
     grim
     grimblast
     wl-clip-persist
-    cliphist
+    # cliphist
     glib
     direnv
   ];
@@ -16,4 +16,6 @@
       enable = true;
     };
   };
+
+  services.cliphist.enable = true;
 }

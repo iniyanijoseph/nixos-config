@@ -14,6 +14,7 @@ in
         "swaync &"
         "hyprctl setcursor Bibata-Modern-Ice 24 &"
         "swww-daemon &"
+        "waybar"
 
         "[workspace 1 silent] ${browser}"
         "[workspace 2 silent] ${terminal}"
@@ -158,7 +159,6 @@ in
 
     extraConfig = "
       monitor=,preferred,auto,1.2
-
       xwayland {
         force_zero_scaling = true
       }
