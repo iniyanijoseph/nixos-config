@@ -30,7 +30,7 @@
         g.l = "goto_line_start";
       };
 
-      editor.soft-wrap = true;
+      editor.soft-wrap.enable = true;
   
       keys.select= {
         space.w = ":w";
