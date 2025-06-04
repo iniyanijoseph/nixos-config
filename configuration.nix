@@ -35,25 +35,7 @@
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
-  # Configure keymap in X11
-  services.xserver = {
-    xkb = {
-      layout = "us";
-      variant = "";
-    };
-  };
-
-  services.kanata = {
-    enable = true;
-    keyboards.canary.configFile = ./kanata.cfg;
-  };
-  
-  hardware.bluetooth.enable = true;
-  hardware.bluetooth.powerOnBoot = true;
-  services.blueman.enable = true;
-  
-
-  # Define a user account. Don't forget to set a password with ‘passwd’.
+  # Define a user account.
   users.users.wug = {
     isNormalUser = true;
     description = "wug";
@@ -66,18 +48,30 @@
 
   # List packages installed in system profile. To search, run:
   environment.systemPackages = with pkgs; [
+    # Package and Repo Managing
     wget
     git
     gh
+
+    # Zip
     zip
     unzip
+
+    # Kitty
     kitty
+
+    # Power Management
     power-profiles-daemon
+
     pavucontrol
   ];
 
-#  services.xserver.displayManager.sddm.wayland.enable = true;
+  # Bluetooth
+  hardware.bluetooth.enable = true;
+  hardware.bluetooth.powerOnBoot = true;
+  services.blueman.enable = true;
 
+  # Display Manager
   services.greetd =
   let
     tuigreet = "${pkgs.greetd.tuigreet}/bin/tuigreet";
@@ -95,6 +89,8 @@
       };
     };    
   };
+
+  # Desktop
   programs.hyprland = {
     enable = true;
     xwayland.enable = true;
@@ -108,6 +104,7 @@
     graphics.enable = true;
   };
 
+  # Enable sound and screen sharing
   services.pulseaudio.enable = false;
   services.pipewire = {
     enable = true;
@@ -122,6 +119,18 @@
   services.gvfs.enable = true;
   services.udisks2.enable = true;
 
+  # Configure keymap in X11
+  services.xserver = {
+    xkb = {
+      layout = "us";
+      variant = "";
+    };
+  };
+
+  services.kanata = {
+    enable = true;
+    keyboards.canary.configFile = ./kanata.cfg;
+  };
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
@@ -131,23 +140,14 @@
   #   enableSSHSupport = true;
   # };
 
-  # List services that you want to enable:
-
   # Enable the OpenSSH daemon.
-  # services.openssh.enable = true;
+  services.openssh.enable = true;
 
-  # Open ports in the firewall.
+  # Firewall.
+  networking.firewall.enable = true;
   # networking.firewall.allowedTCPPorts = [ ... ];
   # networking.firewall.allowedUDPPorts = [ ... ];
-  # Or disable the firewall altogether.
-  # networking.firewall.enable = false;
 
-  # This value determines the NixOS release from which the default
-  # settings for stateful data, like file locations and database versions
-  # on your system were taken. It‘s perfectly fine and recommended to leave
-  # this value at the release version of the first install of this system.
-  # Before changing this value read the documentation for this option
-  # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
-  system.stateVersion = "25.05"; # Did you read the comment?
-
+  # System Version - Don't Edit
+  system.stateVersion = "25.05"; 
 }
