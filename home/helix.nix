@@ -63,11 +63,24 @@
     };
 
     languages = {
-      language = [{
+      language = [
+      {
         name = "typst";
         language-servers = ["tinymist"];
-      }];
+      }
 
+      {
+        name="java";
+        language-servers=["jdtls"];
+      }
+
+      ];
+
+      language-server.jdtls = {
+        command="jdtls";
+        args=["-data"];
+      };
+  
       language-server.tinymist = {
         command = "tinymist";
         config = {
