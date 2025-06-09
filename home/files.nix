@@ -1,5 +1,7 @@
 { pkgs, ... }:
 {
+  programs.yazi.enable = true;
+  programs.yazi.enableFishIntegration = true;
   home.packages = with pkgs; [ nemo ];
 
   dconf.settings = {

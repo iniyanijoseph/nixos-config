@@ -2,8 +2,11 @@
 {
   home.packages = with pkgs; [
     hugo
+
     python313
+
     lua
+
     jdt-language-server
 
     rustc
@@ -16,6 +19,10 @@
     bundix
 
     postgresql
+
+    racket
+
+    ciao # Prolog
   ];
 
   programs.java.enable = true;

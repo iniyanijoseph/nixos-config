@@ -13,13 +13,13 @@
     ./helix.nix
     ./hyprland
     ./kitty.nix
-    ./nemo.nix 
+    ./files.nix 
+    ./mpv.nix
     ./office.nix
     ./rofi.nix
     ./thunderbird.nix
     ./todo.nix
     ./typset.nix
-    ./superfile/superfile.nix
     ./swaylock.nix
     ./swaync/swaync.nix
     ./swayosd.nix
