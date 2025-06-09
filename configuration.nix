@@ -65,6 +65,10 @@
     power-profiles-daemon
 
     pavucontrol
+
+    wayland
+    glib
+    direnv
   ];
 
   # Bluetooth

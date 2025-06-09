@@ -1,5 +1,6 @@
 { pkgs, ... }:
 {
+  home.packages = with pkgs; [eza];
   programs.bat = {
     enable = true;
     config = {
