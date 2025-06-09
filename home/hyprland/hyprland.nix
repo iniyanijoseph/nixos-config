@@ -8,6 +8,7 @@
     # cliphist
     glib
     direnv
+    wayland
   ];
   wayland.windowManager.hyprland = {
     enable = true;

@@ -47,6 +47,8 @@
 
   # List packages installed in system profile. To search, run:
   environment.systemPackages = with pkgs; [
+    sqlite
+    
     # Package and Repo Managing
     wget
     git
@@ -137,6 +139,11 @@
     enable = true;
     nssmdns4 = true;
     openFirewall = true;
+  };
+
+  # Running Executables
+  programs.nix-ld = {
+    enable = true;
   };
 
   # Some programs need SUID wrappers, can be configured further or are
