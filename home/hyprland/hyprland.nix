@@ -5,7 +5,7 @@
     grim
     grimblast
     wl-clip-persist
-    # cliphist
+    wayland
     glib
     direnv
   ];
