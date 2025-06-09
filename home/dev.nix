@@ -11,6 +11,11 @@
     rustfmt
     rust-analyzer
     clippy
+
+    ruby
+    bundix
+
+    postgresql
   ];
 
   programs.java.enable = true;

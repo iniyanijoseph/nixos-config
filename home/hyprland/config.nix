@@ -17,7 +17,7 @@ in
         "waybar"
 
         "[workspace 1 silent] ${browser}"
-        "[workspace 2 silent] ${terminal}"
+        # "[workspace 2 silent] ${terminal}"
         "[workspace 9 silent] sleek-todo"
         "[workspace 10 silent] thunderbird"
       ];

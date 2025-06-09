@@ -5,11 +5,6 @@
   boot.loader.efi.canTouchEfiVariables = true;
   
   networking.hostName = "nixos"; # Define your hostname.
-  # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
-
-  # Configure network proxy if necessary
-  # networking.proxy.default = "http://user:password@proxy:port/";
-  # networking.proxy.noProxy = "127.0.0.1,localhost,internal.domain";
 
   # Enable networking
   networking.networkmanager.enable = true;
@@ -134,6 +129,14 @@
   services.kanata = {
     enable = true;
     keyboards.canary.configFile = ./kanata.cfg;
+  };
+
+  # Printing
+  services.printing.enable = true;
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    openFirewall = true;
   };
 
   # Some programs need SUID wrappers, can be configured further or are
