@@ -13,11 +13,10 @@ in
         "wl-paste --watch cliphist store &"
         "swaync &"
         "hyprctl setcursor Bibata-Modern-Ice 24 &"
-        "swww-daemon &"
+        "swww-daemon & swww img Pictures/wallpaper.jpg"
         "waybar"
 
         "[workspace 1 silent] ${browser}"
-        # "[workspace 2 silent] ${terminal}"
         "[workspace 9 silent] sleek-todo"
         "[workspace 10 silent] thunderbird"
       ];
@@ -56,7 +55,7 @@ in
         "$mainMod, D, exec, rofi -show drun || pkill rofi"
         "$mainMod, T, exec, toggle-float"
         "$mainMod SHIFT, D, exec, webcord --enable-features=UseOzonePlatform --ozone-platform=wayland"
-        "$mainMod SHIFT, S, exec, grimblast copy area"
+        "$mainMod SHIFT, S, exec, grimblast --freeze copy area"
         "$mainMod, Escape, exec, swaylock"
         "$mainMod SHIFT, Escape, exec, power-menu"
         "$mainMod, N, exec, swaync-client -t -sw"
