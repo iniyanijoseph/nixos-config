@@ -13,7 +13,7 @@ in
         "wl-paste --watch cliphist store &"
         "swaync &"
         "hyprctl setcursor Bibata-Modern-Ice 24 &"
-        "swww-daemon & swww img Pictures/wallpaper.jpg"
+        # "swww-daemon & swww img Pictures/wallpaper.jpg"
         "waybar"
 
         "[workspace 1 silent] ${browser}"

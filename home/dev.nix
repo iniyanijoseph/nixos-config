@@ -6,15 +6,6 @@
     python313
 
     lua
-
-    jdt-language-server
-
-    rustc
-    cargo
-    rustfmt
-    rust-analyzer
-    clippy
-
     ruby
     bundix
 

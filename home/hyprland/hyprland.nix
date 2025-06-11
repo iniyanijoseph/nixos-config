@@ -1,7 +1,6 @@
 { inputs, pkgs, ... }:
 {
   home.packages = with pkgs; [
-    swww
     grim
     grimblast
     wl-clip-persist
@@ -17,4 +16,12 @@
   };
 
   services.cliphist.enable = true;
+  services.hyprpaper = {
+    enable = true;
+    settings = {
+      preload=["/home/wug/Pictures/wallpaper.jpg"];
+      wallpaper=[", /home/wug/Pictures/wallpaper.jpg"];
+    };
+
+  };
 }

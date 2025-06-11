@@ -26,7 +26,6 @@
     ./user.nix
     ./viewnior.nix
     ./waybar
-    ./waypaper.nix
     ./xdg-mimes.nix
   ];
 }
