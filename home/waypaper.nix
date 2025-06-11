@@ -5,9 +5,9 @@
   xdg.configFile."waypaper/config.ini".text = ''
     [Settings]
     language = en
-    folder = ~/.wallpapers/others
+    folder = ~/Pictures/others
     monitors = All
-    wallpaper = ~/.wallpapers/others/nixos.png
+    wallpaper = ~/Pictures/wallpaper.jpg
     backend = swww
     fill = fill
     sort = name
