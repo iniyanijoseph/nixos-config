@@ -19,6 +19,7 @@
     ./rofi.nix
     ./thunderbird.nix
     ./todo.nix
+    ./pinta.nix
     ./typset.nix
     ./swaylock.nix
     ./swaync/swaync.nix
