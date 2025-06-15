@@ -1,7 +1,16 @@
 { pkgs, ... }:
 {
-  programs.yazi.enable = true;
-  programs.yazi.enableFishIntegration = true;
+  programs.yazi = {
+    enable = true;
+    enableFishIntegration = true;
+    keymap = {
+      mgr.append_keymap = [
+        {on="h"; run="enter";}
+        {on="l"; run="leave";}
+      ];
+    };
+  }; 
+   
   home.packages = with pkgs; [ nemo ];
 
   dconf.settings = {

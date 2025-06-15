@@ -19,9 +19,9 @@
   services.hyprpaper = {
     enable = true;
     settings = {
-      preload=["/home/wug/Pictures/wallpaper.jpg"];
-      wallpaper=[", /home/wug/Pictures/wallpaper.jpg"];
+      preload=["/home/wug/Pictures/wallpaper.jpg" "/home/wug/Pictures/Camera/ValerieChristmas.jpg" ];
+      # wallpaper=[", /home/wug/Pictures/wallpaper.jpg"];
+      wallpaper=[", /home/wug/Pictures/Camera/ValerieChristmas.jpg"];
     };
-
   };
 }

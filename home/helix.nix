@@ -3,6 +3,7 @@
   home.packages = with pkgs; [ pragtical ];
   programs.helix = {
     enable = true;
+    defaultEditor = true;
     settings = {
       theme = "gruvbox_dark_hard";
       editor.cursor-shape = {

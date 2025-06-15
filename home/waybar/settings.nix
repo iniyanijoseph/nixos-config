@@ -147,7 +147,7 @@ in
     };
     "custom/launcher" = {
       format = "";
-      on-click = "waypaper --random";
+      on-click = "rofi -show drun";
       on-click-right = "rofi -show drun";
       tooltip = "true";
       tooltip-format = "Random Wallpaper";

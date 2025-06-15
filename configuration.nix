@@ -69,7 +69,11 @@
     wayland
     glib
     direnv
+
+    helix
   ];
+
+  
 
   # Bluetooth
   hardware.bluetooth.enable = true;
@@ -103,6 +107,7 @@
 
   environment.sessionVariables = {
     NIXOS_OZONE_WL = "1";
+    EDITOR = "hx";
   };
 
   hardware = {
@@ -145,6 +150,9 @@
     openFirewall = true;
   };
 
+  programs.nix-ld = {
+    enable = true; 
+  };
  
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
