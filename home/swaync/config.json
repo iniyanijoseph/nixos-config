@@ -72,6 +72,20 @@
           }
         ]
       },
+      "menu#network": {
+        "label": " 🛜 ",
+        "position": "left",
+        "actions": [
+          {
+            "label": "🔹 Bluetooth",
+            "command": "blueman-manager"
+          },
+          {
+            "label": "🛜 WiFi",
+            "command": "nmtui"
+          }
+        ]
+      },
       "menu#power-buttons": {
         "label": "  ",
         "position": "left",
