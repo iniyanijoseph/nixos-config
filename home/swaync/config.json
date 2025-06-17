@@ -82,7 +82,7 @@
           },
           {
             "label": "🛜 WiFi",
-            "command": "nmtui"
+            "command": "nm-connection-editor"
           }
         ]
       },

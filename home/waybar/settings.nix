@@ -113,7 +113,7 @@ in
       tooltip-format = "Connected to {essid} {ifname} via {gwaddr}";
       format-linked = "{ifname} (No IP)";
       format-disconnected = "<span foreground='${magenta}'>󰖪 </span>";
-      on-click = "kitty nmtui";
+      on-click = "nm-connection-editor";
       on-click-right = "kitty nmtui";
     };
     tray = {

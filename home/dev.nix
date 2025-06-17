@@ -14,6 +14,8 @@
     racket
 
     ciao # Prolog
+
+    ffmpeg
   ];
 
   programs.java.enable = true;
