@@ -12,8 +12,6 @@
     enable = true;
 
     xwayland.enable = true;
-    
-    systemd.enable = true;
   };
 
   services.cliphist.enable = true;
