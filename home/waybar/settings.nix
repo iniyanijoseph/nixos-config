@@ -41,7 +41,7 @@ in
       "pulseaudio"
       "network"
       "battery"
-      "hyprland/language"
+      # "hyprland/language"
       "custom/notification"
     ];
     clock = {
@@ -150,10 +150,10 @@ in
       tooltip = true;
       tooltip-format = "{time}";
     };
-    "hyprland/language" = {
-      format = "<span foreground='#FABD2F'> </span> {}";
-      format-en = "US";
-    };
+    # "hyprland/language" = {
+    #   format = "<span foreground='#FABD2F'> </span> {}";
+    #   format-en = "US";
+    # };
     "custom/launcher" = {
       format = "";
       on-click = "rofi -show drun";

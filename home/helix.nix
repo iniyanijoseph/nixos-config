@@ -25,7 +25,6 @@
         A-q = "wclose";
         "#" = "toggle_comments";
         "ret" = ["open_below" "normal_mode"];
-        esc = "no_op";
         h = "move_char_right";
         l = "move_char_left";
         g.h = "goto_line_end";
@@ -46,7 +45,6 @@
         A-q = "wclose";
         "#" = "toggle_comments";
         "ret" = ["open_below" "normal_mode"];
-        esc = "no_op";
         h = "move_char_right";
         l = "move_char_left";
         g.h = "goto_line_end";
@@ -60,7 +58,6 @@
         A-w = "vsplit";
         A-n = "rotate_view";
         A-q = "wclose";
-        esc = "no_op";
       };
     };
 
