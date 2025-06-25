@@ -1,6 +1,6 @@
 {pkgs, ...}:
 {
-  home.packages = with pkgs; [ pragtical ];
+  home.packages = with pkgs; [ pragtical micro];
   programs.helix = {
     enable = true;
     defaultEditor = true;
