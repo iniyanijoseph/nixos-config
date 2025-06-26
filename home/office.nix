@@ -1,6 +1,7 @@
 {pkgs,...}:
 {
-	home.packages = with pkgs; [
-		onlyoffice-desktopeditors
-	];
+	programs.onlyoffice.enable = true;
+	# programs.onlyoffice.settings = {
+	# 	UITheme="theme-dark";
+	# };
 }
