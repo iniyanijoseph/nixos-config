@@ -31,7 +31,7 @@ in
     modules-left = [
       "custom/launcher"
       "hyprland/workspaces"
-      "tray"
+      # "tray"
     ];
     modules-center = [ "clock" ];
     modules-right = [
@@ -116,10 +116,10 @@ in
       on-click = "nm-connection-editor";
       on-click-right = "kitty nmtui";
     };
-    tray = {
-      icon-size = 20;
-      spacing = 8;
-    };
+    # tray = {
+    #   icon-size = 20;
+    #   spacing = 8;
+    # };
     pulseaudio = {
       format = "{icon} {volume}%";
       format-muted = "<span foreground='${blue}'> </span> {volume}%";

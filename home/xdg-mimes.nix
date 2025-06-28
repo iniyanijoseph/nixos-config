@@ -2,7 +2,7 @@
 with lib;
 let
   defaultApps = {
-    browser = [ "floorp.desktop" ];
+    browser = [ "firefox.desktop" ];
     text = [ "helix.desktop" ];
     image = [ "imv-dir.desktop" ];
     audio = [ "mpv.desktop" ];
