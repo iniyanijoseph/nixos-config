@@ -18,6 +18,7 @@ in
         "waybar"
 
         "[workspace 1 silent] ${browser}"
+        "[workspace 8 silent] webcord"
         "[workspace 9 silent] sleek-todo"
         "[workspace 10 silent] thunderbird"
       ];
