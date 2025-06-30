@@ -1,5 +1,5 @@
 { inputs, pkgs, ... }:
 {
   programs.firefox.enable = true;
-  home.packages = with pkgs; [luakit];
+  home.packages = with pkgs; [qutebrowser];
 }
