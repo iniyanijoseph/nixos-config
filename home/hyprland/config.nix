@@ -18,7 +18,7 @@ in
 
         "[workspace 1 silent] ${browser}"
         "[workspace 9 silent] sleek-todo"
-        "[workspace 10 silent] thunderbird"
+        "[workspace 10 silent] thunderbird & Dorion"
       ];
 
       input = {
@@ -171,8 +171,8 @@ in
 
         ",code:235,exec, nwg-displays"
         ",code:152,exec, nwg-displays"
-        ",code:163,exec, thunderbird"
-        ",code:452,exec, thunderbird"
+        ",code:163,exec, thunderbird & Dorion"
+        ",code:452,exec, thunderbird & Dorion"
         ",code:453,exec, blueman-manager"
         ",code:454,exec, ${browser}"
         ",code:256,exec, pavucontrol"
@@ -183,6 +183,7 @@ in
 
         "$mainMod, mouse_down, workspace, e-1"
         "$mainMod, mouse_up, workspace, e+1"
+        "$mainMod, T, exec, hyprctl dispatch togglefloating"
 
         # clipboard manager
         "$mainMod, V, exec, cliphist list | rofi -dmenu -theme-str 'window {width: 50%;} listview {columns: 1;}' | cliphist decode | wl-copy"
