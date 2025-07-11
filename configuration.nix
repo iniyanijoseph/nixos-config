@@ -139,7 +139,9 @@
   };
 
   services.libinput = {
-    touchpad.disableWhileTyping = true;
+    touchpad = {
+      disableWhileTyping = true;
+    };
   };
 
   services.kanata = {
