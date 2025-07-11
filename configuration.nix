@@ -138,6 +138,10 @@
     };
   };
 
+  services.libinput = {
+    touchpad.disableWhileTyping = true;
+  };
+
   services.kanata = {
     enable = true;
     keyboards.canary.configFile = ./kanata.cfg;

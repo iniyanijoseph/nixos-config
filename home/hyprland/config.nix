@@ -14,12 +14,10 @@ in
         "wl-paste --watch cliphist store &"
         "swaync &"
         "hyprctl setcursor Bibata-Modern-Ice 24 &"
-        # "swww-daemon & swww img Pictures/wallpaper.jpg"
         "waybar"
 
         "[workspace 1 silent] ${browser}"
-        "[workspace 8 silent] sleek-todo"
-        "[workspace 9 silent] webcord"
+        "[workspace 9 silent] sleek-todo"
         "[workspace 10 silent] thunderbird"
       ];
 
@@ -34,7 +32,7 @@ in
 
       decoration = {
         rounding = 0;
-        active_opacity = 0.90;
+        active_opacity = 1.0;
         inactive_opacity = 0.90;
         fullscreen_opacity = 1.0;
 
@@ -82,12 +80,8 @@ in
         # keybindings
         "$mainMod, Return, exec, ${terminal}"
         "$mainMod, B, exec, [workspace 1 silent] ${browser}"
-        "$mainMod, F, exec, kitty yazi"
         "$mainMod, Q, killactive,"
         "$mainMod, D, exec, rofi -show drun || pkill rofi"
-        "$mainMod, T, exec, nwg-displays"
-        "$mainMod, R, exec, blueman-manager"
-        "$mainMod, A, exec, pavucontrol"
         "$mainMod SHIFT, S, exec, grimblast --freeze copy area"
         "$mainMod, Escape, exec, swaylock"
         "$mainMod SHIFT, Escape, exec, power-menu"
@@ -174,6 +168,18 @@ in
         ",XF86AudioNext,exec, playerctl next"
         ",XF86AudioPrev,exec, playerctl previous"
         ",XF86AudioStop,exec, playerctl stop"
+
+        ",code:235,exec, nwg-displays"
+        ",code:152,exec, nwg-displays"
+        ",code:163,exec, thunderbird"
+        ",code:452,exec, thunderbird"
+        ",code:453,exec, blueman-manager"
+        ",code:454,exec, ${browser}"
+        ",code:256,exec, pavucontrol"
+        ",code:179,exec, pavucontrol"
+        ",code:164, exec, ${terminal} yazi"
+        ",code:148, exec, ${terminal} yazi"
+        ",code:180, exec, ${browser}"
 
         "$mainMod, mouse_down, workspace, e-1"
         "$mainMod, mouse_up, workspace, e+1"
