@@ -84,7 +84,6 @@ in
         "$mainMod, D, exec, rofi -show drun || pkill rofi"
         "$mainMod SHIFT, S, exec, grimblast --freeze copy area"
         "$mainMod, Escape, exec, swaylock"
-        "$mainMod SHIFT, Escape, exec, power-menu"
         "$mainMod, N, exec, swaync-client -t -sw"
 
         # screenshot
