@@ -11,7 +11,7 @@
 
     postgresql
 
-    racket
+    racket-minimal
 
     ciao # Prolog
 
