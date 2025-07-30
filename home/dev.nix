@@ -13,7 +13,7 @@
 
     racket-minimal
 
-    ciao # Prolog
+    swi-prolog
 
     ffmpeg
   ];
