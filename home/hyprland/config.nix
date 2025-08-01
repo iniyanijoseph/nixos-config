@@ -2,6 +2,9 @@
 let
   browser = "firefox";
   terminal = "kitty";
+  messages = "dissent";
+  mail = "thunderbird";
+  todo = "sleek-todo";
 in
 {
   wayland.windowManager.hyprland = {
@@ -17,8 +20,8 @@ in
         "waybar"
 
         "[workspace 1 silent] ${browser}"
-        "[workspace 9 silent] sleek-todo"
-        "[workspace 10 silent] thunderbird & Dorion"
+        "[workspace 9 silent] ${todo}"
+        "[workspace 10 silent] ${mail} & ${messages}"
       ];
 
       input = {
@@ -170,8 +173,8 @@ in
 
         ",code:235,exec, nwg-displays"
         ",code:152,exec, nwg-displays"
-        ",code:163,exec, thunderbird & Dorion"
-        ",code:452,exec, thunderbird & Dorion"
+        ",code:163,exec, ${mail} & ${messages}"
+        ",code:452,exec, ${mail} & ${messages}"
         ",code:453,exec, blueman-manager"
         ",code:454,exec, ${browser}"
         ",code:256,exec, pavucontrol"
