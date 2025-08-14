@@ -20,7 +20,7 @@ in
         "waybar"
 
         "[workspace 1 silent] ${browser}"
-        "[workspace 9 silent] ${todo}"
+        "[workspace 9 silent] ${todo} & hx ~/diary.typ"
         "[workspace 10 silent] ${mail} & ${messages}"
       ];
 

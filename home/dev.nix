@@ -16,6 +16,8 @@
     swi-prolog
 
     ffmpeg
+
+    elm-land
   ];
 
   programs.java.enable = true;
