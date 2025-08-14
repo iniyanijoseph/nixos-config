@@ -18,6 +18,7 @@
     ffmpeg
 
     elm-land
+    elmPackages.elm
   ];
 
   programs.java.enable = true;
