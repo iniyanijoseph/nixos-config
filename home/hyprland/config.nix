@@ -2,7 +2,7 @@
 let
   browser = "firefox";
   terminal = "kitty";
-  messages = "legcord";
+  messages = "discord";
   mail = "thunderbird";
   todo = "sleek-todo";
 in
