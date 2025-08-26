@@ -26,6 +26,7 @@
     ./swaylock.nix
     ./swaync/swaync.nix
     ./swayosd.nix
+    ./syncthing.nix
     ./user.nix
     ./viewnior.nix
     ./waybar
