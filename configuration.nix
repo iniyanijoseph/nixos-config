@@ -58,6 +58,7 @@
     # Zip
     zip
     unzip
+    file
 
     # Kitty
     kitty

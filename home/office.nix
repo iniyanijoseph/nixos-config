@@ -1,5 +1,5 @@
 {pkgs,...}:
 {
-	home.packages = with pkgs; [ lorien ];
+	home.packages = with pkgs; [ ];
 	programs.onlyoffice.enable = true;
 }
