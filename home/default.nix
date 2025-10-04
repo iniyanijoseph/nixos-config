@@ -2,7 +2,6 @@
 {
   imports = [
     ./arandr.nix
-    ./mail.nix
     ./autoclicker.nix
     ./bat.nix
     ./browser.nix
