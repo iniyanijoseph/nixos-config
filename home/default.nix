@@ -16,6 +16,7 @@
     ./kitty.nix
     ./files.nix 
     ./mpv.nix
+    ./music.nix
     ./neofetch.nix
     ./office.nix
     ./rofi.nix
