@@ -16,6 +16,7 @@
     swi-prolog
 
     ffmpeg
+
   ];
 
   programs.java.enable = true;
