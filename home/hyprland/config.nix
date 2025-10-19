@@ -5,6 +5,10 @@ let
   messages = "goofcord";
   mail = "thunderbird";
   todo = "sleek-todo";
+  leftkey = "l";
+  downkey = "j";
+  upkey = "k";
+  rightkey = "h";
 in
 {
   wayland.windowManager.hyprland = {
@@ -19,9 +23,9 @@ in
         "hyprctl setcursor Bibata-Modern-Ice 24 &"
         "waybar"
 
-        "[workspace 1 silent] ${browser}"
+        "[workspace 2 silent] ${browser}"
         "[workspace 9 silent] ${todo}"
-        "[workspace 10 silent] ${mail} & ${messages}"
+        "[workspace 1 silent] ${mail} & ${messages}"
       ];
 
       input = {
@@ -87,7 +91,7 @@ in
         "$mainMod, D, exec, rofi -show drun || pkill rofi"
         "$mainMod SHIFT, S, exec, grimblast --freeze copy area"
         "$mainMod, Escape, exec, swaylock"
-        "$mainMod, N, exec, swaync-client -t -sw"
+        # "$mainMod, N, exec, swaync-client -t -sw"
 
         # screenshot
         ",Print, exec, screenshot --copy"
@@ -97,19 +101,19 @@ in
         "$mainMod, right, movefocus, r"
         "$mainMod, up,    movefocus, u"
         "$mainMod, down,  movefocus, d"
-        "$mainMod, l, movefocus, l"
-        "$mainMod, j, movefocus, d"
-        "$mainMod, k, movefocus, u"
-        "$mainMod, h, movefocus, r"
+        "$mainMod, ${leftkey}, movefocus, l"
+        "$mainMod, ${downkey}, movefocus, d"
+        "$mainMod, ${upkey}, movefocus, u"
+        "$mainMod, ${rightkey}, movefocus, r"
 
         "$mainMod, left,  alterzorder, top"
         "$mainMod, right, alterzorder, top"
         "$mainMod, up,    alterzorder, top"
         "$mainMod, down,  alterzorder, top"
-        "$mainMod, l, alterzorder, top"
-        "$mainMod, j, alterzorder, top"
-        "$mainMod, k, alterzorder, top"
-        "$mainMod, h, alterzorder, top"
+        "$mainMod, ${leftkey}, alterzorder, top"
+        "$mainMod, ${downkey}, alterzorder, top"
+        "$mainMod, ${upkey}, alterzorder, top"
+        "$mainMod, ${rightkey}, alterzorder, top"
 
         # switch workspace
         "$mainMod, 1, workspace, 1"
@@ -134,35 +138,36 @@ in
         "$mainMod SHIFT, 8, movetoworkspacesilent, 8"
         "$mainMod SHIFT, 9, movetoworkspacesilent, 9"
         "$mainMod SHIFT, 0, movetoworkspacesilent, 10"
-        "$mainMod CTRL, c, movetoworkspace, empty"
+        # "$mainMod CTRL, c, movetoworkspace, empty"
+        "$mainMod, c, movetoworkspace, empty"
 
         # window control
         "$mainMod SHIFT, left, movewindow, l"
         "$mainMod SHIFT, right, movewindow, r"
         "$mainMod SHIFT, up, movewindow, u"
         "$mainMod SHIFT, down, movewindow, d"
-        "$mainMod SHIFT, l, movewindow, l"
-        "$mainMod SHIFT, j, movewindow, d"
-        "$mainMod SHIFT, k, movewindow, u"
-        "$mainMod SHIFT, h, movewindow, r"
+        "$mainMod SHIFT, ${leftkey}, movewindow, l"
+        "$mainMod SHIFT, ${downkey}, movewindow, d"
+        "$mainMod SHIFT, ${upkey}, movewindow, u"
+        "$mainMod SHIFT, ${rightkey}, movewindow, r"
 
         "$mainMod CTRL, left, resizeactive, -80 0"
         "$mainMod CTRL, right, resizeactive, 80 0"
         "$mainMod CTRL, up, resizeactive, 0 -80"
         "$mainMod CTRL, down, resizeactive, 0 80"
-        "$mainMod CTRL, l, resizeactive, -80 0"
-        "$mainMod CTRL, j, resizeactive, 0 80"
-        "$mainMod CTRL, k, resizeactive, 0 -80"
-        "$mainMod CTRL, h, resizeactive, 80 0"
+        "$mainMod CTRL, ${leftkey}, resizeactive, -80 0"
+        "$mainMod CTRL, ${downkey}, resizeactive, 0 80"
+        "$mainMod CTRL, ${upkey}, resizeactive, 0 -80"
+        "$mainMod CTRL, ${rightkey}, resizeactive, 80 0"
 
         "$mainMod ALT, left, moveactive,  -80 0"
         "$mainMod ALT, right, moveactive, 80 0"
         "$mainMod ALT, up, moveactive, 0 -80"
         "$mainMod ALT, down, moveactive, 0 80"
-        "$mainMod ALT, l, moveactive,  -80 0"
-        "$mainMod ALT, j, moveactive, 0 80"
-        "$mainMod ALT, k, moveactive, 0 -80"
-        "$mainMod ALT, h, moveactive, 80 0"
+        "$mainMod ALT, ${leftkey}, moveactive,  -80 0"
+        "$mainMod ALT, ${downkey}, moveactive, 0 80"
+        "$mainMod ALT, ${upkey}, moveactive, 0 -80"
+        "$mainMod ALT, ${rightkey}, moveactive, 80 0"
 
         # media and volume controls
         # ",XF86AudioMute,exec, pamixer -t"
