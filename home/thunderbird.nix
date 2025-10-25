@@ -1,6 +1,6 @@
 {pkgs, ...}:
 {
-  home.packages=with pkgs; [discordo goofcord];
+  home.packages=with pkgs; [];
   programs.thunderbird = {
     enable = true;
     profiles.wug.isDefault = true;

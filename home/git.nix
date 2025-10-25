@@ -1,12 +1,21 @@
 { pkgs, username, ... }:
 {
+  programs.delta = {
+    enable = true;
+    options = {
+      line-numbers = true;
+      side-by-side = false;
+      diff-so-fancy = true;
+      navigate = true;
+    };
+  };
+
   programs.git = {
     enable = true;
 
-    userName = "Wug";
-    userEmail = "iniyanijoseph@gmail.com";
-
-    extraConfig = {
+    settings = {
+      user.email = "iniyanijoseph@gmail.com";
+      user.name = "Wug";
       init.defaultBranch = "main";
       merge.conflictstyle = "diff3";
       diff.colorMoved = "default";
@@ -14,15 +23,6 @@
       color.ui = true;
     };
 
-    delta = {
-      enable = true;
-      options = {
-        line-numbers = true;
-        side-by-side = false;
-        diff-so-fancy = true;
-        navigate = true;
-      };
-    };
   };
 
   home.packages = [ pkgs.gh ]; # pkgs.git-lfs

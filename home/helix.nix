@@ -1,6 +1,6 @@
 {pkgs, ...}:
 {
-  home.packages = with pkgs; [ pragtical micro styluslabs-write-bin];
+  home.packages = with pkgs; [ micro ];
   programs.helix = {
     enable = true;
     defaultEditor = true;
