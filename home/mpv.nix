@@ -1,5 +1,5 @@
 {pkgs, ...}:
 {
-  home.packages = with pkgs; [ytmdesktop];
+  home.packages = with pkgs; [];
   programs.mpv.enable = true;
 }
