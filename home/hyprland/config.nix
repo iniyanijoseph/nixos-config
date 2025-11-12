@@ -23,8 +23,8 @@ in
         "hyprctl setcursor Bibata-Modern-Ice 24 &"
         "waybar"
 
-        "[workspace 3 silent] ${browser}"
-        "[workspace 2 silent] ${todo}"
+        "[workspace 2 silent] ${browser}"
+        "[workspace 3 silent] ${todo}"
         "[workspace 1 silent] ${mail} & ${messages}"
       ];
 
