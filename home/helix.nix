@@ -76,7 +76,7 @@
           preview = {
             background = {
               enabled = true;
-              args = ["--data-plane-host=127.0.0.1:22222" "--invert-colors=never" "--open"];
+              args = ["--data-plane-host=127.0.0.1:23635" "--invert-colors=never" "--open"];
             };
             cursorIndicator = true;
             scrollSync = true;
