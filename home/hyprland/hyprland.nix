@@ -7,6 +7,7 @@
     glib
     direnv
     wayland
+    hyprpicker
   ];
   wayland.windowManager.hyprland = {
     enable = true;

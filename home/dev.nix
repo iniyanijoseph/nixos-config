@@ -17,6 +17,8 @@
 
     ffmpeg
 
+    gnumake
+
   ];
 
   programs.java.enable = true;
