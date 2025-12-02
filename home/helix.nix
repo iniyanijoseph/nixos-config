@@ -65,10 +65,15 @@
       language = [
       {
         name = "typst";
-        language-servers = ["tinymist"];
+        language-servers = ["tinymist" "harper-ls"];
       }
 
       ];
+
+      language-server.harper-ls = {
+        command = "harper-ls";
+        args = ["--stdio"];
+      };
  
       language-server.tinymist = {
         command = "tinymist";
@@ -76,7 +81,7 @@
           preview = {
             background = {
               enabled = true;
-              args = ["--data-plane-host=127.0.0.1:23635" "--invert-colors=never" "--open"];
+              args = ["--data-plane-host=127.0.0.1:3635" "--invert-colors=never" "--open"];
             };
             cursorIndicator = true;
             scrollSync = true;

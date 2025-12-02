@@ -4,5 +4,6 @@
     typst
     tinymist
     typstyle
+    harper
   ];
 }
