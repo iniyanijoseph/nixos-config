@@ -1,6 +1,6 @@
 {pkgs, ...}:
 {
-  home.packages = with pkgs; [ micro ];
+  home.packages = with pkgs; [ micro vscodium];
   programs.helix = {
     enable = true;
     defaultEditor = true;

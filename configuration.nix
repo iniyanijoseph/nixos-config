@@ -74,6 +74,9 @@
 
     helix
 
+    # Copy Paste
+    wl-clipboard
+
   ];
 
   

@@ -13,6 +13,7 @@ in
 {
   wayland.windowManager.hyprland = {
     settings = {
+      "$mainMod" = "SUPER";
 
       exec-once = [
         "nm-applet &"
@@ -57,7 +58,6 @@ in
 
         shadow = {
           enabled = true;
-
           ignore_window = true;
           offset = "0 2";
           range = 20;
@@ -67,13 +67,11 @@ in
       };
 
       general = {
-        "$mainMod" = "SUPER";
         gaps_in = 6;
         gaps_out = 12;
         border_size = 2;
         "col.active_border" = "rgb(98971A) rgb(CC241D) 45deg";
         "col.inactive_border" = "0x00000000";
-        no_border_on_floating = false;
       };
 
       binds = {
@@ -91,7 +89,6 @@ in
         "$mainMod, D, exec, rofi -show drun || pkill rofi"
         "$mainMod SHIFT, S, exec, grimblast --freeze copy area"
         "$mainMod, Escape, exec, swaylock"
-        # "$mainMod, N, exec, swaync-client -t -sw"
 
         # screenshot
         ",Print, exec, screenshot --copy"
@@ -127,8 +124,8 @@ in
         "$mainMod, 9, workspace, 9"
         "$mainMod, 0, workspace, 10"
 
-        # same as above, but switch to the workspace
-        "$mainMod SHIFT, 1, movetoworkspacesilent, 1" # movetoworkspacesilent
+        # move to workspace silently
+        "$mainMod SHIFT, 1, movetoworkspacesilent, 1"
         "$mainMod SHIFT, 2, movetoworkspacesilent, 2"
         "$mainMod SHIFT, 3, movetoworkspacesilent, 3"
         "$mainMod SHIFT, 4, movetoworkspacesilent, 4"
@@ -138,7 +135,6 @@ in
         "$mainMod SHIFT, 8, movetoworkspacesilent, 8"
         "$mainMod SHIFT, 9, movetoworkspacesilent, 9"
         "$mainMod SHIFT, 0, movetoworkspacesilent, 10"
-        # "$mainMod CTRL, c, movetoworkspace, empty"
         "$mainMod, c, movetoworkspace, empty"
 
         # window control
@@ -170,7 +166,6 @@ in
         "$mainMod ALT, ${rightkey}, moveactive, 80 0"
 
         # media and volume controls
-        # ",XF86AudioMute,exec, pamixer -t"
         ",XF86AudioPlay,exec, playerctl play-pause"
         ",XF86AudioNext,exec, playerctl next"
         ",XF86AudioPrev,exec, playerctl previous"
@@ -195,8 +190,9 @@ in
         # clipboard manager
         "$mainMod, V, exec, cliphist list | rofi -dmenu -theme-str 'window {width: 50%;} listview {columns: 1;}' | cliphist decode | wl-copy"
       ];
-      source="~/.config/hypr/monitors.conf";
-      # source="~/.config/hypr/workspaces.conf";
+
+      source = "~/.config/hypr/monitors.conf";
+
       # binds that repeat when held
       binde = [
         ",XF86AudioRaiseVolume,exec, pamixer -i 2"
