@@ -80,6 +80,8 @@ in
       };
 
       bind = [
+        "$mainMod, N, exec, swaync-client -t -s"
+
         # show keybinds list
         "$mainMod, F1, exec, show-keybinds"
 

@@ -2,7 +2,7 @@
   "positionX": "right",
   "positionY": "top",
   "layer": "overlay",
-  "layer-shell": "true",
+  "layer-shell": true,
   "cssPriority": "user",
   "control-center-margin-top": 10,
   "control-center-margin-bottom": 10,
@@ -41,7 +41,7 @@
     },
     "menubar#desktop": {
       "menu#powermode-buttons": {
-        "label": " 󰌪 ",
+        "label": " ⚡ ",
         "position": "left",
         "actions": [
           {
@@ -58,61 +58,37 @@
           }
         ]
       },
-      "menu#screenshot": {
-        "label": "  ",
-        "position": "left",
-        "actions": [
-          {
-            "label": "󰹑  Whole screen",
-            "command": "grimblast --notify --cursor --freeze copy output"
-          },
-          {
-            "label": "󰩭  Window / Region",
-            "command": "grimblast --notify --freeze copy area"
-          }
-        ]
-      },
-      "menu#network": {
-        "label": " 🛜 ",
-        "position": "left",
-        "actions": [
-          {
-            "label": "🔹 Bluetooth",
-            "command": "blueman-manager"
-          },
-          {
-            "label": "🛜 WiFi",
-            "command": "nm-connection-editor"
-          }
-        ]
-      },
       "menu#power-buttons": {
-        "label": "  ",
+        "label": " ⏻ ",
         "position": "left",
         "actions": [
           {
-            "label": "  Lock",
+            "label": "🔒  Lock",
             "command": "swaylock"
           },
           {
-            "label": "  Reboot",
+            "label": "💤  Suspend",
+            "command": "systemctl suspend"
+          },
+          {
+            "label": "🔄  Reboot",
             "command": "systemctl reboot"
           },
           {
-            "label": "  Shut down",
+            "label": "⏻  Shut down",
             "command": "systemctl poweroff"
           }
         ]
       }
     },
     "backlight#mobile": {
-      "label": " 󰃠 ",
+      "label": " 󰃟  ",
       "device": "panel"
     },
     "volume": {
-      "label": "",
-      "expand-button-label": "",
-      "collapse-button-label": "",
+      "label": "󰕾",
+      "expand-button-label": "",
+      "collapse-button-label": "",
       "show-per-app": true,
       "show-per-app-icon": true,
       "show-per-app-label": false
