@@ -16,6 +16,7 @@ in
       "$mainMod" = "SUPER";
 
       exec-once = [
+        "swaybg -i /home/wug/Pictures/wallpaper.jpg &"
         "nm-applet &"
         "poweralertd &"
         "wl-clip-persist --clipboard both &"

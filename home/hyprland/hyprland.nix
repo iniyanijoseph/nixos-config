@@ -9,6 +9,7 @@
     wayland
     hyprpicker
     hyprpaper
+    swaybg
   ];
   wayland.windowManager.hyprland = {
     enable = true;
@@ -17,18 +18,14 @@
   };
 
   services.cliphist.enable = true;
-  services.hyprpaper = {
-    enable = true;
-    settings = {
-      ipc="on";
-      preload=[ "/home/wug/Pictures/wallpaper.jpg" ];
-      wallpaper=[
-        ",/home/wug/Pictures/wallpaper.jpg"
-      ];
-    };
-  };
-
-  home.file.".config/hypr/monitors.conf".text = ''
-    monitor=,preferred,auto,1.2
-  '';
+  # services.hyprpaper = {
+  #   enable = true;
+  #   settings = {
+  #     ipc="on";
+  #     preload=[ "/home/wug/Pictures/wallpaper.jpg" ];
+  #     wallpaper=[
+  #       ",/home/wug/Pictures/wallpaper.jpg"
+  #     ];
+  #   };
+  # };
 }
