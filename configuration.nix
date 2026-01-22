@@ -95,11 +95,11 @@
     enable = true;
     settings = {
       initial_session = {
-        command = "Hyprland";
+        command = "hyprland";
         user = "wug";
       };
       default_session = {
-        command = "${tuigreet} --greeting 'Hello!' --asterisks --remember --remember-user-session --time --cmd Hyprland";
+        command = "${tuigreet} --greeting 'Hello!' --asterisks --remember --remember-user-session --time --cmd hyprland";
         user = "greeter";
       };
     };    
