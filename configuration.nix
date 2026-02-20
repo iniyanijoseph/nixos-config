@@ -67,6 +67,8 @@
     power-profiles-daemon
 
     pavucontrol
+    pamixer
+    brightnessctl
 
     wayland
     glib

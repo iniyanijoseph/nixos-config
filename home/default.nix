@@ -31,6 +31,7 @@
     ./user.nix
     ./viewnior.nix
     ./waybar
+    ./whichkey.nix
     ./xdg-mimes.nix
   ];
 }

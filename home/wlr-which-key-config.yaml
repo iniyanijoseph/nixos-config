@@ -1,0 +1,138 @@
+# ~/.config/wlr-which-key/config.yaml
+# Triggered by Super+Space in Hyprland
+
+font: "JetBrainsMono Nerd Font 12"
+background: "#282828e0"
+color: "#ebdbb2"
+border: "#98971a"
+separator: "  "
+border_width: 2
+corner_r: 4
+padding: 16
+anchor: center
+auto_kbd_layout: true
+
+menu:
+  # Apps
+  "o":
+    desc: "  open"
+    submenu:
+      "t": { desc: "  terminal",        cmd: "kitty" }
+      "b": { desc: "  browser",         cmd: "firefox" }
+      "m": { desc: "  mail",            cmd: "thunderbird" }
+      "f": { desc: "  files",           cmd: "kitty yazi" }
+      "d": { desc: "  displays",        cmd: "nwg-displays" }
+      "v": { desc: "  volume",          cmd: "pavucontrol" }
+      "n": { desc: "  network",         cmd: "nm-connection-editor" }
+      "B": { desc: "  bluetooth",       cmd: "blueman-manager" }
+
+  # Windows
+  "w":
+    desc: "  window"
+    submenu:
+      "q": { desc: "  close",           cmd: "hyprctl dispatch killactive" }
+      "f": { desc: "  fullscreen",      cmd: "hyprctl dispatch fullscreen 0" }
+      "m": { desc: "  maximize",        cmd: "hyprctl dispatch fullscreen 1" }
+      "t": { desc: "  float",           cmd: "hyprctl dispatch togglefloating" }
+      "c": { desc: "  move to empty",   cmd: "hyprctl dispatch movetoworkspace empty" }
+
+  # Focus — h=right, l=left per your layout
+  "f":
+    desc: "  focus"
+    submenu:
+      "h": { desc: "  right",           cmd: "hyprctl dispatch movefocus r", keep_open: true }
+      "l": { desc: "  left",            cmd: "hyprctl dispatch movefocus l", keep_open: true }
+      "k": { desc: "  up",              cmd: "hyprctl dispatch movefocus u", keep_open: true }
+      "j": { desc: "  down",            cmd: "hyprctl dispatch movefocus d", keep_open: true }
+
+  # Move window within workspace
+  "m":
+    desc: "  move window"
+    submenu:
+      "h": { desc: "  right",           cmd: "hyprctl dispatch movewindow r", keep_open: true }
+      "l": { desc: "  left",            cmd: "hyprctl dispatch movewindow l", keep_open: true }
+      "k": { desc: "  up",              cmd: "hyprctl dispatch movewindow u", keep_open: true }
+      "j": { desc: "  down",            cmd: "hyprctl dispatch movewindow d", keep_open: true }
+
+  # Move window position (pixel nudge)
+  "M":
+    desc: "  move (pixel)"
+    submenu:
+      "h": { desc: "  right",           cmd: "hyprctl dispatch moveactive 80 0",   keep_open: true }
+      "l": { desc: "  left",            cmd: "hyprctl dispatch moveactive -80 0",  keep_open: true }
+      "k": { desc: "  up",              cmd: "hyprctl dispatch moveactive 0 -80",  keep_open: true }
+      "j": { desc: "  down",            cmd: "hyprctl dispatch moveactive 0 80",   keep_open: true }
+
+  # Resize
+  "r":
+    desc: "  resize"
+    submenu:
+      "h": { desc: "  right +",         cmd: "hyprctl dispatch resizeactive 80 0",  keep_open: true }
+      "l": { desc: "  left +",          cmd: "hyprctl dispatch resizeactive -80 0", keep_open: true }
+      "k": { desc: "  up",              cmd: "hyprctl dispatch resizeactive 0 -80", keep_open: true }
+      "j": { desc: "  down",            cmd: "hyprctl dispatch resizeactive 0 80",  keep_open: true }
+
+  # Workspaces
+  "W":
+    desc: "  workspace"
+    submenu:
+      "1": { desc: "  go to 1",         cmd: "hyprctl dispatch workspace 1" }
+      "2": { desc: "  go to 2",         cmd: "hyprctl dispatch workspace 2" }
+      "3": { desc: "  go to 3",         cmd: "hyprctl dispatch workspace 3" }
+      "4": { desc: "  go to 4",         cmd: "hyprctl dispatch workspace 4" }
+      "5": { desc: "  go to 5",         cmd: "hyprctl dispatch workspace 5" }
+      "6": { desc: "  go to 6",         cmd: "hyprctl dispatch workspace 6" }
+      "7": { desc: "  go to 7",         cmd: "hyprctl dispatch workspace 7" }
+      "8": { desc: "  go to 8",         cmd: "hyprctl dispatch workspace 8" }
+      "9": { desc: "  go to 9",         cmd: "hyprctl dispatch workspace 9" }
+      "m":
+        desc: "  move window to"
+        submenu:
+          "1": { desc: "  ws 1",        cmd: "hyprctl dispatch movetoworkspacesilent 1" }
+          "2": { desc: "  ws 2",        cmd: "hyprctl dispatch movetoworkspacesilent 2" }
+          "3": { desc: "  ws 3",        cmd: "hyprctl dispatch movetoworkspacesilent 3" }
+          "4": { desc: "  ws 4",        cmd: "hyprctl dispatch movetoworkspacesilent 4" }
+          "5": { desc: "  ws 5",        cmd: "hyprctl dispatch movetoworkspacesilent 5" }
+          "6": { desc: "  ws 6",        cmd: "hyprctl dispatch movetoworkspacesilent 6" }
+          "7": { desc: "  ws 7",        cmd: "hyprctl dispatch movetoworkspacesilent 7" }
+          "8": { desc: "  ws 8",        cmd: "hyprctl dispatch movetoworkspacesilent 8" }
+          "9": { desc: "  ws 9",        cmd: "hyprctl dispatch movetoworkspacesilent 9" }
+
+  # Volume
+  "v":
+    desc: "  volume"
+    submenu:
+      "k": { desc: "  up +2",           cmd: "pamixer -i 2",  keep_open: true }
+      "j": { desc: "  down -2",         cmd: "pamixer -d 2",  keep_open: true }
+      "m": { desc: "  mute",            cmd: "pamixer -t" }
+      "p": { desc: "  pavucontrol",     cmd: "pavucontrol" }
+
+  # Brightness
+  "b":
+    desc: "  brightness"
+    submenu:
+      "k": { desc: "  up +5",           cmd: "brightnessctl set 5%+", keep_open: true }
+      "j": { desc: "  down -5",         cmd: "brightnessctl set 5%-", keep_open: true }
+
+  # Screenshot
+  "s":
+    desc: "  screenshot"
+    submenu:
+      "s": { desc: "  area → clip",     cmd: "grimblast --freeze copy area" }
+      "S": { desc: "  full → clip",     cmd: "grimblast copy screen" }
+      "f": { desc: "  full → file",     cmd: "grimblast save screen" }
+
+  # Notifications
+  "n": { desc: "  notifications",       cmd: "swaync-client -t -s" }
+
+  # Clipboard
+  "c": { desc: "  clipboard",           cmd: "cliphist list | rofi -dmenu -theme-str 'window {width: 50%;} listview {columns: 1;}' | cliphist decode | wl-copy" }
+
+  # Session
+  "q":
+    desc: "  session"
+    submenu:
+      "l": { desc: "  lock",            cmd: "swaylock" }
+      "e": { desc: "  exit",            cmd: "hyprctl dispatch exit" }
+      "r": { desc: "  reboot",          cmd: "systemctl reboot" }
+      "p": { desc: "  poweroff",        cmd: "systemctl poweroff" }
