@@ -25,6 +25,7 @@
     ./todo.nix
     ./pinta.nix
     ./typset.nix
+    ./steam.nix
     ./swaylock.nix
     ./swaync/swaync.nix
     ./swayosd.nix

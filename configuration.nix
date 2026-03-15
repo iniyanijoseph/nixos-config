@@ -78,7 +78,6 @@
 
     # Copy Paste
     wl-clipboard
-
   ];
 
   
