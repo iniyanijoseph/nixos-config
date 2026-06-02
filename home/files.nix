@@ -11,7 +11,7 @@
     };
   }; 
    
-  home.packages = with pkgs; [ nemo ];
+  home.packages = with pkgs; [ nemo rclone ];
 
   dconf.settings = {
     "org/nemo/preferences" = {

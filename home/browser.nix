@@ -1,5 +1,5 @@
 { inputs, pkgs, ... }:
 {
   programs.firefox.enable = true;
-  home.packages = with pkgs; [qutebrowser];
+  home.packages = with pkgs; [ brave];
 }

@@ -78,9 +78,12 @@
 
     # Copy Paste
     wl-clipboard
-  ];
 
-  
+    # Steam
+    mangohud
+    protonup-ng
+  ];
+ 
 
   # Bluetooth
   hardware.bluetooth.enable = true;
@@ -106,6 +109,11 @@
     };    
   };
 
+  # Steam
+  programs.steam.enable = true;
+  programs.steam.gamescopeSession.enable = true;
+  programs.gamemode.enable = true;
+
   # Desktop
   programs.hyprland = {
     enable = true;
@@ -115,6 +123,7 @@
   environment.sessionVariables = {
     NIXOS_OZONE_WL = "1";
     EDITOR = "hx";
+    STEAM_EXTRA_COMPAT_TOOLS_PATHS = "\${HOME}/.steam/root/compatibilitytools.d";
   };
 
   hardware = {
