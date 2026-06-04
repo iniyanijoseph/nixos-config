@@ -82,6 +82,9 @@
     # Steam
     mangohud
     protonup-ng
+
+    # VPN
+    networkmanager-openconnect
   ];
  
 
