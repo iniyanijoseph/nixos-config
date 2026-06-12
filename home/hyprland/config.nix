@@ -21,7 +21,7 @@ in
 
         "[workspace 2 silent] ${browser}"
         "[workspace 3 silent] sleek-todo"
-        "[workspace 1 silent] ${mail}"
+        "[workspace 1 silent] ${mail} & discord"
       ];
 
       input = {
