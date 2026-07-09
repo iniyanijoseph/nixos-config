@@ -2,9 +2,7 @@
 let
   browser  = "firefox";
   terminal = "kitty";
-  # aerc is a TUI, so it has to be launched inside a terminal rather than
-  # exec'd directly like a GUI app.
-  mail     = "${terminal} --class aerc -e aerc";
+  mail     = "geary";
 in
 {
   wayland.windowManager.hyprland = {

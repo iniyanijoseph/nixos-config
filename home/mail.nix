@@ -4,10 +4,10 @@
   home.packages = with pkgs; [
     geary
     gcr
+    gnome-control-center
   ];
 
   services.gnome-keyring.enable = true;
 
-  # Ensure the freedesktop secret service can find the user display/session env.
   xdg.portal.enable = true;
 }

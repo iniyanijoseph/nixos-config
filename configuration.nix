@@ -190,6 +190,10 @@
   # Enable the OpenSSH daemon.
   services.openssh.enable = true;
 
+  # Unlock GNOME Keyring on login via greetd (needed for Geary/GOA to
+  # store and retrieve credentials).
+  security.pam.services.greetd.enableGnomeKeyring = true;
+
   # Firewall.
   networking.firewall.enable = true;
   # networking.firewall.allowedTCPPorts = [ ... ];
