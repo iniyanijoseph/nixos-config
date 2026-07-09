@@ -1,8 +1,6 @@
 { pkgs, ... }:
+
 {
-  # oama handles the OAuth2 device-code dance for both Gmail and Purdue's
-  # Office365/Entra tenant and caches the resulting token in the session
-  # keyring. aerc just calls `oama access <email>` to get a fresh token.
   home.packages = with pkgs; [ oama pass ];
 
   accounts.email.accounts = {
@@ -49,16 +47,8 @@
   programs.aerc = {
     enable = true;
     extraConfig = {
-      general = {
-        # Home Manager writes accounts.conf into the (world-readable, 0444)
-        # nix store, which fails aerc's 0600-permission check. This is safe
-        # here because passwordCommand/*-cred-cmd means no secrets are ever
-        # written into that file - see aerc-config(5) "unsafe-accounts-conf".
-        unsafe-accounts-conf = true;
-      };
-      ui = {
-        sidebar-width = 24;
-      };
+      general = { unsafe-accounts-conf = true; };
+      ui = { sidebar-width = 24; };
       viewer = {
         pager = "less -R";
         alternatives = "text/plain,text/html";
@@ -73,9 +63,6 @@
       };
     };
 
-    # Edit like Helix: aerc drops into $EDITOR (hx) for compose, and the
-    # default keybindings are already broadly vi-like. A few tweaks to
-    # bring it closer to the Helix muscle-memory used everywhere else.
     extraBinds = {
       messages = {
         j = ":next<Enter>";
