@@ -3,7 +3,7 @@
   # Ripcord is a single non-Electron Qt client that covers Discord and
   # Slack. Free for Discord; Slack works unpaid too, just nags for a
   # license.
-  home.packages = with pkgs; [ abaddon ];
+  home.packages = with pkgs; [ dissent ];
 
   # zoom-us drags along a fair amount of local cache/log clutter under
   # ~/.zoom and ~/.config/zoomus.conf for what's usually occasional calls.
