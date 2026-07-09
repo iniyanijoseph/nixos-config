@@ -22,6 +22,7 @@
           home-manager = {
             useGlobalPkgs = true;
             useUserPackages = true;
+            backupFileExtension = "hm-bak";
             extraSpecialArgs = inputs;
             users.wug = import ./home;
           };

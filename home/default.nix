@@ -6,6 +6,7 @@
     ./bat.nix
     ./browser.nix
     ./btop.nix 
+    ./chat.nix
     ./dev.nix
     ./fish.nix
     ./git.nix
@@ -15,17 +16,16 @@
     ./hyprland
     ./kitty.nix
     ./files.nix 
+    ./mail.nix
     ./mpv.nix
     ./music.nix
     ./neofetch.nix
     ./nextcloud.nix
     ./office.nix
     ./rofi.nix
-    ./thunderbird.nix
     ./todo.nix
     ./pinta.nix
     ./typset.nix
-    ./references.nix
     ./steam.nix
     ./swaylock.nix
     ./swaync/swaync.nix

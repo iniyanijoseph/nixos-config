@@ -21,6 +21,4 @@
 
   ];
 
-  programs.java.enable = true;
-  
 }

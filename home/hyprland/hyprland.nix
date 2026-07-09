@@ -15,6 +15,10 @@
     enable = true;
 
     xwayland.enable = true;
+
+    # Pin to current behavior explicitly (silences the 26.05
+    # default-change warning without changing anything).
+    configType = "hyprlang";
   };
 
   services.cliphist.enable = true;

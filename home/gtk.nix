@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 {
   fonts.fontconfig.enable = true;
   home.packages = with pkgs; [
@@ -40,6 +40,10 @@
       size = 24;
     };
   };
+
+  # Pin to current behavior explicitly (silences the 26.05 default-change
+  # warning without changing anything - keeps gtk.theme applied to GTK4 too).
+  gtk.gtk4.theme = config.gtk.theme;
 
   home.pointerCursor = {
     name = "Bibata-Modern-Ice";

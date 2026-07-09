@@ -3,6 +3,9 @@
   programs.yazi = {
     enable = true;
     enableFishIntegration = true;
+    # Pin to current behavior explicitly (silences the 26.05 default-change
+    # warning; also matches the existing fish/functions/yy.fish on disk).
+    shellWrapperName = "yy";
     keymap = {
       mgr.append_keymap = [
         {on="h"; run="enter";}
