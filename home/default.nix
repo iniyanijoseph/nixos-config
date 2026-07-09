@@ -20,7 +20,6 @@
     ./mpv.nix
     ./music.nix
     ./neofetch.nix
-    ./nextcloud.nix
     ./office.nix
     ./rofi.nix
     ./todo.nix
