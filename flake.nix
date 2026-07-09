@@ -28,6 +28,10 @@
           };
         }
         nixos-hardware.nixosModules.lenovo-thinkpad-e14-amd
+        # Switches the CPU scaling driver to amd-pstate-epp (kernel >=6.3), which gives
+        # much finer-grained frequency/voltage scaling than the legacy acpi-cpufreq driver
+        # -- meaningfully better battery life on modern Ryzen chips.
+        nixos-hardware.nixosModules.common-cpu-amd-pstate
       ];
     };
   };

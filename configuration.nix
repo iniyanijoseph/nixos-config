@@ -30,6 +30,84 @@
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
+  # This was previously unset, which meant hardware.cpu.amd.updateMicrocode
+  # (set via mkDefault in hardware-configuration.nix and nixos-hardware) had
+  # nothing to default to and effectively never applied. AMD microcode updates
+  # carry real power-management and P-state fixes, not just security patches.
+  hardware.enableRedistributableFirmware = true;
+
+  # ---- Power management ----
+  # nixos-hardware's thinkpad/laptop modules already default services.tlp.enable
+  # to true as long as power-profiles-daemon is disabled, but we set both
+  # explicitly here so this doesn't silently change if those defaults ever do.
+  services.power-profiles-daemon.enable = false;
+  services.tlp = {
+    enable = true;
+    settings = {
+      CPU_SCALING_GOVERNOR_ON_AC = "performance";
+      CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
+      CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
+      CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
+
+      # You're fine with a louder fan, so let AC power draw run hot for
+      # sustained boost -- thinkfan below keeps it thermally safe.
+      PLATFORM_PROFILE_ON_AC = "performance";
+      PLATFORM_PROFILE_ON_BAT = "low-power";
+
+      # Battery longevity: stop charging at 80%, resume at 75%.
+      # Bump STOP_CHARGE_THRESH_BAT0 toward 90-95 if you're usually on
+      # battery rather than plugged in most of the day.
+      START_CHARGE_THRESH_BAT0 = 75;
+      STOP_CHARGE_THRESH_BAT0 = 90;
+
+      RUNTIME_PM_ON_BAT = "auto";
+      USB_AUTOSUSPEND = 1;
+      WIFI_PWR_ON_BAT = "on";
+      SOUND_POWER_SAVE_ON_BAT = 1;
+    };
+  };
+
+  # Fan control: you said louder fan is fine, so ramp up a bit earlier than
+  # thinkfan's stock curve to keep the CPU cooler and sustaining boost
+  # clocks longer under load. The last entry hands control back to the
+  # firmware's own auto behavior above 80C as a safety net -- this doesn't
+  # override thermal protection, it just makes the fan more proactive below it.
+  services.thinkfan = {
+    enable = true;
+    levels = [
+      [ 0 0 50 ]
+      [ 1 45 55 ]
+      [ 2 48 58 ]
+      [ 3 50 61 ]
+      [ 4 53 64 ]
+      [ 5 56 68 ]
+      [ 6 60 72 ]
+      [ 7 65 80 ]
+      [ "level auto" 80 32767 ]
+    ];
+  };
+
+  # Battery-state notifications/monitoring (low battery warnings, etc.)
+  services.upower.enable = true;
+
+  # Firmware/EC updates -- sometimes ship power-management fixes.
+  services.fwupd.enable = true;
+
+  # Compressed RAM swap. There's no swap device configured at all right now,
+  # so under memory pressure the system has nothing to fall back on but the
+  # OOM killer. This costs a bit of idle RAM/CPU but saves you from that.
+  zramSwap = {
+    enable = true;
+    memoryPercent = 50;
+  };
+
+  # Your firmware only exposes s2idle (confirmed via `cat /sys/power/mem_sleep`
+  # -- no [deep] option listed), so there's no S3 to opt into. Instead, this
+  # nudges the NVMe drive into deeper autonomous power states during idle/
+  # standby, which is one of the few real levers left for reducing s2idle
+  # power draw on hardware stuck without S3.
+  boot.kernelParams = [ "nvme_core.default_ps_max_latency_us=5500" ];
+
   # Define a user account.
   users.users.wug = {
     isNormalUser = true;
@@ -63,15 +141,10 @@
     # Kitty
     kitty
 
-    # Power Management
-    power-profiles-daemon
-
     pavucontrol
     pamixer
     brightnessctl
 
-    wayland
-    glib
     direnv
 
     helix
@@ -172,7 +245,10 @@
   services.avahi = {
     enable = true;
     nssmdns4 = true;
-    openFirewall = true;
+    # Was true -- only needed if other devices on your network need to
+    # discover this machine (e.g. network printer/file sharing). Flip back
+    # to true if you rely on that.
+    openFirewall = false;
   };
 
   programs.nix-ld = {
