@@ -13,8 +13,28 @@
   xdg.desktopEntries.zoom-web = {
     name = "Zoom";
     genericName = "Zoom Web Client";
-    exec = "firefox --new-window https://app.zoom.us/wc/home";
-    icon = "firefox";
+    exec = "qutebrowser --target window https://app.zoom.us/wc/home";
+    terminal = false;
+    icon = "qutebrowser";
     categories = [ "Network" "VideoConference" ];
+  };
+
+
+  xdg.desktopEntries.google-messages = {
+    name = "Google Messages";
+    genericName = "SMS/RCS Messaging";
+    exec = "qutebrowser --target window https://messages.google.com/web";
+    terminal = false;
+    icon = "qutebrowser";
+    categories = [ "Network" "Chat" ];
+  };
+
+  xdg.desktopEntries.whatsapp = {
+    name = "WhatsApp";
+    genericName = "WhatsApp Web";
+    exec = "qutebrowser --target window https://web.whatsapp.com";
+    terminal = false;
+    icon = "qutebrowser";
+    categories = [ "Network" "Chat" ];
   };
 }
