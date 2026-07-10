@@ -19,6 +19,15 @@
     categories = [ "Network" "VideoConference" ];
   };
 
+  xdg.desktopEntries.slack = {
+    name = "Slack";
+    genericName = "Slack";
+    exec = "qutebrowser --target window https://app.slack.com/client/TGR4SN6CC/CGQJK244R";
+    terminal = false;
+    icon = "qutebrowser";
+    categories = [ "Network" "VideoConference" ];
+  };
+
   xdg.desktopEntries.google-messages = {
     name = "Google Messages";
     genericName = "SMS/RCS Messaging";
