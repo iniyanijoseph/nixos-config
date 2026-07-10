@@ -13,9 +13,9 @@
   xdg.desktopEntries.outlook = {
     name = "Outlook";
     genericName = "Purdue Email";
-    exec = "firefox --new-window https://outlook.office365.com";
+    exec = "qutebrowser --target window https://outlook.office365.com";
     terminal = false;
-    icon = "firefox";
+    icon = "qutebrowser";
     categories = [ "Network" "Email" ];
   };
 }

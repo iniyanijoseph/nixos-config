@@ -19,7 +19,6 @@
     categories = [ "Network" "VideoConference" ];
   };
 
-
   xdg.desktopEntries.google-messages = {
     name = "Google Messages";
     genericName = "SMS/RCS Messaging";
