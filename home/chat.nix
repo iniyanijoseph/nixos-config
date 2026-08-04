@@ -3,7 +3,7 @@
   # Ripcord is a single non-Electron Qt client that covers Discord and
   # Slack. Free for Discord; Slack works unpaid too, just nags for a
   # license.
-  home.packages = with pkgs; [ dissent ];
+  # home.packages = with pkgs; [ dissent ];
 
   # zoom-us drags along a fair amount of local cache/log clutter under
   # ~/.zoom and ~/.config/zoomus.conf for what's usually occasional calls.
@@ -26,23 +26,5 @@
     terminal = false;
     icon = "qutebrowser";
     categories = [ "Network" "VideoConference" ];
-  };
-
-  xdg.desktopEntries.google-messages = {
-    name = "Google Messages";
-    genericName = "SMS/RCS Messaging";
-    exec = "qutebrowser --target window https://messages.google.com/web";
-    terminal = false;
-    icon = "qutebrowser";
-    categories = [ "Network" "Chat" ];
-  };
-
-  xdg.desktopEntries.whatsapp = {
-    name = "WhatsApp";
-    genericName = "WhatsApp Web";
-    exec = "qutebrowser --target window https://web.whatsapp.com";
-    terminal = false;
-    icon = "qutebrowser";
-    categories = [ "Network" "Chat" ];
   };
 }

@@ -2,8 +2,7 @@
 let
   browser  = "firefox";
   terminal = "kitty";
-  mail     = "geary";
-  chat     = "dissent";
+  mail     = "thunderbird";
 in
 {
   wayland.windowManager.hyprland = {
@@ -22,7 +21,6 @@ in
 
         "[workspace 2 silent] ${browser}"
         "[workspace 1 silent] ${mail}"
-        "[workspace 1 silent] ${chat}"
       ];
 
       input = {
