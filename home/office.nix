@@ -1,5 +1,5 @@
 {pkgs,...}:
 {
-	home.packages = with pkgs; [ jabref ];
+	home.packages = with pkgs; [ jabref zotero];
 	programs.onlyoffice.enable = true;
 }
