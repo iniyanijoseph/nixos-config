@@ -19,6 +19,7 @@
 
     gnumake
 
+    temurin-bin
   ];
 
 }
