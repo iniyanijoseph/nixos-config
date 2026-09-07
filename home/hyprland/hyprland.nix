@@ -5,7 +5,6 @@
     grimblast
     wl-clip-persist
     glib
-    direnv
     wayland
     hyprpicker
     hyprpaper

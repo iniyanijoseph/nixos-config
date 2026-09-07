@@ -30,6 +30,16 @@
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
+  programs.nh = {
+    enable = true;
+    flake = "/etc/nixos";
+    clean = {
+      enable = true;
+      dates = "weekly";
+      extraArgs = "--keep 5 --keep-since 14d";
+    };
+  };
+
   # This was previously unset, which meant hardware.cpu.amd.updateMicrocode
   # (set via mkDefault in hardware-configuration.nix and nixos-hardware) had
   # nothing to default to and effectively never applied. AMD microcode updates
@@ -144,8 +154,6 @@
     pavucontrol
     pamixer
     brightnessctl
-
-    direnv
 
     helix
 
