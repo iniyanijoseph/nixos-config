@@ -1,10 +1,12 @@
 {pkgs, ...}:
 let
-  tex = (pkgs.texlive.combine {
-    inherit (pkgs.texlive) scheme-medium
-      wrapfig amsmath ulem hyperref capt-of
-      luatex;
-  });
+  # The standard medium TeX Live environment covers common LaTeX, math,
+  # graphics, fonts, bibliography support, and the LuaTeX/XeTeX engines.
+  # Add the usual build and bibliography frontends explicitly.
+  tex = pkgs.texliveMedium.withPackages (ps: with ps; [
+    latexmk
+    biber
+  ]);
 in {
   home.packages = with pkgs; [
     typst
