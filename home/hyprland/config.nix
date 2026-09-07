@@ -6,13 +6,72 @@
     local mail = "thunderbird"
     local mainMod = "SUPER"
 
-    -- A generic monitor rule replaces the generated monitors.conf include.
-    hl.monitor({
-      output = "",
-      mode = "preferred",
-      position = "auto",
-      scale = 1.2,
-    })
+    -- nwg-displays 0.4.3+ writes monitors.lua. Prefer it, while importing the
+    -- existing monitors.conf once so this migration keeps the current layout.
+    -- Home Manager's config is a store symlink, so explicitly include the
+    -- user config directory in Lua's module search path.
+    local hyprConfigDir = os.getenv("HOME") .. "/.config/hypr"
+    package.path = hyprConfigDir .. "/?.lua;" .. hyprConfigDir .. "/?/init.lua;" .. package.path
+    local monitorsLoaded = pcall(require, "monitors")
+
+    if not monitorsLoaded then
+      local monitorFile = io.open(hyprConfigDir .. "/monitors.conf", "r")
+
+      if monitorFile then
+        for line in monitorFile:lines() do
+          local spec = line:match("^%s*monitor%s*=%s*(.-)%s*$")
+          if spec then
+            local fields = {}
+            for field in (spec .. ","):gmatch("(.-),") do
+              table.insert(fields, field)
+            end
+
+            if fields[2] == "disable" then
+              hl.monitor({ output = fields[1], disabled = true })
+            elseif fields[2] == "transform" and fields[3] then
+              -- Older nwg-displays versions wrote transforms as a second rule.
+              hl.monitor({ output = fields[1], transform = tonumber(fields[3]) })
+            elseif fields[2] and fields[3] and fields[4] then
+              local monitor = {
+                output = fields[1],
+                mode = fields[2],
+                position = fields[3],
+                scale = tonumber(fields[4]) or fields[4],
+              }
+
+              local index = 5
+              while fields[index] do
+                local property = fields[index]
+                local value = fields[index + 1]
+                if property == "mirror" then
+                  monitor.mirror = value
+                elseif property == "transform" then
+                  monitor.transform = tonumber(value)
+                elseif property == "bitdepth" then
+                  monitor.bitdepth = tonumber(value)
+                elseif property == "cm" then
+                  monitor.cm = value
+                elseif property == "sdrbrightness" then
+                  monitor.sdrbrightness = tonumber(value)
+                elseif property == "sdrsaturation" then
+                  monitor.sdrsaturation = tonumber(value)
+                elseif property == "vrr" then
+                  monitor.vrr = tonumber(value)
+                end
+                index = index + 2
+              end
+
+              hl.monitor(monitor)
+            end
+          end
+        end
+        monitorFile:close()
+      end
+    end
+
+    -- Preserve the old fallback for displays not covered by nwg-displays. A
+    -- connector-specific rule above takes precedence over this wildcard.
+    hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1.2 })
 
     hl.config({
       input = {
@@ -80,67 +139,85 @@
       hl.exec_cmd(mail, { workspace = "1 silent" })
     end)
 
-    local function command(key, cmd, options)
-      hl.bind(key, hl.dsp.exec_cmd(cmd), options)
-    end
-
-    command(mainMod .. " + RETURN", terminal)
+    hl.bind(mainMod .. " + RETURN", hl.dsp.exec_cmd(terminal))
     hl.bind(mainMod .. " + Q", hl.dsp.window.close())
-    command(mainMod .. " + D", "rofi -show drun || pkill rofi")
-    command(mainMod .. " + ESCAPE", "swaylock")
-    command(mainMod .. " + SPACE", "wlr-which-key")
-    command("PRINT", "grimblast --copy screen")
-    command(mainMod .. " + SHIFT + S", "grimblast --freeze copy area")
+    hl.bind(mainMod .. " + D", hl.dsp.exec_cmd("rofi -show drun || pkill rofi"))
+    hl.bind(mainMod .. " + ESCAPE", hl.dsp.exec_cmd("swaylock"))
+    hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("wlr-which-key"))
+    hl.bind("PRINT", hl.dsp.exec_cmd("grimblast --copy screen"))
+    hl.bind(mainMod .. " + SHIFT + S", hl.dsp.exec_cmd("grimblast --freeze copy area"))
 
-    for _, binding in ipairs({
-      { "left", "left" }, { "right", "right" },
-      { "up", "up" }, { "down", "down" },
-      -- Preserve the existing home-row layout (H=right, L=left).
-      { "L", "left" }, { "H", "right" }, { "K", "up" }, { "J", "down" },
-    }) do
-      hl.bind(mainMod .. " + " .. binding[1], hl.dsp.focus({ direction = binding[2] }))
-    end
+    hl.bind(mainMod .. " + left", hl.dsp.focus({ direction = "left" }))
+    hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }))
+    hl.bind(mainMod .. " + up", hl.dsp.focus({ direction = "up" }))
+    hl.bind(mainMod .. " + down", hl.dsp.focus({ direction = "down" }))
+    -- Preserve the original home-row layout (L=left and H=right).
+    hl.bind(mainMod .. " + L", hl.dsp.focus({ direction = "left" }))
+    hl.bind(mainMod .. " + H", hl.dsp.focus({ direction = "right" }))
+    hl.bind(mainMod .. " + K", hl.dsp.focus({ direction = "up" }))
+    hl.bind(mainMod .. " + J", hl.dsp.focus({ direction = "down" }))
 
-    for _, binding in ipairs({
-      { "left", "left" }, { "right", "right" },
-      { "up", "up" }, { "down", "down" },
-    }) do
-      hl.bind(mainMod .. " + SHIFT + " .. binding[1],
-        hl.dsp.window.move({ direction = binding[2] }))
-    end
+    hl.bind(mainMod .. " + SHIFT + left", hl.dsp.window.move({ direction = "left" }))
+    hl.bind(mainMod .. " + SHIFT + right", hl.dsp.window.move({ direction = "right" }))
+    hl.bind(mainMod .. " + SHIFT + up", hl.dsp.window.move({ direction = "up" }))
+    hl.bind(mainMod .. " + SHIFT + down", hl.dsp.window.move({ direction = "down" }))
 
-    for _, binding in ipairs({
-      { "left", -80, 0 }, { "right", 80, 0 },
-      { "up", 0, -80 }, { "down", 0, 80 },
-    }) do
-      hl.bind(mainMod .. " + CTRL + " .. binding[1],
-        hl.dsp.window.resize({ x = binding[2], y = binding[3], relative = true }),
-        { repeating = true })
-    end
+    hl.bind(mainMod .. " + CTRL + left",
+      hl.dsp.window.resize({ x = -80, y = 0, relative = true }), { repeating = true })
+    hl.bind(mainMod .. " + CTRL + right",
+      hl.dsp.window.resize({ x = 80, y = 0, relative = true }), { repeating = true })
+    hl.bind(mainMod .. " + CTRL + up",
+      hl.dsp.window.resize({ x = 0, y = -80, relative = true }), { repeating = true })
+    hl.bind(mainMod .. " + CTRL + down",
+      hl.dsp.window.resize({ x = 0, y = 80, relative = true }), { repeating = true })
 
-    for workspace = 1, 10 do
-      local key = workspace % 10
-      hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = workspace }))
-      hl.bind(mainMod .. " + SHIFT + " .. key,
-        hl.dsp.window.move({ workspace = workspace, follow = false }))
-    end
+    hl.bind(mainMod .. " + 1", hl.dsp.focus({ workspace = 1 }))
+    hl.bind(mainMod .. " + 2", hl.dsp.focus({ workspace = 2 }))
+    hl.bind(mainMod .. " + 3", hl.dsp.focus({ workspace = 3 }))
+    hl.bind(mainMod .. " + 4", hl.dsp.focus({ workspace = 4 }))
+    hl.bind(mainMod .. " + 5", hl.dsp.focus({ workspace = 5 }))
+    hl.bind(mainMod .. " + 6", hl.dsp.focus({ workspace = 6 }))
+    hl.bind(mainMod .. " + 7", hl.dsp.focus({ workspace = 7 }))
+    hl.bind(mainMod .. " + 8", hl.dsp.focus({ workspace = 8 }))
+    hl.bind(mainMod .. " + 9", hl.dsp.focus({ workspace = 9 }))
+    hl.bind(mainMod .. " + 0", hl.dsp.focus({ workspace = 10 }))
 
-    command("XF86AudioPlay", "playerctl play-pause", { locked = true })
-    command("XF86AudioNext", "playerctl next", { locked = true })
-    command("XF86AudioPrev", "playerctl previous", { locked = true })
-    command("XF86AudioStop", "playerctl stop", { locked = true })
+    hl.bind(mainMod .. " + SHIFT + 1", hl.dsp.window.move({ workspace = 1, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 2", hl.dsp.window.move({ workspace = 2, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 3", hl.dsp.window.move({ workspace = 3, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 4", hl.dsp.window.move({ workspace = 4, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 5", hl.dsp.window.move({ workspace = 5, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 6", hl.dsp.window.move({ workspace = 6, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 7", hl.dsp.window.move({ workspace = 7, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 8", hl.dsp.window.move({ workspace = 8, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 9", hl.dsp.window.move({ workspace = 9, follow = false }))
+    hl.bind(mainMod .. " + SHIFT + 0", hl.dsp.window.move({ workspace = 10, follow = false }))
 
-    command("code:163", mail)
-    command("code:452", mail)
-    command("code:453", "blueman-manager")
-    command("code:454", browser)
-    command("code:256", "pavucontrol")
-    command("code:179", "pavucontrol")
-    command("code:164", terminal .. " yazi")
-    command("code:148", terminal .. " yazi")
-    command("code:180", browser)
+    hl.bind("XF86AudioPlay", hl.dsp.exec_cmd("playerctl play-pause"))
+    hl.bind("XF86AudioNext", hl.dsp.exec_cmd("playerctl next"))
+    hl.bind("XF86AudioPrev", hl.dsp.exec_cmd("playerctl previous"))
+    hl.bind("XF86AudioStop", hl.dsp.exec_cmd("playerctl stop"))
+
+    hl.bind("code:235", hl.dsp.exec_cmd("nwg-displays"))
+    hl.bind("code:152", hl.dsp.exec_cmd("nwg-displays"))
+    hl.bind("code:163", hl.dsp.exec_cmd(mail))
+    hl.bind("code:452", hl.dsp.exec_cmd(mail))
+    hl.bind("code:453", hl.dsp.exec_cmd("blueman-manager"))
+    hl.bind("code:454", hl.dsp.exec_cmd(browser))
+    hl.bind("code:256", hl.dsp.exec_cmd("pavucontrol"))
+    hl.bind("code:179", hl.dsp.exec_cmd("pavucontrol"))
+    hl.bind("code:164", hl.dsp.exec_cmd(terminal .. " yazi"))
+    hl.bind("code:148", hl.dsp.exec_cmd(terminal .. " yazi"))
+    hl.bind("code:180", hl.dsp.exec_cmd(browser))
 
     hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e-1" }))
     hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ workspace = "e+1" }))
+
+    -- These repeating bindings existed alongside the swayosd bindings before
+    -- the Lua migration; retain them for an exact keymap migration.
+    hl.bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd("pamixer -i 2"), { repeating = true })
+    hl.bind("XF86AudioLowerVolume", hl.dsp.exec_cmd("pamixer -d 2"), { repeating = true })
+    hl.bind("XF86MonBrightnessUp", hl.dsp.exec_cmd("brightnessctl set 5%+"), { repeating = true })
+    hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl set 5%-"), { repeating = true })
   '';
 }
