@@ -112,7 +112,7 @@
   users.users.wug = {
     isNormalUser = true;
     description = "wug";
-    extraGroups = [ "networkmanager" "wheel" ];
+    extraGroups = [ "networkmanager" "wheel" "lpadmin" ];
     packages = with pkgs; [];
   };
 
@@ -158,6 +158,10 @@
 
     # VPN
     networkmanager-openconnect
+
+    # Printing
+    system-config-printer
+    samba
   ];
  
 
@@ -241,7 +245,25 @@
   };
 
   # Printing
-  services.printing.enable = true;
+  services.printing = {
+    enable = true;
+  };
+
+   # Samba, needed for smb:// printer connections
+   services.samba = {
+     enable = true;
+ 
+     settings = {
+       global = {
+         workgroup = "BOILERAD";
+ 
+         # Purdue's documented Samba settings
+         "client min protocol" = "SMB2";
+         "client max protocol" = "SMB3";
+       };
+     };
+   };
+
   services.avahi = {
     enable = true;
     nssmdns4 = true;
