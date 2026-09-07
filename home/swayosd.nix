@@ -2,37 +2,32 @@
 {
   home.packages = with pkgs; [ swayosd ];
 
-  wayland.windowManager.hyprland.extraConfig = ''
-    hl.on("hyprland.start", function()
-      hl.exec_cmd("swayosd-server")
-    end)
+  wayland.windowManager.hyprland = {
+    settings = {
+      exec-once = [ "swayosd-server" ];
 
-    hl.bind("XF86AudioMute", hl.dsp.exec_cmd("swayosd-client --output-volume mute-toggle"))
+      bind = [ ",XF86AudioMute, exec, swayosd-client --output-volume mute-toggle" ];
+      # binds active in lockscreen
+      bindl = [
+        ",XF86MonBrightnessUp, exec, swayosd-client --brightness raise 5%+"
+        ",XF86MonBrightnessDown, exec, swayosd-client --brightness lower 5%-"
+        "$mainMod, XF86MonBrightnessUp, exec, brightnessctl set 100%"
+        "$mainMod, XF86MonBrightnessDown, exec, brightnessctl set 0%"
+      ];
+      bindle = [
+        ",XF86AudioRaiseVolume, exec, swayosd-client --output-volume +2 --max-volume=100"
+        ",XF86AudioLowerVolume, exec, swayosd-client --output-volume -2"
 
-    -- These remain active while the screen is locked.
-    hl.bind("XF86MonBrightnessUp", hl.dsp.exec_cmd("swayosd-client --brightness raise 5%+"),
-      { locked = true })
-    hl.bind("XF86MonBrightnessDown", hl.dsp.exec_cmd("swayosd-client --brightness lower 5%-"),
-      { locked = true })
-    hl.bind("SUPER + XF86MonBrightnessUp", hl.dsp.exec_cmd("brightnessctl set 100%"),
-      { locked = true })
-    hl.bind("SUPER + XF86MonBrightnessDown", hl.dsp.exec_cmd("brightnessctl set 0%"),
-      { locked = true })
-
-    hl.bind("XF86AudioRaiseVolume",
-      hl.dsp.exec_cmd("swayosd-client --output-volume +2 --max-volume=100"),
-      { locked = true, repeating = true })
-    hl.bind("XF86AudioLowerVolume", hl.dsp.exec_cmd("swayosd-client --output-volume -2"),
-      { locked = true, repeating = true })
-    hl.bind("SUPER + F11", hl.dsp.exec_cmd("swayosd-client --output-volume +2 --max-volume=100"),
-      { locked = true, repeating = true })
-    hl.bind("SUPER + F12", hl.dsp.exec_cmd("swayosd-client --output-volume -2"),
-      { locked = true, repeating = true })
-
-    hl.bind("CAPS + Caps_Lock", hl.dsp.exec_cmd("swayosd-client --caps-lock"), { release = true })
-    hl.bind("SCROLL_LOCK", hl.dsp.exec_cmd("swayosd-client --scroll-lock"), { release = true })
-    hl.bind("NUM_LOCK", hl.dsp.exec_cmd("swayosd-client --num-lock"), { release = true })
-  '';
+        "$mainMod, f11, exec, swayosd-client --output-volume +2 --max-volume=100"
+        "$mainMod, f12, exec, swayosd-client --output-volume -2"
+      ];
+      bindr = [
+        "CAPS,Caps_Lock,exec,swayosd-client --caps-lock"
+        ",Scroll_Lock,exec,swayosd-client --scroll-lock"
+        ",Num_Lock,exec,swayosd-client --num-lock"
+      ];
+    };
+  };
 
   xdg.configFile."swayosd/style.css".text = ''
     window {

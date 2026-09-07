@@ -16,8 +16,9 @@
 
     xwayland.enable = true;
 
-    # Hyprland's native Lua configuration replaces the legacy .conf format.
-    configType = "lua";
+    # Pin to current behavior explicitly (silences the 26.05
+    # default-change warning without changing anything).
+    configType = "hyprlang";
   };
 
   services.cliphist.enable = true;
