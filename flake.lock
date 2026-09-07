@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "animotion": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1747672232,
+        "narHash": "sha256-Ro+Nic4v2oR60p/rE3vm0iDCNU+EtkSKAiTHkp19WB8=",
+        "owner": "luiscassih",
+        "repo": "AniMotion.nvim",
+        "rev": "92504a0f2c6c3e2245cef71668e7badf8052eb03",
+        "type": "github"
+      },
+      "original": {
+        "owner": "luiscassih",
+        "repo": "AniMotion.nvim",
+        "type": "github"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -70,6 +86,7 @@
     },
     "root": {
       "inputs": {
+        "animotion": "animotion",
         "home-manager": "home-manager",
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2"

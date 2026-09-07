@@ -20,6 +20,7 @@
     ./mpv.nix
     ./music.nix
     ./neofetch.nix
+    ./nvim.nix
     ./office.nix
     ./rofi.nix
     ./todo.nix

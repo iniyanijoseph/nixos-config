@@ -1,172 +1,146 @@
 { ... }:
-let
-  browser  = "firefox";
-  terminal = "kitty";
-  mail     = "thunderbird";
-in
 {
-  wayland.windowManager.hyprland = {
-    settings = {
-      "$mainMod" = "SUPER";
+  wayland.windowManager.hyprland.extraConfig = ''
+    local browser = "firefox"
+    local terminal = "kitty"
+    local mail = "thunderbird"
+    local mainMod = "SUPER"
 
-      exec-once = [
-        "swaybg -i /home/wug/Pictures/wallpaper.jpg &"
-        "nm-applet &"
-        "poweralertd &"
-        "wl-clip-persist --clipboard both &"
-        "wl-paste --watch cliphist store &"
-        "swaync &"
-        "hyprctl setcursor Bibata-Modern-Ice 24 &"
-        "waybar"
+    -- A generic monitor rule replaces the generated monitors.conf include.
+    hl.monitor({
+      output = "",
+      mode = "preferred",
+      position = "auto",
+      scale = 1.2,
+    })
 
-        "[workspace 2 silent] ${browser}"
-        "[workspace 1 silent] ${mail}"
-      ];
-
+    hl.config({
       input = {
-        numlock_by_default = true;
-        repeat_delay = 300;
-        follow_mouse = 0;
-        float_switch_override_focus = 0;
-        mouse_refocus = 0;
-        sensitivity = 0;
-      };
-
+        numlock_by_default = true,
+        repeat_delay = 300,
+        follow_mouse = 0,
+        float_switch_override_focus = 0,
+        mouse_refocus = false,
+        sensitivity = 0,
+      },
       decoration = {
-        rounding = 0;
-        active_opacity = 1.0;
-        inactive_opacity = 0.90;
-        fullscreen_opacity = 1.0;
-
+        rounding = 0,
+        active_opacity = 1.0,
+        inactive_opacity = 0.90,
+        fullscreen_opacity = 1.0,
         blur = {
-          enabled = true;
-          size = 3;
-          passes = 2;
-          brightness = 1;
-          contrast = 1.4;
-          ignore_opacity = true;
-          noise = 0;
-          new_optimizations = true;
-          xray = true;
-        };
-
+          enabled = true,
+          size = 3,
+          passes = 2,
+          brightness = 1,
+          contrast = 1.4,
+          ignore_opacity = true,
+          noise = 0,
+          new_optimizations = true,
+          xray = true,
+        },
         shadow = {
-          enabled = true;
-          offset = "0 2";
-          range = 20;
-          render_power = 3;
-          color = "rgba(00000055)";
-        };
-      };
-
+          enabled = true,
+          offset = { 0, 2 },
+          range = 20,
+          render_power = 3,
+          color = "rgba(00000055)",
+        },
+      },
       general = {
-        gaps_in = 6;
-        gaps_out = 12;
-        border_size = 2;
-        "col.active_border" = "rgb(98971A) rgb(CC241D) 45deg";
-        "col.inactive_border" = "0x00000000";
-      };
-
+        gaps_in = 6,
+        gaps_out = 12,
+        border_size = 2,
+        col = {
+          active_border = {
+            colors = { "rgb(98971A)", "rgb(CC241D)" },
+            angle = 45,
+          },
+          inactive_border = "rgba(00000000)",
+        },
+      },
       binds = {
-        movefocus_cycles_fullscreen = true;
-      };
+        movefocus_cycles_fullscreen = true,
+      },
+      xwayland = {
+        force_zero_scaling = true,
+      },
+    })
 
-      bind = [
-        # Core — too frequent to go through a menu
-        "$mainMod, Return, exec, ${terminal}"
-        "$mainMod, Q, killactive,"
-        "$mainMod, D, exec, rofi -show drun || pkill rofi"
-        "$mainMod, Escape, exec, swaylock"
-        "$mainMod, Space, exec, wlr-which-key"
+    hl.on("hyprland.start", function()
+      hl.exec_cmd("swaybg -i /home/wug/Pictures/wallpaper.jpg")
+      hl.exec_cmd("nm-applet")
+      hl.exec_cmd("poweralertd")
+      hl.exec_cmd("wl-clip-persist --clipboard both")
+      hl.exec_cmd("wl-paste --watch cliphist store")
+      hl.exec_cmd("swaync")
+      hl.exec_cmd("hyprctl setcursor Bibata-Modern-Ice 24")
+      hl.exec_cmd("waybar")
+      hl.exec_cmd(browser, { workspace = "2 silent" })
+      hl.exec_cmd(mail, { workspace = "1 silent" })
+    end)
 
-        # Screenshot — Print stays as a direct bind
-        ",Print, exec, grimblast --copy screen"
-        "$mainMod SHIFT, S, exec, grimblast --freeze copy area"
+    local function command(key, cmd, options)
+      hl.bind(key, hl.dsp.exec_cmd(cmd), options)
+    end
 
-        # Arrow key focus — kept for when hands are off home row
-        "$mainMod, left,  movefocus, l"
-        "$mainMod, right, movefocus, r"
-        "$mainMod, up,    movefocus, u"
-        "$mainMod, down,  movefocus, d"
-        "$mainMod, L,  movefocus, l"
-        "$mainMod, H, movefocus, r"
-        "$mainMod, K,    movefocus, u"
-        "$mainMod, J,  movefocus, d"
+    command(mainMod .. " + RETURN", terminal)
+    hl.bind(mainMod .. " + Q", hl.dsp.window.close())
+    command(mainMod .. " + D", "rofi -show drun || pkill rofi")
+    command(mainMod .. " + ESCAPE", "swaylock")
+    command(mainMod .. " + SPACE", "wlr-which-key")
+    command("PRINT", "grimblast --copy screen")
+    command(mainMod .. " + SHIFT + S", "grimblast --freeze copy area")
 
-        # Arrow key move window
-        "$mainMod SHIFT, left,  movewindow, l"
-        "$mainMod SHIFT, right, movewindow, r"
-        "$mainMod SHIFT, up,    movewindow, u"
-        "$mainMod SHIFT, down,  movewindow, d"
+    for _, binding in ipairs({
+      { "left", "left" }, { "right", "right" },
+      { "up", "up" }, { "down", "down" },
+      -- Preserve the existing home-row layout (H=right, L=left).
+      { "L", "left" }, { "H", "right" }, { "K", "up" }, { "J", "down" },
+    }) do
+      hl.bind(mainMod .. " + " .. binding[1], hl.dsp.focus({ direction = binding[2] }))
+    end
 
-        # Arrow key resize
-        "$mainMod CTRL, left,  resizeactive, -80 0"
-        "$mainMod CTRL, right, resizeactive, 80 0"
-        "$mainMod CTRL, up,    resizeactive, 0 -80"
-        "$mainMod CTRL, down,  resizeactive, 0 80"
+    for _, binding in ipairs({
+      { "left", "left" }, { "right", "right" },
+      { "up", "up" }, { "down", "down" },
+    }) do
+      hl.bind(mainMod .. " + SHIFT + " .. binding[1],
+        hl.dsp.window.move({ direction = binding[2] }))
+    end
 
-        # Workspace switching — number keys are fastest, keep direct
-        "$mainMod, 1, workspace, 1"
-        "$mainMod, 2, workspace, 2"
-        "$mainMod, 3, workspace, 3"
-        "$mainMod, 4, workspace, 4"
-        "$mainMod, 5, workspace, 5"
-        "$mainMod, 6, workspace, 6"
-        "$mainMod, 7, workspace, 7"
-        "$mainMod, 8, workspace, 8"
-        "$mainMod, 9, workspace, 9"
-        "$mainMod, 0, workspace, 10"
+    for _, binding in ipairs({
+      { "left", -80, 0 }, { "right", 80, 0 },
+      { "up", 0, -80 }, { "down", 0, 80 },
+    }) do
+      hl.bind(mainMod .. " + CTRL + " .. binding[1],
+        hl.dsp.window.resize({ x = binding[2], y = binding[3], relative = true }),
+        { repeating = true })
+    end
 
-        "$mainMod SHIFT, 1, movetoworkspacesilent, 1"
-        "$mainMod SHIFT, 2, movetoworkspacesilent, 2"
-        "$mainMod SHIFT, 3, movetoworkspacesilent, 3"
-        "$mainMod SHIFT, 4, movetoworkspacesilent, 4"
-        "$mainMod SHIFT, 5, movetoworkspacesilent, 5"
-        "$mainMod SHIFT, 6, movetoworkspacesilent, 6"
-        "$mainMod SHIFT, 7, movetoworkspacesilent, 7"
-        "$mainMod SHIFT, 8, movetoworkspacesilent, 8"
-        "$mainMod SHIFT, 9, movetoworkspacesilent, 9"
-        "$mainMod, 0, workspace, 10"
-        "$mainMod SHIFT, 0, movetoworkspacesilent, 10"
+    for workspace = 1, 10 do
+      local key = workspace % 10
+      hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = workspace }))
+      hl.bind(mainMod .. " + SHIFT + " .. key,
+        hl.dsp.window.move({ workspace = workspace, follow = false }))
+    end
 
-        # Media keys
-        ",XF86AudioPlay, exec, playerctl play-pause"
-        ",XF86AudioNext, exec, playerctl next"
-        ",XF86AudioPrev, exec, playerctl previous"
-        ",XF86AudioStop, exec, playerctl stop"
+    command("XF86AudioPlay", "playerctl play-pause", { locked = true })
+    command("XF86AudioNext", "playerctl next", { locked = true })
+    command("XF86AudioPrev", "playerctl previous", { locked = true })
+    command("XF86AudioStop", "playerctl stop", { locked = true })
 
-        # Special keyboard keys
-        ",code:235, exec, nwg-displays"
-        ",code:152, exec, nwg-displays"
-        ",code:163, exec, ${mail}"
-        ",code:452, exec, ${mail}"
-        ",code:453, exec, blueman-manager"
-        ",code:454, exec, ${browser}"
-        ",code:256, exec, pavucontrol"
-        ",code:179, exec, pavucontrol"
-        ",code:164, exec, ${terminal} yazi"
-        ",code:148, exec, ${terminal} yazi"
-        ",code:180, exec, ${browser}"
+    command("code:163", mail)
+    command("code:452", mail)
+    command("code:453", "blueman-manager")
+    command("code:454", browser)
+    command("code:256", "pavucontrol")
+    command("code:179", "pavucontrol")
+    command("code:164", terminal .. " yazi")
+    command("code:148", terminal .. " yazi")
+    command("code:180", browser)
 
-        "$mainMod, mouse_down, workspace, e-1"
-        "$mainMod, mouse_up,   workspace, e+1"
-      ];
-
-      source = "~/.config/hypr/monitors.conf";
-
-      binde = [
-        ",XF86AudioRaiseVolume, exec, pamixer -i 2"
-        ",XF86AudioLowerVolume, exec, pamixer -d 2"
-        ",XF86MonBrightnessUp,   exec, brightnessctl set 5%+"
-        ",XF86MonBrightnessDown, exec, brightnessctl set 5%-"
-      ];
-    };
-
-    extraConfig = "
-      monitor=,preferred,auto,1.2
-      xwayland {
-        force_zero_scaling = true
-      }
-    ";
-  };
+    hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e-1" }))
+    hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ workspace = "e+1" }))
+  '';
 }

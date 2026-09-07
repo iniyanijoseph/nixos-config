@@ -10,6 +10,12 @@
     };
 
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
+
+    # Selection-first editing for Neovim (Helix/Kakoune model).
+    animotion = {
+      url = "github:luiscassih/AniMotion.nvim";
+      flake = false;
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, nixos-hardware, ... }@inputs: {

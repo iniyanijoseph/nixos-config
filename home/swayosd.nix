@@ -2,32 +2,36 @@
 {
   home.packages = with pkgs; [ swayosd ];
 
-  wayland.windowManager.hyprland = {
-    settings = {
-      exec-once = [ "swayosd-server" ];
+  wayland.windowManager.hyprland.extraConfig = ''
+    hl.on("hyprland.start", function()
+      hl.exec_cmd("swayosd-server")
+    end)
 
-      bind = [ ",XF86AudioMute, exec, swayosd-client --output-volume mute-toggle" ];
-      # binds active in lockscreen
-      bindl = [
-        ",XF86MonBrightnessUp, exec, swayosd-client --brightness raise 5%+"
-        ",XF86MonBrightnessDown, exec, swayosd-client --brightness lower 5%-"
-        "$mainMod, XF86MonBrightnessUp, exec, brightnessctl set 100%"
-        "$mainMod, XF86MonBrightnessDown, exec, brightnessctl set 0%"
-      ];
-      bindle = [
-        ",XF86AudioRaiseVolume, exec, swayosd-client --output-volume +2 --max-volume=100"
-        ",XF86AudioLowerVolume, exec, swayosd-client --output-volume -2"
+    local function osdCommand(key, cmd, options)
+      hl.bind(key, hl.dsp.exec_cmd(cmd), options)
+    end
 
-        "$mainMod, f11, exec, swayosd-client --output-volume +2 --max-volume=100"
-        "$mainMod, f12, exec, swayosd-client --output-volume -2"
-      ];
-      bindr = [
-        "CAPS,Caps_Lock,exec,swayosd-client --caps-lock"
-        ",Scroll_Lock,exec,swayosd-client --scroll-lock"
-        ",Num_Lock,exec,swayosd-client --num-lock"
-      ];
-    };
-  };
+    osdCommand("XF86AudioMute", "swayosd-client --output-volume mute-toggle")
+
+    -- These remain active while the screen is locked.
+    osdCommand("XF86MonBrightnessUp", "swayosd-client --brightness raise 5%+", { locked = true })
+    osdCommand("XF86MonBrightnessDown", "swayosd-client --brightness lower 5%-", { locked = true })
+    osdCommand("SUPER + XF86MonBrightnessUp", "brightnessctl set 100%", { locked = true })
+    osdCommand("SUPER + XF86MonBrightnessDown", "brightnessctl set 0%", { locked = true })
+
+    osdCommand("XF86AudioRaiseVolume", "swayosd-client --output-volume +2 --max-volume=100",
+      { locked = true, repeating = true })
+    osdCommand("XF86AudioLowerVolume", "swayosd-client --output-volume -2",
+      { locked = true, repeating = true })
+    osdCommand("SUPER + F11", "swayosd-client --output-volume +2 --max-volume=100",
+      { locked = true, repeating = true })
+    osdCommand("SUPER + F12", "swayosd-client --output-volume -2",
+      { locked = true, repeating = true })
+
+    osdCommand("CAPS_LOCK", "swayosd-client --caps-lock", { release = true })
+    osdCommand("SCROLL_LOCK", "swayosd-client --scroll-lock", { release = true })
+    osdCommand("NUM_LOCK", "swayosd-client --num-lock", { release = true })
+  '';
 
   xdg.configFile."swayosd/style.css".text = ''
     window {
