@@ -68,7 +68,6 @@ in
     # warning; also matches the existing fish/functions/yy.fish on disk).
     shellWrapperName = "yy";
     extraPackages = with pkgs; [
-      dragon-drop
       less
       trash-cli
     ];
@@ -76,7 +75,7 @@ in
       mgr.prepend_keymap = [
         {
           on = "<C-n>";
-          run = "shell -- ${pkgs.dragon-drop}/bin/dragon-drop -x -i -T -a %s";
+          run = "shell --block -- ${pkgs.kitty}/bin/kitten dnd --exit-on=drag-finish,esc-key %s";
           desc = "Drag selected files";
         }
         {
