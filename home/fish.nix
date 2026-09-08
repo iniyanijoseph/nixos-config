@@ -31,6 +31,10 @@
 
   programs.fish = {
     enable = true;
+    functions.fish_greeting = {
+      description = "Show a system summary when Fish starts";
+      body = "macchina";
+    };
     plugins = [
       {
         name = "done";

@@ -31,6 +31,18 @@
     .vscode
   '';
 
+  # Replace the old manually-created function that expands every `git`
+  # command to `sudo git`. Keeping a thin function here lets Home Manager
+  # overwrite that file deterministically while Git runs as the current user.
+  xdg.configFile."fish/functions/git.fish" = {
+    force = true;
+    text = ''
+      function git --wraps=git --description 'Run Git as the current user'
+        command git $argv
+      end
+    '';
+  };
+
   programs.fish.shellAliases = {
     g = "lazygit";
     gf = "onefetch --number-of-file-churns 0 --no-color-palette";

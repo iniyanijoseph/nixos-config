@@ -130,6 +130,17 @@
   programs.fish.enable = true;
   users.defaultUserShell = pkgs.fish;
 
+  # The same identity is available to normal Git and to an explicitly invoked
+  # `sudo git`. Home Manager supplies the matching per-user configuration.
+  programs.git = {
+    enable = true;
+    config = {
+      user.name = "Wug";
+      user.email = "iniyanijoseph@gmail.com";
+      init.defaultBranch = "main";
+    };
+  };
+
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
@@ -140,7 +151,6 @@
     
     # Package and Repo Managing
     wget
-    git
     gh
 
     # Zip
