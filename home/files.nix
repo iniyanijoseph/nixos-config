@@ -56,7 +56,6 @@ let
     pkgs.coreutils
     pkgs.gnused
     pkgs.less
-    pkgs.ripdrag
     pkgs.trash-cli
     pkgs.yazi
   ];
@@ -69,17 +68,21 @@ in
     # warning; also matches the existing fish/functions/yy.fish on disk).
     shellWrapperName = "yy";
     extraPackages = with pkgs; [
+      dragon-drop
       less
-      ripdrag
       trash-cli
     ];
-    plugins.drag = pkgs.yaziPlugins.drag;
     keymap = {
       mgr.prepend_keymap = [
         {
           on = "<C-n>";
-          run = "plugin drag";
+          run = "shell -- ${pkgs.dragon-drop}/bin/dragon-drop -x -i -T -a %s";
           desc = "Drag selected files";
+        }
+        {
+          on = "?";
+          run = "help";
+          desc = "Show shortcuts";
         }
         {
           on = [ "R" "l" ];

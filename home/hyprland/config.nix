@@ -77,6 +77,7 @@ in
         "$mainMod, Q, killactive,"
         "$mainMod, D, exec, rofi -show drun || pkill rofi"
         "$mainMod, Escape, exec, swaylock"
+        "$mainMod, N, exec, swaync-client -t -sw"
         "$mainMod, Space, exec, wlr-which-key"
 
         # Screenshot — Print stays as a direct bind

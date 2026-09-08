@@ -244,7 +244,7 @@ menu:
 
   - key: "n"
     desc: "  notifications"
-    cmd: swaync-client -t -s
+    cmd: swaync-client -t -sw
 
   - key: "c"
     desc: "  clipboard"
