@@ -1,4 +1,4 @@
-{ pkgs, username, ... }:
+{ ... }:
 {
   programs.delta = {
     enable = true;
@@ -25,7 +25,11 @@
 
   };
 
-  home.packages = [ pkgs.gh ]; # pkgs.git-lfs
+  programs.gh = {
+    enable = true;
+    settings.git_protocol = "https";
+    gitCredentialHelper.enable = true;
+  };
 
   xdg.configFile."git/.gitignore".text = ''
     .vscode
