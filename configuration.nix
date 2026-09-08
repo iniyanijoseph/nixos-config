@@ -208,6 +208,26 @@
     xwayland.enable = true;
   };
 
+  # Keep Hyprland's portal for screen sharing, but route portal-aware Open/Save
+  # dialogs through Yazi. GTK remains available as a fallback portal backend.
+  xdg.portal = {
+    enable = true;
+    extraPortals = with pkgs; [
+      xdg-desktop-portal-termfilechooser
+      xdg-desktop-portal-gtk
+    ];
+    config = {
+      common = {
+        default = [ "hyprland" "gtk" ];
+        "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+      };
+      hyprland = {
+        default = [ "hyprland" "gtk" ];
+        "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+      };
+    };
+  };
+
   environment.sessionVariables = {
     NIXOS_OZONE_WL = "1";
     EDITOR = "hx";

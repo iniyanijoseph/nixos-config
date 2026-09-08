@@ -29,6 +29,8 @@
         # Firefox's own cross-platform "Photon" widgets
         "widget.non-native-theme.enabled" = false;
         "widget.gtk.native-context-menus" = true;
+        # Use the XDG file-picker portal, which is backed by Yazi in files.nix.
+        "widget.use-xdg-desktop-portal.file-picker" = 1;
 
         # force Firefox's built-in dark theme so the parts it always draws
         # itself (toolbar/tab chrome) start from a dark base before
