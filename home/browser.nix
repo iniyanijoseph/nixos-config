@@ -124,5 +124,5 @@
     };
   };
 
-  home.packages = with pkgs; [ openconnect qutebrowser ];
+  home.packages = with pkgs; [ openconnect qutebrowser brave ];
 }
