@@ -4,7 +4,8 @@
     with pkgs;
     [
       thunderbird
-      element-desktop
+      # element-desktop
+      cinny-desktop
     ]
   );
 }

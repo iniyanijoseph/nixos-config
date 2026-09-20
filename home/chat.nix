@@ -19,12 +19,12 @@
     categories = [ "Network" "VideoConference" ];
   };
 
-  xdg.desktopEntries.slack = {
-    name = "Slack";
-    genericName = "Slack";
-    exec = "qutebrowser --target window https://app.slack.com/client/TGR4SN6CC/CGQJK244R";
+  xdg.desktopEntries.chatgpt = {
+    name = "ChatGPT";
+    genericName = "ChatGPT";
+    exec = "brave --target window https://chatgpt.com";
     terminal = false;
-    icon = "qutebrowser";
-    categories = [ "Network" "VideoConference" ];
+    icon = "brave";
+    categories = [ "Network" ];
   };
 }
