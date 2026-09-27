@@ -16,6 +16,7 @@
       keys.normal = {
         space.w = ":w";
         space.x = ":x";
+        space.r = ":reload-all";
         pageup = "no_op";
         home = "no_op";
         end = "no_op";

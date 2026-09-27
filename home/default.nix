@@ -1,6 +1,7 @@
 {...}:
 {
   imports = [
+    ./ai.nix
     ./arandr.nix
     ./autoclicker.nix
     ./bat.nix
