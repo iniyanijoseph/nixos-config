@@ -1,30 +1,21 @@
 { pkgs, ... }:
 {
   home.packages = with pkgs; [
-    opencode
+    codex
   ];
 
-  # OpenCode is terminal-native, so it can run beside Helix in Kitty without
-  # adding an Electron editor. Credentials stay out of the Nix store; connect
-  # providers interactively with /connect inside OpenCode.
-  xdg.configFile."opencode/opencode.jsonc".text = ''
-    {
-      "$schema": "https://opencode.ai/config.json",
+  # Codex uses ChatGPT authentication rather than an API key.
+  # Full access is intentional here: no command approvals and no Codex sandbox.
+  xdg.configFile."codex/config.toml".text = ''
+    forced_login_method = "chatgpt"
+    approval_policy = "never"
+    sandbox_mode = "danger-full-access"
 
-      "agent": {
-        "build": {
-          "model": "google/gemini-3.8-flash#low"
-          // To use ChatGPT later, run /connect -> OpenAI, then swap the line
-          // above for:
-          // "model": "openai/gpt-5.6-luna#low"
-        },
-        "plan": {
-          "model": "google/gemini-3.8-flash#low"
-          // To use ChatGPT later, run /connect -> OpenAI, then swap the line
-          // above for:
-          // "model": "openai/gpt-5.6-luna#low"
-        }
-      }
-    }
+    # Keep routine coding inexpensive/fast.
+    model_reasoning_effort = "low"
+    plan_mode_reasoning_effort = "low"
+
+    # Optional: pin Luna later if it is exposed to this ChatGPT/Codex account.
+    # model = "gpt-5.6-luna"
   '';
 }
