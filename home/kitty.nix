@@ -25,8 +25,8 @@
       mouse_hide_wait = 60;
       window_padding_width = 5;
 
-      # Side-by-side terminal windows. This makes Alt+A turn the current Kitty
-      # tab into a lightweight Helix + OpenCode IDE.
+      # Side-by-side terminal windows. Alt+A turns the current Kitty tab into
+      # a lightweight Helix + Codex IDE.
       enabled_layouts = "splits:split_axis=horizontal";
 
       ## Tabs
@@ -48,10 +48,10 @@
       "alt+3" = "goto_tab 3";
       "alt+4" = "goto_tab 4";
 
-      ## Helix + OpenCode
-      # Open OpenCode on the right in the same working directory, using about
+      ## Helix + Codex
+      # Open Codex on the right in the same working directory, using about
       # 38% of the tab width.
-      "alt+a" = "launch --location=vsplit --bias=38 --cwd=current opencode";
+      "alt+a" = "launch --location=vsplit --bias=38 --cwd=current codex";
 
       # Move between editor and agent.
       "alt+left" = "neighboring_window left";
