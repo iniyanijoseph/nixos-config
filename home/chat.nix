@@ -22,9 +22,9 @@
   xdg.desktopEntries.chatgpt = {
     name = "ChatGPT";
     genericName = "ChatGPT";
-    exec = "brave --target window https://chatgpt.com";
+    exec = "firefox --new-window https://chatgpt.com";
     terminal = false;
-    icon = "brave";
+    icon = "firefox";
     categories = [ "Network" ];
   };
 }
