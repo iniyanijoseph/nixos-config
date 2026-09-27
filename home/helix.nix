@@ -74,6 +74,11 @@
         command = "harper-ls";
         args = ["--stdio"];
       };
+
+      # language-server.llm-lsp = {
+      #   command = "llm-lsp"
+      #   orgs = ["server", "-p", "codeium"]
+      # }
  
       language-server.tinymist = {
         command = "tinymist";
