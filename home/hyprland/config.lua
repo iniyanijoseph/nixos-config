@@ -20,13 +20,18 @@ pcall(hl.config, {
         float_switch_override_focus = 0,
         mouse_refocus = true,
 
-        -- Keep pointer motion predictable: use a constant gain instead of
-        -- libinput's default velocity-dependent adaptive acceleration.
-        -- sensitivity = 0.35 retains the faster cursor feel, while flat
-        -- makes slow and fast physical motions scale consistently.
-        accel_profile = "flat",
+        -- Use libinput's device-aware adaptive curve, but keep it milder than
+        -- the previous +0.35 setting. A flat profile felt heavy/laggy because
+        -- it removed the velocity ramp entirely.
+        accel_profile = "adaptive",
         force_no_accel = false,
-        sensitivity = 0.70,
+        sensitivity = 0.15,
+    },
+    cursor = {
+        -- Prefer a hardware cursor instead of Hyprland's auto switching.
+        -- This keeps pointer presentation independent of normal scene redraws
+        -- when the DRM backend supports a cursor plane.
+        no_hardware_cursors = 0,
     },
     decoration = {
         rounding = 0,
