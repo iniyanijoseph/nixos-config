@@ -1,8 +1,12 @@
 { inputs, pkgs, ... }:
 let
   surfingkeysConfig = ./surfingkeys.js;
-  surfingkeysConfigDir =
-    pkgs.writeTextDir "surfingkeys.js" (builtins.readFile surfingkeysConfig);
+  surfingkeysNewTab = ./surfingkeys-newtab.html;
+  surfingkeysConfigDir = pkgs.runCommand "surfingkeys-files" { } ''
+    mkdir -p "$out"
+    cp ${surfingkeysConfig} "$out/surfingkeys.js"
+    cp ${surfingkeysNewTab} "$out/newtab.html"
+  '';
 in
 {
   programs.qutebrowser = {
@@ -35,7 +39,7 @@ in
     # keyboard layer is active immediately.
     policies."3rdparty".Extensions."newtaboverride@agenedia.com" = {
       type = "custom_url";
-      url = "https://www.google.com/";
+      url = "http://127.0.0.1:8765/newtab.html";
       focus_website = true;
     };
 
