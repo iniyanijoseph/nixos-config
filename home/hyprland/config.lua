@@ -19,6 +19,13 @@ pcall(hl.config, {
         follow_mouse = 1,
         float_switch_override_focus = 0,
         mouse_refocus = true,
+
+        -- Keep pointer motion predictable: use a constant gain instead of
+        -- libinput's default velocity-dependent adaptive acceleration.
+        -- sensitivity = 0.35 retains the faster cursor feel, while flat
+        -- makes slow and fast physical motions scale consistently.
+        accel_profile = "flat",
+        force_no_accel = false,
         sensitivity = 0.35,
     },
     decoration = {
