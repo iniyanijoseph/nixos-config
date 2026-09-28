@@ -24,7 +24,10 @@
       enable_audio_bell = false;
       mouse_hide_wait = 60;
       window_padding_width = 5;
-      remember_window_size = true;
+      # Hyprland owns OS-window geometry. If this is enabled, Kitty also
+      # remembers the previous maximize state, which can make a new terminal
+      # request a maximized window instead of entering the tiling layout normally.
+      remember_window_size = false;
       initial_window_width = "120c";
       initial_window_height = "34c";
 
