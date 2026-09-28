@@ -1,20 +1,11 @@
 { inputs, pkgs, ... }:
 let
   surfingkeysConfig = ./surfingkeys.js;
-  surfingkeysSetup = pkgs.writeShellApplication {
-    name = "surfingkeys-setup";
-    runtimeInputs = [
-      pkgs.firefox
-      pkgs.libnotify
-      pkgs.wl-clipboard
-    ];
-    text = ''
-      wl-copy < ${surfingkeysConfig}
-      firefox about:addons >/dev/null 2>&1 &
-      notify-send "Surfingkeys configuration copied" \
-        "Open Surfingkeys Preferences, paste into the editor, then save."
-    '';
-  };
+  surfingkeysNativeServer = ./surfingkeys-native-server.lua;
+  surfingkeysNativeHost = pkgs.writeShellScript "surfingkeys-native-host" ''
+    exec ${pkgs.neovim}/bin/nvim --headless \
+      -c "luafile ${surfingkeysNativeServer}"
+  '';
 in
 {
   programs.qutebrowser = {
@@ -173,12 +164,21 @@ in
     };
   };
 
-  # Surfingkeys keeps its active snippet in Firefox extension storage, so the
-  # declarative source is also installed as a normal file for easy import.
-  xdg.configFile."surfingkeys/config.js".source = surfingkeysConfig;
+  # Surfingkeys reads this file through its native-messaging host when
+  # "Load settings from" is set to <native>.
+  home.file.".surfingkeys.js".source = surfingkeysConfig;
+
+  # Native Messaging manifest for the released Firefox Surfingkeys add-on.
+  home.file.".mozilla/native-messaging-hosts/surfingkeys.json".text =
+    builtins.toJSON {
+      allowed_extensions = [ "{a8332c60-5b6d-41ee-bfc8-e9bb331d34ad}" ];
+      description = "Surfingkeys local settings host";
+      name = "surfingkeys";
+      type = "stdio";
+      path = "${surfingkeysNativeHost}";
+    };
 
   home.packages = [
     pkgs.openconnect
-    surfingkeysSetup
   ];
 }
