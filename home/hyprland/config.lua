@@ -217,10 +217,3 @@ run("CAPS + Caps_Lock", "swayosd-client --caps-lock", releaseOptions)
 run("Scroll_Lock", "swayosd-client --scroll-lock", releaseOptions)
 run("Num_Lock", "swayosd-client --num-lock", releaseOptions)
 
-pcall(hl.window_rule, {
-    name = "kitty-floating",
-    match = { class = "^kitty$" },
-    float = true,
-    size = { "monitor_w*0.8", "monitor_h*0.8" },
-    center = true,
-})
