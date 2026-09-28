@@ -5,10 +5,15 @@ settings.stealFocusOnLoad = true;
 settings.enableAutoFocus = false;
 
 // Directional browsing.
-// Surfingkeys defaults already use j/k for down/up. Swap h/l to match the
-// system convention: h = right, l = left.
-api.map("h", "l");
-api.map("l", "h");
+// Surfingkeys defaults already use j/k for down/up.
+api.unmap("h");
+api.unmap("l");
+api.mapkey("h", "Scroll right", function() {
+    api.Normal.scroll("right");
+});
+api.mapkey("l", "Scroll left", function() {
+    api.Normal.scroll("left");
+});
 
 // Browser history.
 api.map("H", "D"); // forward
