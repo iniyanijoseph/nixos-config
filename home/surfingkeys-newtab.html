@@ -38,10 +38,22 @@
   }
 </style>
 </head>
-<body>
+<body tabindex="-1">
 <main>
   <h1>New Tab</h1>
   <p>t search · f follow · T tabs · ? help</p>
 </main>
+<script>
+  // New Tab Override asks Firefox to focus the website; reinforce that once
+  // the local page itself is ready so keyboard input goes to page extensions.
+  window.addEventListener("load", function () {
+    window.focus();
+    document.body.focus({ preventScroll: true });
+    setTimeout(function () {
+      window.focus();
+      document.body.focus({ preventScroll: true });
+    }, 100);
+  });
+</script>
 </body>
 </html>
