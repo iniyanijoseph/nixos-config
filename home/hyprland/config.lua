@@ -81,6 +81,7 @@ pcall(hl.on, "hyprland.start", function()
     pcall(hl.exec_cmd, "wl-clip-persist --clipboard both")
     pcall(hl.exec_cmd, "wl-paste --watch cliphist store")
     pcall(hl.exec_cmd, "swaync")
+    pcall(hl.exec_cmd, "swayosd-server")
     pcall(hl.exec_cmd, "hyprctl setcursor Bibata-Modern-Ice 24")
     pcall(hl.exec_cmd, "waybar")
     pcall(hl.exec_cmd, browser, { workspace = "2 silent" })
@@ -186,11 +187,23 @@ pcall(function()
     hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ workspace = "e+1" }))
 end)
 
-local repeatOptions = { repeating = true }
-run("XF86AudioRaiseVolume", "pamixer -i 2", repeatOptions)
-run("XF86AudioLowerVolume", "pamixer -d 2", repeatOptions)
-run("XF86MonBrightnessUp", "brightnessctl set 5%+", repeatOptions)
-run("XF86MonBrightnessDown", "brightnessctl set 5%-", repeatOptions)
+-- SwayOSD media, brightness, and lock-key feedback. These preserve the old
+-- bindl/bindle/bindr behavior using native Lua binding flags.
+local lockedOptions = { locked = true }
+local lockedRepeatOptions = { locked = true, repeating = true }
+local releaseOptions = { release = true }
+run("XF86AudioMute", "swayosd-client --output-volume mute-toggle")
+run("XF86MonBrightnessUp", "swayosd-client --brightness raise 5%+", lockedOptions)
+run("XF86MonBrightnessDown", "swayosd-client --brightness lower 5%-", lockedOptions)
+run(mainMod .. " + XF86MonBrightnessUp", "brightnessctl set 100%", lockedOptions)
+run(mainMod .. " + XF86MonBrightnessDown", "brightnessctl set 0%", lockedOptions)
+run("XF86AudioRaiseVolume", "swayosd-client --output-volume +2 --max-volume=100", lockedRepeatOptions)
+run("XF86AudioLowerVolume", "swayosd-client --output-volume -2", lockedRepeatOptions)
+run(mainMod .. " + f11", "swayosd-client --output-volume +2 --max-volume=100", lockedRepeatOptions)
+run(mainMod .. " + f12", "swayosd-client --output-volume -2", lockedRepeatOptions)
+run("CAPS + Caps_Lock", "swayosd-client --caps-lock", releaseOptions)
+run("Scroll_Lock", "swayosd-client --scroll-lock", releaseOptions)
+run("Num_Lock", "swayosd-client --num-lock", releaseOptions)
 
 pcall(hl.window_rule, {
     name = "kitty-floating",
