@@ -183,10 +183,8 @@ in
       # A terminal should open as a centered working window rather than
       # consuming an otherwise empty workspace. It can still be tiled with
       # Super+Space -> window -> float.
-      windowrulev2 = [
-        "float,class:^(kitty)$"
-        "size 80% 80%,class:^(kitty)$"
-        "center,class:^(kitty)$"
+      windowrule = [
+        "match:class ^(kitty)$, float on, size (monitor_w*0.8) (monitor_h*0.8), center on"
       ];
 
       source = "~/.config/hypr/monitors.conf";
