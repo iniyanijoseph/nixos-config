@@ -1,11 +1,8 @@
 { inputs, pkgs, ... }:
 let
   surfingkeysConfig = ./surfingkeys.js;
-  surfingkeysNativeServer = ./surfingkeys-native-server.lua;
-  surfingkeysNativeHost = pkgs.writeShellScript "surfingkeys-native-host" ''
-    exec ${pkgs.neovim}/bin/nvim --headless \
-      -c "luafile ${surfingkeysNativeServer}"
-  '';
+  surfingkeysConfigDir =
+    pkgs.writeTextDir "surfingkeys.js" (builtins.readFile surfingkeysConfig);
 in
 {
   programs.qutebrowser = {
@@ -164,19 +161,23 @@ in
     };
   };
 
-  # Surfingkeys reads this file through its native-messaging host when
-  # "Load settings from" is set to <native>.
+  # Keep a normal local copy for editing/reference.
   home.file.".surfingkeys.js".source = surfingkeysConfig;
 
-  # Native Messaging manifest for the released Firefox Surfingkeys add-on.
-  home.file.".mozilla/native-messaging-hosts/surfingkeys.json".text =
-    builtins.toJSON {
-      allowed_extensions = [ "{a8332c60-5b6d-41ee-bfc8-e9bb331d34ad}" ];
-      description = "Surfingkeys local settings host";
-      name = "surfingkeys";
-      type = "stdio";
-      path = "${surfingkeysNativeHost}";
+  # The currently released Firefox add-on cannot read local files directly.
+  # Serve only the generated Surfingkeys config on loopback; Surfingkeys can
+  # load ordinary http(s) URLs on every page load.
+  systemd.user.services.surfingkeys-config = {
+    Unit = {
+      Description = "Serve Surfingkeys configuration";
+      After = [ "network.target" ];
     };
+    Service = {
+      ExecStart = "${pkgs.python3}/bin/python -m http.server 8765 --bind 127.0.0.1 --directory ${surfingkeysConfigDir}";
+      Restart = "on-failure";
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
 
   home.packages = [
     pkgs.openconnect
