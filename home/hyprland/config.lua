@@ -16,9 +16,9 @@ pcall(hl.config, {
     input = {
         numlock_by_default = true,
         repeat_delay = 300,
-        follow_mouse = 0,
+        follow_mouse = 1,
         float_switch_override_focus = 0,
-        mouse_refocus = false,
+        mouse_refocus = true,
 
         -- Use libinput's device-aware adaptive curve, but keep it milder than
         -- the previous +0.35 setting. A flat profile felt heavy/laggy because
