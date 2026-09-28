@@ -1,11 +1,10 @@
-// Small, conservative Surfingkeys layer on top of the defaults.
+// Surfingkeys 1.17.11 configuration.
 
-// Do not let pages steal the keyboard into an input on load.
+// Keep pages from stealing focus on initial load.
 settings.stealFocusOnLoad = true;
 settings.enableAutoFocus = false;
 
-// Directional browsing.
-// Surfingkeys defaults already use j/k for down/up.
+// Directional scrolling. j/k retain Surfingkeys' defaults.
 api.unmap("h");
 api.unmap("l");
 api.mapkey("h", "Scroll right", function() {
@@ -23,26 +22,9 @@ api.map("L", "S"); // back
 api.map("J", "E"); // previous tab
 api.map("K", "R"); // next tab
 
-// Page ends: gg = top, ge = bottom.
-api.mapkey("ge", "Scroll to bottom", function() {
-    api.Normal.scroll("bottom");
-});
+// Page ends. Copy the built-in bottom action before removing G.
+api.map("ge", "G");
 api.unmap("G");
-
-// Release delayed page autofocus so normal-mode keys remain available after load.
-function releasePageAutofocus() {
-    var el = document.activeElement;
-    if (!el || el === document.body || el === document.documentElement) {
-        return;
-    }
-    var tag = el.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable) {
-        el.blur();
-    }
-}
-releasePageAutofocus();
-setTimeout(releasePageAutofocus, 150);
-setTimeout(releasePageAutofocus, 500);
 
 // Links.
 api.map("F", "af"); // open link in an active new tab
@@ -94,3 +76,4 @@ settings.theme = `
     border: 1px solid #504945;
 }
 `;
+
