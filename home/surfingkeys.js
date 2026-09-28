@@ -20,8 +20,29 @@ api.map("H", "D"); // forward
 api.map("L", "S"); // back
 
 // Tabs.
-api.map("J", "R"); // next tab
-api.map("K", "E"); // previous tab
+api.map("J", "E"); // previous tab
+api.map("K", "R"); // next tab
+
+// Page ends: gg = top, ge = bottom.
+api.mapkey("ge", "Scroll to bottom", function() {
+    api.Normal.scroll("bottom");
+});
+api.unmap("G");
+
+// Release delayed page autofocus so normal-mode keys remain available after load.
+function releasePageAutofocus() {
+    var el = document.activeElement;
+    if (!el || el === document.body || el === document.documentElement) {
+        return;
+    }
+    var tag = el.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable) {
+        el.blur();
+    }
+}
+releasePageAutofocus();
+setTimeout(releasePageAutofocus, 150);
+setTimeout(releasePageAutofocus, 500);
 
 // Links.
 api.map("F", "af"); // open link in an active new tab
