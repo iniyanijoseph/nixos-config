@@ -11,282 +11,282 @@ auto_kbd_layout: true
 inhibit_compositor_keyboard_shortcuts: true
 
 menu:
-  - key: ["o", "Mod4+o"]
+  - key: "o"
     desc: "  open"
     submenu:
-      - key: ["t", "Mod4+t"]
+      - key: "t"
         desc: "  terminal"
         cmd: kitty
-      - key: ["b", "Mod4+b"]
+      - key: "b"
         desc: "  browser"
         cmd: firefox
-      - key: ["m", "Mod4+m"]
+      - key: "m"
         desc: "  mail"
         cmd: thunderbird
-      - key: ["f", "Mod4+f"]
+      - key: "f"
         desc: "  files"
         cmd: kitty yazi
-      - key: ["d", "Mod4+d"]
+      - key: "d"
         desc: "  displays"
         cmd: nwg-displays
-      - key: ["v", "Mod4+v"]
+      - key: "v"
         desc: "  volume"
         cmd: pavucontrol
-      - key: ["n", "Mod4+n"]
+      - key: "n"
         desc: "  network"
         cmd: nm-connection-editor
-      - key: ["B", "Mod4+B"]
+      - key: "B"
         desc: "  bluetooth"
         cmd: blueman-manager
 
-  - key: ["w", "Mod4+w"]
+  - key: "w"
     desc: "  window"
     submenu:
-      - key: ["q", "Mod4+q"]
+      - key: "q"
         desc: "  close"
         cmd: hyprctl dispatch killactive
-      - key: ["f", "Mod4+f"]
+      - key: "f"
         desc: "  fullscreen"
         cmd: hyprctl dispatch fullscreen 0
-      - key: ["m", "Mod4+m"]
+      - key: "m"
         desc: "  maximize"
         cmd: hyprctl dispatch fullscreen 1
-      - key: ["t", "Mod4+t"]
+      - key: "t"
         desc: "  float"
         cmd: hyprctl dispatch togglefloating
-      - key: ["c", "Mod4+c"]
+      - key: "c"
         desc: "  move to empty"
         cmd: hyprctl dispatch movetoworkspace empty
 
-  - key: ["f", "Mod4+f"]
+  - key: "f"
     desc: "  focus"
     submenu:
-      - key: ["h", "Mod4+h"]
+      - key: "h"
         desc: "  right"
         cmd: hyprctl dispatch movefocus r
         keep_open: true
-      - key: ["l", "Mod4+l"]
+      - key: "l"
         desc: "  left"
         cmd: hyprctl dispatch movefocus l
         keep_open: true
-      - key: ["k", "Mod4+k"]
+      - key: "k"
         desc: "  up"
         cmd: hyprctl dispatch movefocus u
         keep_open: true
-      - key: ["j", "Mod4+j"]
+      - key: "j"
         desc: "  down"
         cmd: hyprctl dispatch movefocus d
         keep_open: true
 
-  - key: ["m", "Mod4+m"]
+  - key: "m"
     desc: "  move window"
     submenu:
-      - key: ["h", "Mod4+h"]
+      - key: "h"
         desc: "  right"
         cmd: hyprctl dispatch movewindow r
         keep_open: true
-      - key: ["l", "Mod4+l"]
+      - key: "l"
         desc: "  left"
         cmd: hyprctl dispatch movewindow l
         keep_open: true
-      - key: ["k", "Mod4+k"]
+      - key: "k"
         desc: "  up"
         cmd: hyprctl dispatch movewindow u
         keep_open: true
-      - key: ["j", "Mod4+j"]
+      - key: "j"
         desc: "  down"
         cmd: hyprctl dispatch movewindow d
         keep_open: true
 
-  - key: ["M", "Mod4+M"]
+  - key: "M"
     desc: "  move (pixel)"
     submenu:
-      - key: ["h", "Mod4+h"]
+      - key: "h"
         desc: "  right"
         cmd: hyprctl dispatch moveactive 80 0
         keep_open: true
-      - key: ["l", "Mod4+l"]
+      - key: "l"
         desc: "  left"
         cmd: hyprctl dispatch moveactive -80 0
         keep_open: true
-      - key: ["k", "Mod4+k"]
+      - key: "k"
         desc: "  up"
         cmd: hyprctl dispatch moveactive 0 -80
         keep_open: true
-      - key: ["j", "Mod4+j"]
+      - key: "j"
         desc: "  down"
         cmd: hyprctl dispatch moveactive 0 80
         keep_open: true
 
-  - key: ["r", "Mod4+r"]
+  - key: "r"
     desc: "  resize"
     submenu:
-      - key: ["h", "Mod4+h"]
+      - key: "h"
         desc: "  right +"
         cmd: hyprctl dispatch resizeactive 80 0
         keep_open: true
-      - key: ["l", "Mod4+l"]
+      - key: "l"
         desc: "  left +"
         cmd: hyprctl dispatch resizeactive -80 0
         keep_open: true
-      - key: ["k", "Mod4+k"]
+      - key: "k"
         desc: "  up"
         cmd: hyprctl dispatch resizeactive 0 -80
         keep_open: true
-      - key: ["j", "Mod4+j"]
+      - key: "j"
         desc: "  down"
         cmd: hyprctl dispatch resizeactive 0 80
         keep_open: true
 
-  - key: ["W", "Mod4+W"]
+  - key: "W"
     desc: "  workspace"
     submenu:
-      - key: ["1", "Mod4+1"]
+      - key: "1"
         desc: "  go to 1"
         cmd: hyprctl dispatch workspace 1
-      - key: ["2", "Mod4+2"]
+      - key: "2"
         desc: "  go to 2"
         cmd: hyprctl dispatch workspace 2
-      - key: ["3", "Mod4+3"]
+      - key: "3"
         desc: "  go to 3"
         cmd: hyprctl dispatch workspace 3
-      - key: ["4", "Mod4+4"]
+      - key: "4"
         desc: "  go to 4"
         cmd: hyprctl dispatch workspace 4
-      - key: ["5", "Mod4+5"]
+      - key: "5"
         desc: "  go to 5"
         cmd: hyprctl dispatch workspace 5
-      - key: ["6", "Mod4+6"]
+      - key: "6"
         desc: "  go to 6"
         cmd: hyprctl dispatch workspace 6
-      - key: ["7", "Mod4+7"]
+      - key: "7"
         desc: "  go to 7"
         cmd: hyprctl dispatch workspace 7
-      - key: ["8", "Mod4+8"]
+      - key: "8"
         desc: "  go to 8"
         cmd: hyprctl dispatch workspace 8
-      - key: ["9", "Mod4+9"]
+      - key: "9"
         desc: "  go to 9"
         cmd: hyprctl dispatch workspace 9
-      - key: ["m", "Mod4+m"]
+      - key: "m"
         desc: "  move window to"
         submenu:
-          - key: ["1", "Mod4+1"]
+          - key: "1"
             desc: "  ws 1"
             cmd: hyprctl dispatch movetoworkspacesilent 1
-          - key: ["2", "Mod4+2"]
+          - key: "2"
             desc: "  ws 2"
             cmd: hyprctl dispatch movetoworkspacesilent 2
-          - key: ["3", "Mod4+3"]
+          - key: "3"
             desc: "  ws 3"
             cmd: hyprctl dispatch movetoworkspacesilent 3
-          - key: ["4", "Mod4+4"]
+          - key: "4"
             desc: "  ws 4"
             cmd: hyprctl dispatch movetoworkspacesilent 4
-          - key: ["5", "Mod4+5"]
+          - key: "5"
             desc: "  ws 5"
             cmd: hyprctl dispatch movetoworkspacesilent 5
-          - key: ["6", "Mod4+6"]
+          - key: "6"
             desc: "  ws 6"
             cmd: hyprctl dispatch movetoworkspacesilent 6
-          - key: ["7", "Mod4+7"]
+          - key: "7"
             desc: "  ws 7"
             cmd: hyprctl dispatch movetoworkspacesilent 7
-          - key: ["8", "Mod4+8"]
+          - key: "8"
             desc: "  ws 8"
             cmd: hyprctl dispatch movetoworkspacesilent 8
-          - key: ["9", "Mod4+9"]
+          - key: "9"
             desc: "  ws 9"
             cmd: hyprctl dispatch movetoworkspacesilent 9
 
-  - key: ["v", "Mod4+v"]
+  - key: "v"
     desc: "  volume"
     submenu:
-      - key: ["k", "Mod4+k"]
+      - key: "k"
         desc: "  up +2"
         cmd: pamixer -i 2
         keep_open: true
-      - key: ["j", "Mod4+j"]
+      - key: "j"
         desc: "  down -2"
         cmd: pamixer -d 2
         keep_open: true
-      - key: ["m", "Mod4+m"]
+      - key: "m"
         desc: "  mute"
         cmd: pamixer -t
-      - key: ["p", "Mod4+p"]
+      - key: "p"
         desc: "  pavucontrol"
         cmd: pavucontrol
 
-  - key: ["b", "Mod4+b"]
+  - key: "b"
     desc: "  brightness"
     submenu:
-      - key: ["k", "Mod4+k"]
+      - key: "k"
         desc: "  up +5"
         cmd: brightnessctl set 5%+
         keep_open: true
-      - key: ["j", "Mod4+j"]
+      - key: "j"
         desc: "  down -5"
         cmd: brightnessctl set 5%-
         keep_open: true
 
-  - key: ["s", "Mod4+s"]
+  - key: "s"
     desc: "  screenshot"
     submenu:
-      - key: ["s", "Mod4+s"]
+      - key: "s"
         desc: "  area → clip"
         cmd: grimblast --freeze copy area
-      - key: ["S", "Mod4+S"]
+      - key: "S"
         desc: "  full → clip"
         cmd: grimblast copy screen
-      - key: ["f", "Mod4+f"]
+      - key: "f"
         desc: "  full → file"
         cmd: grimblast save screen
 
-  - key: ["n", "Mod4+n"]
+  - key: "n"
     desc: "  notifications"
     cmd: swaync-client -t -sw
 
-  - key: ["c", "Mod4+c"]
+  - key: "c"
     desc: "  clipboard"
     cmd: "cliphist list | rofi -dmenu -theme-str 'window {width: 50%;} listview {columns: 1;}' | cliphist decode | wl-copy"
 
-  - key: ["q", "Mod4+q"]
+  - key: "q"
     desc: "  session"
     submenu:
-      - key: ["l", "Mod4+l"]
+      - key: "l"
         desc: "  lock"
         cmd: swaylock
-      - key: ["e", "Mod4+e"]
+      - key: "e"
         desc: "  exit"
         cmd: hyprctl dispatch exit
-      - key: ["r", "Mod4+r"]
+      - key: "r"
         desc: "  reboot"
         cmd: systemctl reboot
-      - key: ["p", "Mod4+p"]
+      - key: "p"
         desc: "  poweroff"
         cmd: systemctl poweroff
 
-  - key: ["?", "Mod4+?"]
+  - key: "?"
     desc: "  help / shortcuts"
     submenu:
-      - key: ["n", "Mod4+n"]
+      - key: "n"
         desc: "  navigation: h right · j down · k up · l left"
         cmd: "notify-send 'Navigation' 'h right  ·  j down  ·  k up  ·  l left'"
-      - key: ["w", "Mod4+w"]
+      - key: "w"
         desc: "  windows: Super+hjkl focus · +Shift move · +Ctrl resize"
         cmd: "notify-send 'Window shortcuts' 'Super+hjkl focus\nSuper+Shift+hjkl move\nSuper+Ctrl+hjkl resize'"
-      - key: ["a", "Mod4+a"]
+      - key: "a"
         desc: "  apps: Super+Return terminal · Super+d launcher"
         cmd: "notify-send 'Application shortcuts' 'Super+Return terminal\nSuper+d launcher\nSuper+n notifications'"
-      - key: ["k", "Mod4+k"]
+      - key: "k"
         desc: "  Kitty: Alt+hjkl focus split · Alt+Shift+h/l resize"
         cmd: "notify-send 'Kitty shortcuts' 'Alt+hjkl focus split\nAlt+Shift+h/l resize\nAlt+a open Codex split'"
-      - key: ["y", "Mod4+y"]
+      - key: "y"
         desc: "  Yazi: ? built-in help · h enter · l leave"
         cmd: "notify-send 'Yazi shortcuts' '? built-in help\nh enter directory · l leave directory\nCtrl+n drag selection'"
-      - key: ["f", "Mod4+f"]
+      - key: "f"
         desc: "  Firefox: Surfingkeys h/j/k/l · ? built-in help"
         cmd: "notify-send 'Firefox shortcuts' 'Surfingkeys: h right · j down · k up · l left\n? opens its complete shortcut guide'"
-      - key: ["e", "Mod4+e"]
+      - key: "e"
         desc: "  editors: Space opens command groups"
         cmd: "notify-send 'Editor shortcuts' 'Space opens command groups; ? opens command help.'"
