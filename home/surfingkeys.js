@@ -1,23 +1,27 @@
-// Small Surfingkeys layer on top of the useful defaults.
-const { map, mapkey, unmap, Normal } = api;
+// Small, conservative Surfingkeys layer on top of the defaults.
 
-// Keep the system's directional convention.
-unmap("h");
-unmap("l");
-mapkey("h", "Scroll right", () => Normal.scroll("right"));
-mapkey("l", "Scroll left", () => Normal.scroll("left"));
+// Do not let pages steal the keyboard into an input on load.
+settings.stealFocusOnLoad = true;
+settings.enableAutoFocus = false;
 
-// More mnemonic browser navigation.
-map("H", "D"); // forward
-map("L", "S"); // back
-map("J", "R"); // next tab
-map("K", "E"); // previous tab
-map("F", "af"); // open link in an active new tab
+// Directional browsing.
+// Surfingkeys defaults already use j/k for down/up. Swap h/l to match the
+// system convention: h = right, l = left.
+api.map("h", "l");
+api.map("l", "h");
 
-// Hide the older aliases from normal-mode help.
-["S", "D", "E", "R"].forEach((key) => unmap(key));
+// Browser history.
+api.map("H", "D"); // forward
+api.map("L", "S"); // back
 
-// Gruvbox Dark Hard + green accent, matching the rest of the desktop.
+// Tabs.
+api.map("J", "R"); // next tab
+api.map("K", "E"); // previous tab
+
+// Links.
+api.map("F", "af"); // open link in an active new tab
+
+// Gruvbox Dark Hard + green accent.
 settings.theme = `
 .sk_theme {
     font-family: "Maple Mono", "JetBrainsMono Nerd Font", monospace;
