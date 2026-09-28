@@ -56,10 +56,16 @@
       # Move between editor and agent.
       "alt+left" = "neighboring_window left";
       "alt+right" = "neighboring_window right";
+      "alt+l" = "neighboring_window left";
+      "alt+h" = "neighboring_window right";
+      "alt+k" = "neighboring_window up";
+      "alt+j" = "neighboring_window down";
 
       # Resize the focused side of the split.
       "alt+shift+left" = "resize_window narrower";
       "alt+shift+right" = "resize_window wider";
+      "alt+shift+l" = "resize_window narrower";
+      "alt+shift+h" = "resize_window wider";
 
       ## Unbind
       "ctrl+shift+left" = "no_op";

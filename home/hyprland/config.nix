@@ -26,9 +26,11 @@ in
       input = {
         numlock_by_default = true;
         repeat_delay = 300;
-        follow_mouse = 0;
+        # Sloppy focus: moving the pointer into a window focuses it without
+        # raising it or requiring a click.
+        follow_mouse = 1;
         float_switch_override_focus = 0;
-        mouse_refocus = 0;
+        mouse_refocus = 1;
         sensitivity = 0;
       };
 
@@ -60,11 +62,25 @@ in
       };
 
       general = {
-        gaps_in = 6;
-        gaps_out = 12;
+        gaps_in = 4;
+        gaps_out = 8;
         border_size = 2;
         "col.active_border" = "rgb(98971A) rgb(CC241D) 45deg";
         "col.inactive_border" = "0x00000000";
+      };
+
+      animations = {
+        enabled = true;
+        bezier = [
+          "quick, 0.2, 0.8, 0.2, 1.0"
+        ];
+        animation = [
+          "windows, 1, 2.5, quick"
+          "windowsOut, 1, 2, quick, popin 80%"
+          "border, 1, 2, quick"
+          "fade, 1, 2, quick"
+          "workspaces, 1, 2.5, quick, slide"
+        ];
       };
 
       binds = {
@@ -84,7 +100,8 @@ in
         ",Print, exec, grimblast --copy screen"
         "$mainMod SHIFT, S, exec, grimblast --freeze copy area"
 
-        # Arrow key focus — kept for when hands are off home row
+        # Helix navigation. This deliberately follows the user's Helix map:
+        # h = right, l = left, j = down, k = up.
         "$mainMod, left,  movefocus, l"
         "$mainMod, right, movefocus, r"
         "$mainMod, up,    movefocus, u"
@@ -93,6 +110,16 @@ in
         "$mainMod, H, movefocus, r"
         "$mainMod, K,    movefocus, u"
         "$mainMod, J,  movefocus, d"
+
+        "$mainMod SHIFT, L, movewindow, l"
+        "$mainMod SHIFT, H, movewindow, r"
+        "$mainMod SHIFT, K, movewindow, u"
+        "$mainMod SHIFT, J, movewindow, d"
+
+        "$mainMod CTRL, L, resizeactive, -80 0"
+        "$mainMod CTRL, H, resizeactive, 80 0"
+        "$mainMod CTRL, K, resizeactive, 0 -80"
+        "$mainMod CTRL, J, resizeactive, 0 80"
 
         # Arrow key move window
         "$mainMod SHIFT, left,  movewindow, l"

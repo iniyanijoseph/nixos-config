@@ -35,6 +35,10 @@
       /* display-Network: " Network"; */
       sidebar-mode: true;
       sorting-method: "fzf";
+      kb-row-up: "Up,Control+k";
+      kb-row-down: "Down,Control+j";
+      kb-mode-next: "Alt+h";
+      kb-mode-previous: "Alt+l";
     }
 
     @theme "theme"

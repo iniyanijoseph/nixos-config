@@ -108,10 +108,12 @@ in
         {
           on = "h";
           run = "enter";
+          desc = "Enter directory (Helix right)";
         }
         {
           on = "l";
           run = "leave";
+          desc = "Leave directory (Helix left)";
         }
       ];
     };

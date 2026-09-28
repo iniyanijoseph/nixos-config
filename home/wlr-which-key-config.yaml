@@ -62,11 +62,11 @@ menu:
     desc: "  focus"
     submenu:
       - key: "h"
-        desc: "  right"
+        desc: "  right (Helix h)"
         cmd: hyprctl dispatch movefocus r
         keep_open: true
       - key: "l"
-        desc: "  left"
+        desc: "  left (Helix l)"
         cmd: hyprctl dispatch movefocus l
         keep_open: true
       - key: "k"
@@ -82,11 +82,11 @@ menu:
     desc: "  move window"
     submenu:
       - key: "h"
-        desc: "  right"
+        desc: "  right (Helix h)"
         cmd: hyprctl dispatch movewindow r
         keep_open: true
       - key: "l"
-        desc: "  left"
+        desc: "  left (Helix l)"
         cmd: hyprctl dispatch movewindow l
         keep_open: true
       - key: "k"
@@ -265,3 +265,25 @@ menu:
       - key: "p"
         desc: "  poweroff"
         cmd: systemctl poweroff
+
+  - key: "?"
+    desc: "  help / shortcuts"
+    submenu:
+      - key: "n"
+        desc: "  navigation: h right · j down · k up · l left"
+        cmd: "notify-send 'Helix navigation' 'h right  ·  j down  ·  k up  ·  l left'"
+      - key: "w"
+        desc: "  windows: Super+hjkl focus · +Shift move · +Ctrl resize"
+        cmd: "notify-send 'Window shortcuts' 'Super+hjkl focus\nSuper+Shift+hjkl move\nSuper+Ctrl+hjkl resize'"
+      - key: "a"
+        desc: "  apps: Super+Return terminal · Super+d launcher"
+        cmd: "notify-send 'Application shortcuts' 'Super+Return terminal\nSuper+d launcher\nSuper+n notifications'"
+      - key: "k"
+        desc: "  Kitty: Alt+hjkl focus split · Alt+Shift+h/l resize"
+        cmd: "notify-send 'Kitty shortcuts' 'Alt+hjkl focus split\nAlt+Shift+h/l resize\nAlt+a open Codex split'"
+      - key: "y"
+        desc: "  Yazi: ? built-in help · h enter · l leave"
+        cmd: "notify-send 'Yazi shortcuts' '? built-in help\nh enter directory · l leave directory\nCtrl+n drag selection'"
+      - key: "e"
+        desc: "  editors: Space opens Helix command groups"
+        cmd: "notify-send 'Editor shortcuts' 'Helix is selection-first. Space opens commands; ? opens command help.'"

@@ -1,5 +1,17 @@
 { inputs, pkgs, ... }:
 {
+  programs.qutebrowser = {
+    enable = true;
+    keyBindings.normal = {
+      # Match the user's Helix direction map while leaving arrow keys intact.
+      "h" = "scroll right";
+      "l" = "scroll left";
+      "j" = "scroll down";
+      "k" = "scroll up";
+      "?" = "open qute://help/";
+    };
+  };
+
   programs.firefox = {
     enable = true;
     # Pin to current behavior explicitly (silences the 26.05 default-change
@@ -124,5 +136,5 @@
     };
   };
 
-  home.packages = with pkgs; [ openconnect qutebrowser ];
+  home.packages = with pkgs; [ openconnect ];
 }
