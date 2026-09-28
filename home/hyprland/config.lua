@@ -71,6 +71,12 @@ pcall(hl.config, {
     },
     animations = { enabled = true },
     binds = { movefocus_cycles_fullscreen = true },
+    misc = {
+        -- If a workspace currently has a maximized/fullscreen tiled window,
+        -- opening another tiled window should immediately restore normal
+        -- tiling instead of leaving the new window effectively full-screen.
+        new_window_takes_over_fullscreen = 2,
+    },
     xwayland = { force_zero_scaling = true },
 })
 
