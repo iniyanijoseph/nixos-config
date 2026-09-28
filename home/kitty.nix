@@ -24,6 +24,9 @@
       enable_audio_bell = false;
       mouse_hide_wait = 60;
       window_padding_width = 5;
+      remember_window_size = true;
+      initial_window_width = "120c";
+      initial_window_height = "34c";
 
       # Side-by-side terminal windows. Alt+A turns the current Kitty tab into
       # a lightweight Helix + Codex IDE.

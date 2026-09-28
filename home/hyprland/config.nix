@@ -31,7 +31,7 @@ in
         follow_mouse = 1;
         float_switch_override_focus = 0;
         mouse_refocus = 1;
-        sensitivity = 0;
+        sensitivity = 0.35;
       };
 
       decoration = {
@@ -62,8 +62,8 @@ in
       };
 
       general = {
-        gaps_in = 4;
-        gaps_out = 8;
+        gaps_in = 3;
+        gaps_out = 6;
         border_size = 2;
         "col.active_border" = "rgb(98971A) rgb(CC241D) 45deg";
         "col.inactive_border" = "0x00000000";
@@ -178,6 +178,15 @@ in
 
         "$mainMod, mouse_down, workspace, e-1"
         "$mainMod, mouse_up,   workspace, e+1"
+      ];
+
+      # A terminal should open as a centered working window rather than
+      # consuming an otherwise empty workspace. It can still be tiled with
+      # Super+Space -> window -> float.
+      windowrulev2 = [
+        "float,class:^(kitty)$"
+        "size 80% 80%,class:^(kitty)$"
+        "center,class:^(kitty)$"
       ];
 
       source = "~/.config/hypr/monitors.conf";

@@ -35,6 +35,10 @@
       /* display-Network: " Network"; */
       sidebar-mode: true;
       sorting-method: "fzf";
+      /* Ctrl+j and Ctrl+k are Rofi defaults for accept-entry and
+         remove-to-eol. Clear those assignments before reusing the keys. */
+      kb-accept-entry: "Control+m,Return,KP_Enter";
+      kb-remove-to-eol: "";
       kb-row-up: "Up,Control+k";
       kb-row-down: "Down,Control+j";
       kb-mode-next: "Alt+h";

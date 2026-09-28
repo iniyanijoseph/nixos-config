@@ -1,4 +1,21 @@
 { inputs, pkgs, ... }:
+let
+  surfingkeysConfig = ./surfingkeys.js;
+  surfingkeysSetup = pkgs.writeShellApplication {
+    name = "surfingkeys-setup";
+    runtimeInputs = [
+      pkgs.firefox
+      pkgs.libnotify
+      pkgs.wl-clipboard
+    ];
+    text = ''
+      wl-copy < ${surfingkeysConfig}
+      firefox about:addons >/dev/null 2>&1 &
+      notify-send "Surfingkeys configuration copied" \
+        "Open Surfingkeys Preferences, paste into the editor, then save."
+    '';
+  };
+in
 {
   programs.qutebrowser = {
     enable = true;
@@ -14,6 +31,12 @@
 
   programs.firefox = {
     enable = true;
+    policies.ExtensionSettings = {
+      "{a8332c60-5b6d-41ee-bfc8-e9bb331d34ad}" = {
+        installation_mode = "force_installed";
+        install_url = "https://addons.mozilla.org/firefox/downloads/latest/surfingkeys_ff/latest.xpi";
+      };
+    };
     # Pin to current behavior explicitly (silences the 26.05 default-change
     # warning - avoids needing to migrate ~/.mozilla/firefox to the XDG path).
     configPath = ".mozilla/firefox";
@@ -136,5 +159,12 @@
     };
   };
 
-  home.packages = with pkgs; [ openconnect ];
+  # Surfingkeys keeps its active snippet in Firefox extension storage, so the
+  # declarative source is also installed as a normal file for easy import.
+  xdg.configFile."surfingkeys/config.js".source = surfingkeysConfig;
+
+  home.packages = [
+    pkgs.openconnect
+    surfingkeysSetup
+  ];
 }
