@@ -36,7 +36,21 @@ in
         installation_mode = "force_installed";
         install_url = "https://addons.mozilla.org/firefox/downloads/latest/surfingkeys_ff/latest.xpi";
       };
+      "newtaboverride@agenedia.com" = {
+        installation_mode = "force_installed";
+        install_url = "https://addons.mozilla.org/firefox/downloads/latest/new-tab-override/latest.xpi";
+      };
     };
+
+    # Firefox's built-in about:newtab is privileged, so Surfingkeys cannot run
+    # there. Redirect new tabs to a normal page and focus the page so the
+    # keyboard layer is active immediately.
+    policies."3rdparty".Extensions."newtaboverride@agenedia.com" = {
+      type = "custom_url";
+      url = "https://www.google.com/";
+      focus_website = true;
+    };
+
     # Pin to current behavior explicitly (silences the 26.05 default-change
     # warning - avoids needing to migrate ~/.mozilla/firefox to the XDG path).
     configPath = ".mozilla/firefox";
