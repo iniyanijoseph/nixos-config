@@ -26,7 +26,7 @@ pcall(hl.config, {
         -- makes slow and fast physical motions scale consistently.
         accel_profile = "flat",
         force_no_accel = false,
-        sensitivity = 0.35,
+        sensitivity = 0.70,
     },
     decoration = {
         rounding = 0,
