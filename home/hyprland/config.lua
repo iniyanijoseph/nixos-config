@@ -19,7 +19,6 @@ pcall(hl.config, {
         follow_mouse = 1,
         float_switch_override_focus = 0,
         mouse_refocus = true,
-        layers_hog_keyboard_focus = true,
 
         -- Use libinput's device-aware adaptive curve, but keep it milder than
         -- the previous +0.35 setting. A flat profile felt heavy/laggy because
@@ -27,6 +26,9 @@ pcall(hl.config, {
         accel_profile = "adaptive",
         force_no_accel = false,
         sensitivity = 0.15,
+    },
+    misc = {
+        layers_hog_keyboard_focus = true,
     },
     cursor = {
         -- Prefer a hardware cursor instead of Hyprland's auto switching.
