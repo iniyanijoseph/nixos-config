@@ -14,6 +14,6 @@
   home.activation.migrateHyprlandDisplayFiles =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       ${pkgs.python3}/bin/python ${./migrate-displays.py} \
-        "${config.home.homeDirectory}/.config/hypr"
+        "${config.xdg.configHome}/hypr"
     '';
 }

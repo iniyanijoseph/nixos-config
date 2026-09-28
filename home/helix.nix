@@ -1,6 +1,57 @@
 {pkgs, ...}:
+let
+  doc-preview = pkgs.writeShellApplication {
+    name = "doc-preview";
+    runtimeInputs = with pkgs; [
+      coreutils
+      pandoc
+      xdg-utils
+      zathura
+    ];
+    text = ''
+      if [ "$#" -ne 1 ] || [ -z "$1" ]; then
+        echo "usage: doc-preview FILE" >&2
+        exit 2
+      fi
+
+      source_file="$1"
+      case "$source_file" in
+        *.md|*.markdown)
+          cache_dir="''${XDG_CACHE_HOME:-$HOME/.cache}/helix-preview"
+          mkdir -p "$cache_dir"
+          digest="$(printf '%s' "$source_file" | sha256sum | cut -d' ' -f1)"
+          output_file="$cache_dir/$digest.html"
+          pandoc --standalone --mathjax --metadata title="$(basename "$source_file")" \
+            "$source_file" --output "$output_file"
+          xdg-open "$output_file" >/dev/null 2>&1 &
+          ;;
+        *.tex)
+          source_dir="$(dirname "$source_file")"
+          source_name="$(basename "$source_file")"
+          pdf_file="$source_dir/''${source_name%.tex}.pdf"
+          (cd "$source_dir" && latexmk -pdf -interaction=nonstopmode -synctex=1 "$source_name")
+          zathura "$pdf_file" >/dev/null 2>&1 &
+          ;;
+        *)
+          echo "doc-preview supports Markdown and LaTeX files" >&2
+          exit 2
+          ;;
+      esac
+    '';
+  };
+in
 {
-  home.packages = with pkgs; [ micro vscodium];
+  home.packages = with pkgs; [
+    micro
+    vscodium
+    marksman
+    markdown-oxide
+    texlab
+    zathura
+    glow
+    pandoc
+    doc-preview
+  ];
   programs.helix = {
     enable = true;
     defaultEditor = true;
@@ -17,6 +68,7 @@
         space.w = ":w";
         space.x = ":x";
         space.r = ":reload-all";
+        space.p = [ ":w" ":sh doc-preview \"%{buffer_name}\"" ];
         pageup = "no_op";
         home = "no_op";
         end = "no_op";
@@ -37,6 +89,7 @@
       keys.select= {
         space.w = ":w";
         space.x = ":x";
+        space.p = [ ":w" ":sh doc-preview \"%{buffer_name}\"" ];
         pageup = "no_op";
         home = "no_op";
         end = "no_op";
@@ -64,16 +117,61 @@
 
     languages = {
       language = [
-      {
-        name = "typst";
-        language-servers = ["tinymist" "harper-ls"];
-      }
-
+        {
+          name = "typst";
+          language-servers = [ "tinymist" "harper-ls" ];
+        }
+        {
+          name = "markdown";
+          language-servers = [ "markdown-oxide" "harper-ls" ];
+          text-width = 88;
+          soft-wrap = {
+            enable = true;
+            wrap-at-text-width = true;
+          };
+        }
+        {
+          name = "latex";
+          language-servers = [ "texlab" "harper-ls" ];
+        }
+        {
+          name = "bibtex";
+          language-servers = [ "texlab" ];
+        }
       ];
 
       language-server.harper-ls = {
         command = "harper-ls";
         args = ["--stdio"];
+      };
+
+      language-server.markdown-oxide = {
+        command = "markdown-oxide";
+      };
+
+      language-server.texlab = {
+        command = "texlab";
+        config.texlab = {
+          build = {
+            executable = "latexmk";
+            args = [
+              "-pdf"
+              "-interaction=nonstopmode"
+              "-synctex=1"
+              "%f"
+            ];
+            onSave = true;
+            forwardSearchAfter = true;
+          };
+          forwardSearch = {
+            executable = "zathura";
+            args = [ "--synctex-forward" "%l:1:%f" "%p" ];
+          };
+          chktex = {
+            onOpenAndSave = true;
+            onEdit = true;
+          };
+        };
       };
 
       # language-server.llm-lsp = {

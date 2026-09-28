@@ -3,17 +3,16 @@ local terminal = "kitty"
 local mail = "thunderbird"
 local mainMod = "SUPER"
 
--- nwg-displays' exact output rules are loaded after this new-machine fallback
--- and therefore take precedence over the wildcard.
-hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1.2 })
-if package.searchpath("monitors", package.path) then
-    require("monitors")
-end
-if package.searchpath("workspaces", package.path) then
-    require("workspaces")
-end
+-- Use an unscaled fallback when nwg-displays has not produced a rule yet.
+-- Its exact output rules are loaded afterward and take precedence.
+hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1.0 })
+local configHome = os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")
+pcall(dofile, configHome .. "/hypr/monitors.lua")
+pcall(dofile, configHome .. "/hypr/workspaces.lua")
 
-hl.config({
+-- Keep a bad appearance option from preventing every keybinding below from
+-- being registered. Hyprland reports the offending option in config errors.
+pcall(hl.config, {
     input = {
         numlock_by_default = true,
         repeat_delay = 300,
@@ -63,51 +62,63 @@ hl.config({
     xwayland = { force_zero_scaling = true },
 })
 
-hl.curve("quick", {
-    type = "bezier",
-    points = { { 0.2, 0.8 }, { 0.2, 1.0 } },
-})
-hl.animation({ leaf = "windows", enabled = true, speed = 2.5, bezier = "quick" })
-hl.animation({ leaf = "windowsOut", enabled = true, speed = 2, bezier = "quick", style = "popin 80%" })
-hl.animation({ leaf = "border", enabled = true, speed = 2, bezier = "quick" })
-hl.animation({ leaf = "fade", enabled = true, speed = 2, bezier = "quick" })
-hl.animation({ leaf = "workspaces", enabled = true, speed = 2.5, bezier = "quick", style = "slide" })
+pcall(function()
+    hl.curve("quick", {
+        type = "bezier",
+        points = { { 0.2, 0.8 }, { 0.2, 1.0 } },
+    })
+    hl.animation({ leaf = "windows", enabled = true, speed = 2.5, bezier = "quick" })
+    hl.animation({ leaf = "windowsOut", enabled = true, speed = 2, bezier = "quick", style = "popin 80%" })
+    hl.animation({ leaf = "border", enabled = true, speed = 2, bezier = "quick" })
+    hl.animation({ leaf = "fade", enabled = true, speed = 2, bezier = "quick" })
+    hl.animation({ leaf = "workspaces", enabled = true, speed = 2.5, bezier = "quick", style = "slide" })
+end)
 
-hl.on("hyprland.start", function()
-    hl.exec_cmd("swaybg -i /home/wug/Pictures/wallpaper.jpg")
-    hl.exec_cmd("nm-applet")
-    hl.exec_cmd("poweralertd")
-    hl.exec_cmd("wl-clip-persist --clipboard both")
-    hl.exec_cmd("wl-paste --watch cliphist store")
-    hl.exec_cmd("swaync")
-    hl.exec_cmd("hyprctl setcursor Bibata-Modern-Ice 24")
-    hl.exec_cmd("waybar")
-    hl.exec_cmd(browser, { workspace = "2 silent" })
-    hl.exec_cmd(mail, { workspace = "1 silent" })
+pcall(hl.on, "hyprland.start", function()
+    pcall(hl.exec_cmd, "swaybg -i /home/wug/Pictures/wallpaper.jpg")
+    pcall(hl.exec_cmd, "nm-applet")
+    pcall(hl.exec_cmd, "poweralertd")
+    pcall(hl.exec_cmd, "wl-clip-persist --clipboard both")
+    pcall(hl.exec_cmd, "wl-paste --watch cliphist store")
+    pcall(hl.exec_cmd, "swaync")
+    pcall(hl.exec_cmd, "hyprctl setcursor Bibata-Modern-Ice 24")
+    pcall(hl.exec_cmd, "waybar")
+    pcall(hl.exec_cmd, browser, { workspace = "2 silent" })
+    pcall(hl.exec_cmd, mail, { workspace = "1 silent" })
 end)
 
 local function run(key, command, options)
-    hl.bind(key, hl.dsp.exec_cmd(command), options)
+    pcall(function()
+        hl.bind(key, hl.dsp.exec_cmd(command), options)
+    end)
 end
 
 local function focus(key, direction)
-    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ direction = direction }))
+    pcall(function()
+        hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ direction = direction }))
+    end)
 end
 
 local function move(key, direction)
-    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }))
+    pcall(function()
+        hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ direction = direction }))
+    end)
 end
 
 local function resize(key, x, y)
-    hl.bind(mainMod .. " + CTRL + " .. key, hl.dsp.window.resize({
-        x = x,
-        y = y,
-        relative = true,
-    }))
+    pcall(function()
+        hl.bind(mainMod .. " + CTRL + " .. key, hl.dsp.window.resize({
+            x = x,
+            y = y,
+            relative = true,
+        }))
+    end)
 end
 
 run(mainMod .. " + Return", terminal)
-hl.bind(mainMod .. " + Q", hl.dsp.window.close())
+pcall(function()
+    hl.bind(mainMod .. " + Q", hl.dsp.window.close())
+end)
 run(mainMod .. " + D", "rofi -show drun || pkill rofi")
 run(mainMod .. " + Escape", "swaylock")
 run(mainMod .. " + N", "swaync-client -t -sw")
@@ -145,11 +156,13 @@ resize("down", 0, 80)
 
 for workspace = 1, 10 do
     local key = workspace % 10
-    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = workspace }))
-    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({
-        workspace = workspace,
-        follow = false,
-    }))
+    pcall(function()
+        hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = workspace }))
+        hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({
+            workspace = workspace,
+            follow = false,
+        }))
+    end)
 end
 
 run("XF86AudioPlay", "playerctl play-pause")
@@ -168,8 +181,10 @@ run("code:164", terminal .. " yazi")
 run("code:148", terminal .. " yazi")
 run("code:180", browser)
 
-hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e-1" }))
-hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ workspace = "e+1" }))
+pcall(function()
+    hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e-1" }))
+    hl.bind(mainMod .. " + mouse_up", hl.dsp.focus({ workspace = "e+1" }))
+end)
 
 local repeatOptions = { repeating = true }
 run("XF86AudioRaiseVolume", "pamixer -i 2", repeatOptions)
@@ -177,7 +192,7 @@ run("XF86AudioLowerVolume", "pamixer -d 2", repeatOptions)
 run("XF86MonBrightnessUp", "brightnessctl set 5%+", repeatOptions)
 run("XF86MonBrightnessDown", "brightnessctl set 5%-", repeatOptions)
 
-hl.window_rule({
+pcall(hl.window_rule, {
     name = "kitty-floating",
     match = { class = "^kitty$" },
     float = true,
