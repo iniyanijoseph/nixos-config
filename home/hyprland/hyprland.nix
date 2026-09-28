@@ -15,9 +15,9 @@
 
     xwayland.enable = true;
 
-    # Pin to current behavior explicitly (silences the 26.05
-    # default-change warning without changing anything).
-    configType = "hyprlang";
+    # Hyprland 0.56's native configuration API. Home Manager generates the
+    # hyprland.lua entry point and loads the declarative modules from it.
+    configType = "lua";
   };
 
   services.cliphist.enable = true;
