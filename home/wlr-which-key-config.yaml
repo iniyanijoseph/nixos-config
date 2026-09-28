@@ -44,38 +44,38 @@ menu:
     submenu:
       - key: "q"
         desc: "  close"
-        cmd: hyprctl dispatch killactive
+        cmd: "hyprctl dispatch 'hl.dsp.window.close()'"
       - key: "f"
         desc: "  fullscreen"
-        cmd: hyprctl dispatch fullscreen 0
+        cmd: "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"fullscreen\", action = \"toggle\" })'"
       - key: "m"
         desc: "  maximize"
-        cmd: hyprctl dispatch fullscreen 1
+        cmd: "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"toggle\" })'"
       - key: "t"
         desc: "  float"
-        cmd: hyprctl dispatch togglefloating
+        cmd: "hyprctl dispatch 'hl.dsp.window.float({ action = \"toggle\" })'"
       - key: "c"
         desc: "  move to empty"
-        cmd: hyprctl dispatch movetoworkspace empty
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = \"empty\" })'"
 
   - key: "f"
     desc: "  focus"
     submenu:
       - key: "h"
         desc: "  right"
-        cmd: hyprctl dispatch movefocus r
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ direction = \"right\" })'"
         keep_open: true
       - key: "l"
         desc: "  left"
-        cmd: hyprctl dispatch movefocus l
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ direction = \"left\" })'"
         keep_open: true
       - key: "k"
         desc: "  up"
-        cmd: hyprctl dispatch movefocus u
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ direction = \"up\" })'"
         keep_open: true
       - key: "j"
         desc: "  down"
-        cmd: hyprctl dispatch movefocus d
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ direction = \"down\" })'"
         keep_open: true
 
   - key: "m"
@@ -83,19 +83,19 @@ menu:
     submenu:
       - key: "h"
         desc: "  right"
-        cmd: hyprctl dispatch movewindow r
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ direction = \"right\" })'"
         keep_open: true
       - key: "l"
         desc: "  left"
-        cmd: hyprctl dispatch movewindow l
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ direction = \"left\" })'"
         keep_open: true
       - key: "k"
         desc: "  up"
-        cmd: hyprctl dispatch movewindow u
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ direction = \"up\" })'"
         keep_open: true
       - key: "j"
         desc: "  down"
-        cmd: hyprctl dispatch movewindow d
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ direction = \"down\" })'"
         keep_open: true
 
   - key: "M"
@@ -103,19 +103,19 @@ menu:
     submenu:
       - key: "h"
         desc: "  right"
-        cmd: hyprctl dispatch moveactive 80 0
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ x = 80, y = 0, relative = true })'"
         keep_open: true
       - key: "l"
         desc: "  left"
-        cmd: hyprctl dispatch moveactive -80 0
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ x = -80, y = 0, relative = true })'"
         keep_open: true
       - key: "k"
         desc: "  up"
-        cmd: hyprctl dispatch moveactive 0 -80
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ x = 0, y = -80, relative = true })'"
         keep_open: true
       - key: "j"
         desc: "  down"
-        cmd: hyprctl dispatch moveactive 0 80
+        cmd: "hyprctl dispatch 'hl.dsp.window.move({ x = 0, y = 80, relative = true })'"
         keep_open: true
 
   - key: "r"
@@ -123,19 +123,19 @@ menu:
     submenu:
       - key: "h"
         desc: "  right +"
-        cmd: hyprctl dispatch resizeactive 80 0
+        cmd: "hyprctl dispatch 'hl.dsp.window.resize({ x = 80, y = 0, relative = true })'"
         keep_open: true
       - key: "l"
         desc: "  left +"
-        cmd: hyprctl dispatch resizeactive -80 0
+        cmd: "hyprctl dispatch 'hl.dsp.window.resize({ x = -80, y = 0, relative = true })'"
         keep_open: true
       - key: "k"
         desc: "  up"
-        cmd: hyprctl dispatch resizeactive 0 -80
+        cmd: "hyprctl dispatch 'hl.dsp.window.resize({ x = 0, y = -80, relative = true })'"
         keep_open: true
       - key: "j"
         desc: "  down"
-        cmd: hyprctl dispatch resizeactive 0 80
+        cmd: "hyprctl dispatch 'hl.dsp.window.resize({ x = 0, y = 80, relative = true })'"
         keep_open: true
 
   - key: "W"
@@ -143,61 +143,61 @@ menu:
     submenu:
       - key: "1"
         desc: "  go to 1"
-        cmd: hyprctl dispatch workspace 1
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 1 })'"
       - key: "2"
         desc: "  go to 2"
-        cmd: hyprctl dispatch workspace 2
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 2 })'"
       - key: "3"
         desc: "  go to 3"
-        cmd: hyprctl dispatch workspace 3
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 3 })'"
       - key: "4"
         desc: "  go to 4"
-        cmd: hyprctl dispatch workspace 4
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 4 })'"
       - key: "5"
         desc: "  go to 5"
-        cmd: hyprctl dispatch workspace 5
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 5 })'"
       - key: "6"
         desc: "  go to 6"
-        cmd: hyprctl dispatch workspace 6
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 6 })'"
       - key: "7"
         desc: "  go to 7"
-        cmd: hyprctl dispatch workspace 7
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 7 })'"
       - key: "8"
         desc: "  go to 8"
-        cmd: hyprctl dispatch workspace 8
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 8 })'"
       - key: "9"
         desc: "  go to 9"
-        cmd: hyprctl dispatch workspace 9
+        cmd: "hyprctl dispatch 'hl.dsp.focus({ workspace = 9 })'"
       - key: "m"
         desc: "  move window to"
         submenu:
           - key: "1"
             desc: "  ws 1"
-            cmd: hyprctl dispatch movetoworkspacesilent 1
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 1, follow = false })'"
           - key: "2"
             desc: "  ws 2"
-            cmd: hyprctl dispatch movetoworkspacesilent 2
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 2, follow = false })'"
           - key: "3"
             desc: "  ws 3"
-            cmd: hyprctl dispatch movetoworkspacesilent 3
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 3, follow = false })'"
           - key: "4"
             desc: "  ws 4"
-            cmd: hyprctl dispatch movetoworkspacesilent 4
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 4, follow = false })'"
           - key: "5"
             desc: "  ws 5"
-            cmd: hyprctl dispatch movetoworkspacesilent 5
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 5, follow = false })'"
           - key: "6"
             desc: "  ws 6"
-            cmd: hyprctl dispatch movetoworkspacesilent 6
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 6, follow = false })'"
           - key: "7"
             desc: "  ws 7"
-            cmd: hyprctl dispatch movetoworkspacesilent 7
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 7, follow = false })'"
           - key: "8"
             desc: "  ws 8"
-            cmd: hyprctl dispatch movetoworkspacesilent 8
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 8, follow = false })'"
           - key: "9"
             desc: "  ws 9"
-            cmd: hyprctl dispatch movetoworkspacesilent 9
+            cmd: "hyprctl dispatch 'hl.dsp.window.move({ workspace = 9, follow = false })'"
 
   - key: "v"
     desc: "  volume"
@@ -258,7 +258,7 @@ menu:
         cmd: swaylock
       - key: "e"
         desc: "  exit"
-        cmd: hyprctl dispatch exit
+        cmd: "hyprctl dispatch 'hl.dsp.exit()'"
       - key: "r"
         desc: "  reboot"
         cmd: systemctl reboot
