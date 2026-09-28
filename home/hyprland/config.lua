@@ -139,7 +139,7 @@ run(mainMod .. " + Space", "wlr-which-key")
 run("Print", "grimblast --copy screen")
 run(mainMod .. " + SHIFT + S", "grimblast --freeze copy area")
 
--- Helix navigation: h = right, l = left, j = down, k = up.
+-- Directional navigation: h = right, l = left, j = down, k = up.
 focus("left", "left")
 focus("right", "right")
 focus("up", "up")
