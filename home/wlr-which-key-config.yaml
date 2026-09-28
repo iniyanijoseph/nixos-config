@@ -82,11 +82,11 @@ menu:
     desc: "  move window"
     submenu:
       - key: ["h", "Mod4+h"]
-        desc: "  right (Helix h)"
+        desc: "  right"
         cmd: hyprctl dispatch movewindow r
         keep_open: true
       - key: ["l", "Mod4+l"]
-        desc: "  left (Helix l)"
+        desc: "  left"
         cmd: hyprctl dispatch movewindow l
         keep_open: true
       - key: ["k", "Mod4+k"]
