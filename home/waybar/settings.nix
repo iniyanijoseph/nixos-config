@@ -59,7 +59,6 @@ in
       active-only = false;
       disable-scroll = true;
       format = "{icon}";
-      on-click = "activate";
       format-icons = {
         "1" = "I";
         "2" = "II";
