@@ -94,6 +94,16 @@ pcall(function()
         match = { class = "^(cinny|Cinny|in\\.cinny\\.app)$" },
         workspace = "1",
         float = false,
+        tile = true,
+
+        -- Cinny/Tauri can restore its previous maximized/fullscreen state.
+        -- Start with neither compositor nor client fullscreen state set, and
+        -- ignore those startup requests. Explicit user fullscreen/maximize
+        -- commands still work after the window has opened.
+        fullscreen = false,
+        maximize = false,
+        fullscreen_state = "0 0",
+        suppress_event = "fullscreen maximize",
     })
 end)
 
