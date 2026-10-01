@@ -23,7 +23,7 @@
   # activation so window/workspace changes take effect immediately.
   home.activation.reloadHyprland =
     lib.hm.dag.entryAfter [ "migrateHyprlandDisplayFiles" ] ''
-      runtime="${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+      runtime="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
       if [ -d "$runtime/hypr" ]; then
         for instance_dir in "$runtime"/hypr/*; do
           if [ -S "$instance_dir/.socket.sock" ]; then
