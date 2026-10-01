@@ -197,11 +197,11 @@
     enable = true;
     settings = {
       initial_session = {
-        command = "hyprland";
+        command = "${pkgs.hyprland}/bin/start-hyprland";
         user = "wug";
       };
       default_session = {
-        command = "${tuigreet} --greeting 'Hello!' --asterisks --remember --remember-user-session --time --cmd hyprland";
+        command = "${tuigreet} --greeting 'Hello!' --asterisks --remember --remember-user-session --time --cmd ${pkgs.hyprland}/bin/start-hyprland";
         user = "greeter";
       };
     };    
