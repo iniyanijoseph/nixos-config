@@ -74,19 +74,42 @@ pcall(hl.config, {
     xwayland = { force_zero_scaling = true },
 })
 
--- Cinny remembers/requests a maximized or fullscreen state at startup.
--- Keep the compositor authoritative: start it tiled with no client fullscreen
--- state, while still allowing explicit Hyprland fullscreen/maximize commands.
+-- Cinny's Linux window class is normally "cinny" (the Tauri bundle id
+-- can also appear on some builds). Ignore its startup maximize/fullscreen
+-- request and force the initial compositor/client fullscreen state to none.
 pcall(function()
     hl.window_rule({
         name = "cinny-start-tiled",
-        match = { class = "^(in\\.cinny\\.app|Cinny)$" },
+        match = { class = "^(cinny|Cinny|in\\.cinny\\.app)$" },
         tile = true,
         fullscreen = false,
         maximize = false,
         fullscreen_state = "0 0",
         suppress_event = "fullscreen maximize",
     })
+end)
+
+-- Be defensive against Cinny changing/advertising its class after mapping:
+-- once the fully initialized window opens, explicitly put it back in the
+-- normal tiled/non-fullscreen state. This runs only at window creation, so
+-- later user-requested fullscreen/maximize still works normally.
+pcall(hl.on, "window.open", function(w)
+    local class = string.lower(w.class or "")
+    local title = string.lower(w.title or "")
+    if class ~= "cinny" and class ~= "in.cinny.app" and title ~= "cinny" then
+        return
+    end
+
+    pcall(function()
+        hl.dispatch(hl.dsp.window.float({ action = "unset", window = w }))
+        hl.dispatch(hl.dsp.window.fullscreen_state({
+            internal = 0,
+            client = 0,
+            action = "set",
+            layout_aware = false,
+            window = w,
+        }))
+    end)
 end)
 
 pcall(function()
