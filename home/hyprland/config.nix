@@ -16,4 +16,25 @@
       ${pkgs.python3}/bin/python ${./migrate-displays.py} \
         "${config.xdg.configHome}/hypr"
     '';
+
+  # Home Manager updates the Lua config on disk, but the running compositor
+  # otherwise keeps the old rules until it is explicitly reloaded. Find the
+  # active Hyprland instance from its runtime socket and reload it after each
+  # activation so window/workspace changes take effect immediately.
+  home.activation.reloadHyprland =
+    lib.hm.dag.entryAfter [ "migrateHyprlandDisplayFiles" ] ''
+      runtime="${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+      if [ -d "$runtime/hypr" ]; then
+        for instance_dir in "$runtime"/hypr/*; do
+          if [ -S "$instance_dir/.socket.sock" ]; then
+            signature="$(${pkgs.coreutils}/bin/basename "$instance_dir")"
+            XDG_RUNTIME_DIR="$runtime" \
+            HYPRLAND_INSTANCE_SIGNATURE="$signature" \
+              ${pkgs.hyprland}/bin/hyprctl reload >/dev/null 2>&1 || true
+            break
+          fi
+        done
+      fi
+    '';
+
 }
