@@ -9,7 +9,7 @@ let
     # expects. We do not use the cava module, so disabling it keeps this
     # source-only downgrade small and avoids the mismatched vendored source.
     cavaSupport = false;
-  }).overrideAttrs (_: rec {
+  }).overrideAttrs (old: rec {
     version = "0.14.0";
     src = pkgs.fetchFromGitHub {
       owner = "Alexays";
@@ -17,6 +17,16 @@ let
       tag = version;
       hash = "sha256-mGiBZjfvtZZkSHrha4UF2l1Ogbij8J//r2h4gcZAJ6w=";
     };
+
+    # Hyprland's Lua config provider no longer accepts Waybar's legacy
+    # "dispatch workspace N" IPC string. Patch numeric workspace clicks to
+    # use the Lua dispatcher form that this Hyprland configuration expects.
+    postPatch = (old.postPatch or "") + ''
+      substituteInPlace src/modules/hyprland/workspace.cpp \
+        --replace-fail \
+          'm_ipc.getSocket1Reply("dispatch workspace " + std::to_string(id()));' \
+          'm_ipc.getSocket1Reply("dispatch hl.dsp.focus({ workspace = " + std::to_string(id()) + " })");'
+    '';
   });
 in
 {
