@@ -22,13 +22,24 @@
     box-shadow: none;
 }
 
-/* Scrollbar */
-scrollbar,
-scrollbar slider {
-    opacity: 0;
-    min-width: 0px;
-    min-height: 0px;
+/* Scrollbars: keep notification history visibly scrollable. */
+scrollbar {
+    min-width: 8px;
+    min-height: 8px;
     background: transparent;
+}
+
+scrollbar slider {
+    min-width: 5px;
+    min-height: 28px;
+    background: var(--border-color);
+    opacity: 0.65;
+    border-radius: 0px;
+}
+
+scrollbar slider:hover {
+    opacity: 1.0;
+    background: var(--text-primary);
 }
 
 /* Common button styles */
@@ -431,15 +442,34 @@ scrollbar slider {
     color: var(--text-disabled);
 }
 
-/* Buttons widget */
+/* Quick controls */
 .widget-buttons-grid {
-    padding: 8px;
-    margin: 8px;
+    padding: 4px 8px 8px 8px;
+    margin: 0 4px;
     border-radius: 0px;
 }
 
+.widget-buttons-grid flowboxchild {
+    padding: 3px;
+}
+
 .widget-buttons-grid flowboxchild>button {
+    min-height: 36px;
+    padding: 4px 8px;
     border-radius: 0px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: none;
+}
+
+.widget-buttons-grid flowboxchild>button:hover {
+    background: var(--bg-button);
+}
+
+.widget-buttons-grid flowboxchild>button.active {
+    background: #3c441f;
+    border-color: #98971A;
 }
 
 /* Menubar widget */
@@ -508,4 +538,28 @@ scrollbar slider {
 
 .widget-inhibitors>button {
     margin: 8px;
+}
+
+/* Keep the history visually distinct and give it the remaining panel space. */
+.widget-notifications {
+    margin: 4px 8px 8px 8px;
+}
+
+.widget-inhibitors {
+    margin: 4px 8px;
+}
+
+.widget-inhibitors > label {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.widget-inhibitors > button {
+    margin: 4px 0;
+    padding: 2px 8px;
+    border-radius: 0px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
