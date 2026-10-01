@@ -33,7 +33,9 @@
   "widgets": [
     "title",
     "buttons-grid#quick",
+    "menubar#desktop",
     "volume",
+    "backlight#mobile",
     "mpris",
     "dnd",
     "inhibitors",
@@ -97,6 +99,56 @@
       "text": "Notification Inhibitors",
       "clear-all-button": true,
       "button-text": "Clear"
+    },
+    "menubar#desktop": {
+      "menu#tools": {
+        "label": " ⚙ ",
+        "position": "left",
+        "actions": [
+          {
+            "label": "  Network",
+            "command": "nm-connection-editor"
+          },
+          {
+            "label": "󰂯  Bluetooth",
+            "command": "blueman-manager"
+          },
+          {
+            "label": "󰍹  Audio",
+            "command": "pavucontrol"
+          },
+          {
+            "label": "󰍺  Displays",
+            "command": "nwg-displays"
+          }
+        ]
+      },
+      "menu#power-buttons": {
+        "label": " ⏻ ",
+        "position": "left",
+        "actions": [
+          {
+            "label": "  Lock",
+            "command": "swaylock"
+          },
+          {
+            "label": "󰤄  Suspend",
+            "command": "systemctl suspend"
+          },
+          {
+            "label": "󰜉  Reboot",
+            "command": "systemctl reboot"
+          },
+          {
+            "label": "⏻  Shut down",
+            "command": "systemctl poweroff"
+          }
+        ]
+      }
+    },
+    "backlight#mobile": {
+      "label": " 󰃟 ",
+      "device": "panel"
     }
   }
 }
