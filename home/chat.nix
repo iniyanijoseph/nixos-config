@@ -1,5 +1,9 @@
 { pkgs, ... }:
 {
+  home.packages = with pkgs; [
+    ferdium
+  ];
+
   # Ripcord is a single non-Electron Qt client that covers Discord and
   # Slack. Free for Discord; Slack works unpaid too, just nags for a
   # license.
