@@ -74,6 +74,21 @@ pcall(hl.config, {
     xwayland = { force_zero_scaling = true },
 })
 
+-- Cinny remembers/requests a maximized or fullscreen state at startup.
+-- Keep the compositor authoritative: start it tiled with no client fullscreen
+-- state, while still allowing explicit Hyprland fullscreen/maximize commands.
+pcall(function()
+    hl.window_rule({
+        name = "cinny-start-tiled",
+        match = { class = "^(in\\.cinny\\.app|Cinny)$" },
+        tile = true,
+        fullscreen = false,
+        maximize = false,
+        fullscreen_state = "0 0",
+        suppress_event = "fullscreen maximize",
+    })
+end)
+
 pcall(function()
     hl.curve("quick", {
         type = "bezier",
