@@ -1,6 +1,6 @@
 {pkgs, ...}:
 let
-  tex = pkgs.texlive.combined.scheme-full;
+  tex = pkgs.texliveFull;
 
   doc-preview = pkgs.writeShellApplication {
     name = "doc-preview";
