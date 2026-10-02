@@ -26,6 +26,10 @@ in
         installation_mode = "force_installed";
         install_url = "https://addons.mozilla.org/firefox/downloads/latest/surfingkeys_ff/latest.xpi";
       };
+      # Explicitly remove the old managed New Tab Override extension.
+      "newtaboverride@agenedia.com" = {
+        installation_mode = "blocked";
+      };
     };
 
 
