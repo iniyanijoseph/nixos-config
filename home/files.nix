@@ -74,25 +74,25 @@ let
 
       if [[ "$directory" == "1" ]]; then
         if selection="$(zenity --file-selection --directory --title="Select folder" --filename="$path")"; then
-          printf '%s\\n' "$selection" > "$out"
+          printf '%s\n' "$selection" > "$out"
         else
           : > "$out"
         fi
       elif [[ "$save" == "1" ]]; then
         if selection="$(zenity --file-selection --save --confirm-overwrite --title="Save file" --filename="$path")"; then
-          printf '%s\\n' "$selection" > "$out"
+          printf '%s\n' "$selection" > "$out"
         else
           : > "$out"
         fi
       elif [[ "$multiple" == "1" ]]; then
-        if selection="$(zenity --file-selection --multiple --separator="\n" --title="Select files" --filename="$path")"; then
-          printf '%s\\n' "$selection" > "$out"
+        if selection="$(zenity --file-selection --multiple --separator=$'\n' --title="Select files" --filename="$path")"; then
+          printf '%s\n' "$selection" > "$out"
         else
           : > "$out"
         fi
       else
         if selection="$(zenity --file-selection --title="Select file" --filename="$path")"; then
-          printf '%s\\n' "$selection" > "$out"
+          printf '%s\n' "$selection" > "$out"
         else
           : > "$out"
         fi
