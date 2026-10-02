@@ -5,6 +5,16 @@ let
     mkdir -p "$out"
     cp ${surfingkeysConfig} "$out/surfingkeys.js"
   '';
+
+  # Install from AMO without pinning a version. Firefox's ExtensionSettings
+  # policy follows the latest compatible XPI and leaves automatic updates on.
+  amoExtension = slug: extra:
+    {
+      installation_mode = "normal_installed";
+      install_url = "https://addons.mozilla.org/firefox/downloads/latest/${slug}/latest.xpi";
+      updates_disabled = false;
+    }
+    // extra;
 in
 {
   programs.qutebrowser = {
@@ -21,15 +31,122 @@ in
 
   programs.firefox = {
     enable = true;
+    # Reproduce the user's extension set, but do not pin extension versions.
+    # normal_installed keeps the extensions declarative while still allowing
+    # them to be disabled by the user; updates remain enabled explicitly.
     policies.ExtensionSettings = {
-      "{a8332c60-5b6d-41ee-bfc8-e9bb331d34ad}" = {
-        installation_mode = "force_installed";
-        install_url = "https://addons.mozilla.org/firefox/downloads/latest/surfingkeys_ff/latest.xpi";
+      # Tabby Cat update for Firefox
+      "{c6a558cf-709d-4ec0-8a56-0563ca46b403}" =
+        amoExtension "tabby-cat-update-for-firefox" {
+          default_area = "menupanel";
+        };
+
+      # HTTPS Everywhere Lite+
+      "{0e7050a5-72b2-4157-95a3-56d0b51626bc}" =
+        amoExtension "https-everywhere-lite" {
+          default_area = "menupanel";
+        };
+
+      # Google Scholar Button
+      "button@scholar.google.com" =
+        amoExtension "google-scholar-button" {
+          default_area = "navbar";
+        };
+
+      # Privacy Possum
+      "woop-NoopscooPsnSXQ@jetpack" =
+        amoExtension "privacy-possum" {
+          default_area = "menupanel";
+        };
+
+      # Surfingkeys; its actual key configuration is managed below from
+      # home/surfingkeys.js.
+      "{a8332c60-5b6d-41ee-bfc8-e9bb331d34ad}" =
+        amoExtension "surfingkeys_ff" {
+          default_area = "menupanel";
+        };
+
+      # Copy LaTeX
+      "copy-latex@mapaor" =
+        amoExtension "copy-latex" {
+          default_area = "menupanel";
+        };
+
+      # DuckDuckGo Search & Tracker Protection
+      "jid1-ZAdIEUB7XOzOJw@jetpack" =
+        amoExtension "duckduckgo-for-firefox" {
+          default_area = "menupanel";
+        };
+
+      # Skip Redirect
+      "skipredirect@sblask" =
+        amoExtension "skip-redirect" {
+          default_area = "navbar";
+          private_browsing = true;
+        };
+
+      # WebHID for Firefox
+      "{8badf7fe-c0e0-464b-a329-1411c3b3651a}" =
+        amoExtension "webhid-for-firefox" {
+          default_area = "menupanel";
+        };
+
+      # FxQRL
+      "jid1-DNc5AXAyVmgNjQ@jetpack" =
+        amoExtension "fxqrl" {
+          default_area = "navbar";
+          private_browsing = true;
+        };
+
+      # uBlock Origin
+      "uBlock0@raymondhill.net" =
+        amoExtension "ublock-origin" {
+          default_area = "navbar";
+          private_browsing = true;
+        };
+
+      # Dark Reader
+      "addon@darkreader.org" =
+        amoExtension "darkreader" {
+          default_area = "menupanel";
+        };
+
+      # Focus Blank Break is the user's own AMO-signed extension. Keep its
+      # current signed XPI as the bootstrap URL and leave updates enabled.
+      # Its runtime preferences are handled separately from installation.
+      "focus-blank-break@example.com" = {
+        installation_mode = "normal_installed";
+        install_url = "https://addons.mozilla.org/firefox/downloads/file/5067415/distraction_affliction_correct-1.6.xpi";
+        updates_disabled = false;
+        default_area = "navbar";
+        private_browsing = true;
       };
+
+      # Zotero distributes its Firefox connector directly rather than via AMO.
+      # The installed connector carries Zotero's own update URL.
+      "zotero@chnm.gmu.edu" = {
+        installation_mode = "normal_installed";
+        install_url = "https://download.zotero.org/connector/firefox/release/Zotero_Connector-5.0.217.xpi";
+        updates_disabled = false;
+        default_area = "navbar";
+        private_browsing = true;
+      };
+
       # Explicitly remove the old managed New Tab Override extension.
       "newtaboverride@agenedia.com" = {
         installation_mode = "blocked";
       };
+    };
+
+    # uBlock Origin supports Firefox managed storage directly. These are the
+    # user-added trusted sites present in the exported profile; toAdd preserves
+    # uBO's built-in directives and any future local directives.
+    policies."3rdparty".Extensions."uBlock0@raymondhill.net" = {
+      toAdd.trustedSiteDirectives = [
+        "chatgpt.com"
+        "purdueteamstore.com"
+        "slack.com"
+      ];
     };
 
 
