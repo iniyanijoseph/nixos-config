@@ -222,6 +222,7 @@
   # dialogs through Yazi. GTK remains available as a fallback portal backend.
   xdg.portal = {
     enable = true;
+    xdgOpenUsePortal = true;
     extraPortals = with pkgs; [
       xdg-desktop-portal-termfilechooser
       xdg-desktop-portal-gtk
@@ -229,11 +230,13 @@
     config = {
       common = {
         default = [ "hyprland" "gtk" ];
-        "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+        # Prefer the Yazi-backed terminal chooser. If that backend cannot be
+        # activated, fall back to GTK instead of leaving applications hanging.
+        "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" "gtk" ];
       };
       hyprland = {
         default = [ "hyprland" "gtk" ];
-        "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" ];
+        "org.freedesktop.impl.portal.FileChooser" = [ "termfilechooser" "gtk" ];
       };
     };
   };
