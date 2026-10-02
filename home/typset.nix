@@ -99,12 +99,12 @@ EOF
 
       case "$command" in
         c|compile)
-          source_file="$(require_source "${1:-}")"
+          source_file="$(require_source "''${1:-}")"
           compile_one "$source_file"
           ;;
 
         w|watch)
-          source_file="$(require_source "${1:-}")"
+          source_file="$(require_source "''${1:-}")"
           source_dir="$(dirname "$source_file")"
 
           echo "Watching $source_dir"
@@ -120,17 +120,17 @@ EOF
           ;;
 
         clean)
-          source_file="$(require_source "${1:-}")"
+          source_file="$(require_source "''${1:-}")"
           clean_one "$source_file" 0
           ;;
 
         distclean)
-          source_file="$(require_source "${1:-}")"
+          source_file="$(require_source "''${1:-}")"
           clean_one "$source_file" 1
           ;;
 
         typst|to-typst)
-          source_file="$(require_source "${1:-}")"
+          source_file="$(require_source "''${1:-}")"
           source_dir="$(dirname "$source_file")"
           source_name="$(basename "$source_file")"
 
