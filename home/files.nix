@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ pkgs, ... }:
 let
   trashEmptyAll = pkgs.writeShellApplication {
     name = "trash-empty-all";
@@ -50,15 +50,52 @@ let
     '';
   };
 
-  termfilechooserWrapper =
-    "${pkgs.xdg-desktop-portal-termfilechooser}/share/xdg-desktop-portal-termfilechooser/yazi-wrapper.sh";
-  termfilechooserPath = lib.makeBinPath [
-    pkgs.coreutils
-    pkgs.gnused
-    pkgs.less
-    pkgs.trash-cli
-    pkgs.yazi
-  ];
+  # Keep the portal wrapper self-contained in the Nix store. The upstream
+  # yazi-wrapper.sh relies on TERMCMD and the portal service's PATH, which is
+  # easy to lose across systemd/DBus activation and can make Firefox's Upload
+  # button appear to do nothing.
+  termfilechooserWrapper = pkgs.writeShellApplication {
+    name = "yazi-portal-filechooser";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.kitty
+      pkgs.yazi
+    ];
+    text = ''
+      set -eu
+
+      multiple="$1"
+      directory="$2"
+      save="$3"
+      path="$4"
+      out="$5"
+
+      if [[ -z "$path" ]]; then
+        path="$HOME"
+      fi
+
+      cwd_out="$out.cwd"
+
+      if [[ "$save" == "1" ]]; then
+        set -- --chooser-file="$out" "$path"
+      elif [[ "$directory" == "1" ]]; then
+        set -- --chooser-file="$out" --cwd-file="$cwd_out" "$path"
+      else
+        # Yazi handles both single- and multi-selection through chooser-file;
+        # the portal tells the application whether multiple results are valid.
+        set -- --chooser-file="$out" "$path"
+      fi
+
+      kitty --class termfilechooser --title "File chooser" yazi "$@"
+
+      if [[ "$directory" == "1" ]]; then
+        if [[ ! -s "$out" && -s "$cwd_out" ]]; then
+          cat "$cwd_out" > "$out"
+        fi
+        rm -f "$cwd_out"
+      fi
+    '';
+  };
 in
 {
   programs.yazi = {
@@ -123,10 +160,9 @@ in
   # for tasks that benefit from a graphical file manager.
   xdg.configFile."xdg-desktop-portal-termfilechooser/config".text = ''
     [filechooser]
-    cmd=${termfilechooserWrapper}
+    cmd=${termfilechooserWrapper}/bin/yazi-portal-filechooser
     default_dir=$HOME
-    env=TERMCMD='${pkgs.kitty}/bin/kitty --class termfilechooser --title "File chooser"'
-    env=PATH=${termfilechooserPath}:/run/current-system/sw/bin:/etc/profiles/per-user/wug/bin
+    create_help_file=0
     open_mode=suggested
     save_mode=last
   '';
