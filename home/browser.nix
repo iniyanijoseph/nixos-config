@@ -111,12 +111,11 @@ in
           default_area = "menupanel";
         };
 
-      # Focus Blank Break is the user's own AMO-signed extension. Keep its
-      # current signed XPI as the bootstrap URL and leave updates enabled.
-      # Its runtime preferences are handled separately from installation.
+      # Focus Blank Break is the user's own AMO-signed extension. Use the
+      # add-on ID in AMO's "latest" endpoint so the policy never pins a version.
       "focus-blank-break@example.com" = {
         installation_mode = "normal_installed";
-        install_url = "https://addons.mozilla.org/firefox/downloads/file/5067415/distraction_affliction_correct-1.6.xpi";
+        install_url = "https://addons.mozilla.org/firefox/downloads/latest/focus-blank-break@example.com/latest.xpi";
         updates_disabled = false;
         default_area = "navbar";
         private_browsing = true;
