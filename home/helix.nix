@@ -1,10 +1,13 @@
 {pkgs, ...}:
 let
+  tex = pkgs.texlive.combined.scheme-full;
+
   doc-preview = pkgs.writeShellApplication {
     name = "doc-preview";
     runtimeInputs = with pkgs; [
       coreutils
       pandoc
+      tex
       xdg-utils
       zathura
     ];
@@ -140,7 +143,7 @@ EOF
           source_dir="$(dirname "$source_file")"
           source_name="$(basename "$source_file")"
           pdf_file="$source_dir/''${source_name%.tex}.pdf"
-          (cd "$source_dir" && latexmk -pdf -interaction=nonstopmode -synctex=1 "$source_name")
+          (cd "$source_dir" && ${tex}/bin/latexmk -pdf -interaction=nonstopmode -synctex=1 "$source_name")
           zathura "$pdf_file" >/dev/null 2>&1 &
           ;;
         *)
@@ -270,7 +273,7 @@ in
         command = "texlab";
         config.texlab = {
           build = {
-            executable = "latexmk";
+            executable = "${tex}/bin/latexmk";
             args = [
               "-pdf"
               "-interaction=nonstopmode"
