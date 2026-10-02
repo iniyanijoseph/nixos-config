@@ -3,7 +3,7 @@ let
   # Keep a complete TeX environment available. Theory papers and downloaded
   # LaTeX sources routinely use packages outside scheme-medium; using the full
   # scheme avoids otherwise mysterious "file not found" compile failures.
-  tex = pkgs.texlive.combined.scheme-full;
+  tex = pkgs.texliveFull;
 
   # A Typst-like frontend for LaTeX:
   #   ltx c FILE.tex             compile once, keep only the PDF
