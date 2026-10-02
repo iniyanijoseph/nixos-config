@@ -149,6 +149,21 @@ in
       ];
     };
 
+    # Focus Blank Break 1.7+ reads these values from browser.storage.managed.
+    # They reproduce the exported Firefox profile without copying IndexedDB.
+    policies."3rdparty".Extensions."focus-blank-break@example.com" = {
+      workMinutes = 30;
+      blankSeconds = 30;
+      allowSlack = true;
+      allowOutlook = true;
+      customSites = [
+        "thispersondoesnotexist.com"
+        "calendar.google.com"
+        "theuselessweb.com"
+      ];
+      removedSites = [ ];
+    };
+
 
     # Pin to current behavior explicitly (silences the 26.05 default-change
     # warning - avoids needing to migrate ~/.mozilla/firefox to the XDG path).
