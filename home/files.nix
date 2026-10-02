@@ -64,7 +64,9 @@ let
     text = ''
       set -eu
 
-      multiple="$1"
+      # $1 tells the portal whether multiple selection is allowed. Yazi writes
+      # the chosen paths to chooser-file either way, so the wrapper does not
+      # need to branch on it.
       directory="$2"
       save="$3"
       path="$4"
