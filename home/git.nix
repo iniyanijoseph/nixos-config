@@ -52,7 +52,7 @@ let
       fi
 
       if upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
-        remote="${upstream%%/*}"
+        remote="''${upstream%%/*}"
       else
         remote="origin"
         upstream="$remote/$branch"
