@@ -1,9 +1,14 @@
 { config, lib, pkgs, ... }:
 {
   # Hyprland 0.56's native Lua configuration. Home Manager creates the small
-  # ~/.config/hypr/hyprland.lua entry point and loads this module from it.
+  # ~/.config/hypr/hyprland.lua entry point and loads these modules from it.
   wayland.windowManager.hyprland.extraLuaFiles."desktop" = {
     content = ./config.lua;
+    autoLoad = true;
+  };
+
+  wayland.windowManager.hyprland.extraLuaFiles."startup-routing" = {
+    content = ./startup-routing.lua;
     autoLoad = true;
   };
 
