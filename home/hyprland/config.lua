@@ -123,7 +123,9 @@ pcall(hl.on, "hyprland.start", function()
     pcall(hl.exec_cmd, "swaybg -i /home/wug/Pictures/wallpaper.jpg")
     pcall(hl.exec_cmd, "nm-applet")
     pcall(hl.exec_cmd, "poweralertd")
-    pcall(hl.exec_cmd, "wl-clip-persist --clipboard both")
+    -- Persist the regular clipboard only. Persisting Wayland's primary
+    -- selection can steal/reset mouse text selections in GTK and other apps.
+    pcall(hl.exec_cmd, "wl-clip-persist --clipboard regular")
     pcall(hl.exec_cmd, "wl-paste --watch cliphist store")
     pcall(hl.exec_cmd, "swaync")
     pcall(hl.exec_cmd, "swayosd-server")
