@@ -9,6 +9,7 @@
     ./btop.nix 
     ./chat.nix
     ./dev.nix
+    ./display-modes.nix
     ./fish.nix
     ./git.nix
     ./gnome.nix 
