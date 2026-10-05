@@ -12,6 +12,13 @@
     autoLoad = true;
   };
 
+  # Load after the main desktop module so these bindings replace the older,
+  # invalid SwayOSD brightness commands from config.lua.
+  wayland.windowManager.hyprland.extraLuaFiles."zz-brightness" = {
+    content = ./brightness.lua;
+    autoLoad = true;
+  };
+
   # nwg-displays 0.4.3 writes Lua alongside its legacy .conf output. Preserve
   # an existing monitor/workspace layout on the first switch if those Lua
   # files have not been generated yet; subsequent changes come directly from
