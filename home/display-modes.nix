@@ -22,8 +22,10 @@ let
         for _attempt in $(seq 1 30); do
           for instance_dir in "$runtime"/hypr/*; do
             if [[ -S "$instance_dir/.socket.sock" ]]; then
-              export HYPRLAND_INSTANCE_SIGNATURE="$(basename "$instance_dir")"
-              export XDG_RUNTIME_DIR="$runtime"
+              HYPRLAND_INSTANCE_SIGNATURE="$(basename "$instance_dir")"
+              export HYPRLAND_INSTANCE_SIGNATURE
+              XDG_RUNTIME_DIR="$runtime"
+              export XDG_RUNTIME_DIR
               return 0
             fi
           done
