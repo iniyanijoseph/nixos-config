@@ -13,6 +13,29 @@ let
       state_file="$state_dir/current"
       mkdir -p "$state_dir"
 
+      ensure_hyprland_env() {
+        if [[ -n "''${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+          return 0
+        fi
+
+        runtime="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        for _attempt in $(seq 1 30); do
+          for instance_dir in "$runtime"/hypr/*; do
+            if [[ -S "$instance_dir/.socket.sock" ]]; then
+              export HYPRLAND_INSTANCE_SIGNATURE="$(basename "$instance_dir")"
+              export XDG_RUNTIME_DIR="$runtime"
+              return 0
+            fi
+          done
+          sleep 0.5
+        done
+
+        echo "display-mode: no running Hyprland instance found" >&2
+        return 1
+      }
+
+      ensure_hyprland_env || exit 75
+
       current_mode() {
         hyprshade current 2>/dev/null || true
       }
@@ -172,4 +195,18 @@ in
         fragColor = vec4(clamp(sepia, 0.0, 1.0), color.a);
     }
   '';
+
+  systemd.user.services.restore-display-mode = {
+    Unit = {
+      Description = "Restore grayscale/sepia display mode";
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${displayMode}/bin/display-mode restore";
+      Restart = "on-failure";
+      RestartSec = "2s";
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
 }
