@@ -51,7 +51,7 @@
       "button-text": " Clear All "
     },
     "buttons-grid#quick": {
-      "buttons-per-row": 4,
+      "buttons-per-row": 3,
       "actions": [
         {
           "label": "  Wi-Fi",
@@ -64,6 +64,18 @@
           "type": "toggle",
           "command": "sh -c 'if [ \"$SWAYNC_TOGGLE_STATE\" = true ]; then bluetoothctl power on; else bluetoothctl power off; fi'",
           "update-command": "sh -c 'bluetoothctl show 2>/dev/null | grep -q \"Powered: yes\" && echo true || echo false'"
+        },
+        {
+          "label": "◐  Grayscale",
+          "type": "toggle",
+          "command": "sh -c 'display-mode set grayscale \"$SWAYNC_TOGGLE_STATE\"'",
+          "update-command": "display-mode status grayscale"
+        },
+        {
+          "label": "◒  Sepia",
+          "type": "toggle",
+          "command": "sh -c 'display-mode set sepia \"$SWAYNC_TOGGLE_STATE\"'",
+          "update-command": "display-mode status sepia"
         },
         {
           "label": "󰖁  Mute",
