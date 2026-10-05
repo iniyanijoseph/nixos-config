@@ -24,6 +24,7 @@
       modules = [
         ./hardware-configuration.nix
         ./configuration.nix
+        ./brightness.nix
         home-manager.nixosModules.home-manager {
           home-manager = {
             useGlobalPkgs = true;
