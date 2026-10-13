@@ -129,6 +129,8 @@ pcall(hl.on, "hyprland.start", function()
     pcall(hl.exec_cmd, "wl-paste --watch cliphist store")
     pcall(hl.exec_cmd, "swaync")
     pcall(hl.exec_cmd, "swayosd-server")
+    -- Start each Hyprland session at a predictable, comfortable brightness.
+    pcall(hl.exec_cmd, "brightnessctl set 50%")
     pcall(hl.exec_cmd, "hyprctl setcursor Bibata-Modern-Ice 24")
     pcall(hl.exec_cmd, "waybar")
     pcall(hl.exec_cmd, browser, { workspace = "2 silent" })
