@@ -35,6 +35,15 @@
       description = "Show a system summary when Fish starts";
       body = "macchina";
     };
+    functions.fish_user_key_bindings = {
+      description = "Use desktop-style Select All at the Fish prompt";
+      body = ''
+        # Fish normally maps Ctrl+A to beginning-of-line. Keep Ctrl+A
+        # consistent with graphical applications by selecting the entire
+        # editable command buffer instead.
+        bind ctrl-a beginning-of-buffer begin-selection end-of-buffer
+      '';
+    };
     plugins = [
       {
         name = "done";
