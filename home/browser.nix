@@ -191,6 +191,13 @@ in
         # Firefox's own cross-platform "Photon" widgets
         "widget.non-native-theme.enabled" = false;
         "widget.gtk.native-context-menus" = true;
+
+        # Keep normal desktop shortcut semantics in Firefox text controls.
+        # GTK/native bindings can map Ctrl+A to beginning-of-line (Emacs-style)
+        # in some inputs; always prefer Firefox's built-in Select All binding.
+        "ui.key.textcontrol.prefer_native_key_bindings_over_builtin_shortcut_key_definitions" = false;
+        "ui.key.use_select_all_in_single_line_editor" = true;
+
         # Use the XDG file-picker portal, which is backed by Yazi in files.nix.
         "widget.use-xdg-desktop-portal.file-picker" = 1;
 
