@@ -35,15 +35,6 @@
       description = "Show a system summary when Fish starts";
       body = "macchina";
     };
-    functions.fish_user_key_bindings = {
-      description = "Use desktop-style Select All at the Fish prompt";
-      body = ''
-        # Use the traditional control-character spelling so this works across
-        # Fish versions, including versions that do not parse "ctrl-a" as a
-        # named key. Select the entire editable command buffer.
-        bind \ca beginning-of-buffer begin-selection end-of-buffer
-      '';
-    };
     plugins = [
       {
         name = "done";
