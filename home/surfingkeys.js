@@ -4,6 +4,11 @@
 settings.stealFocusOnLoad = true;
 settings.enableAutoFocus = false;
 
+// Surfingkeys' Linux insert mode maps Ctrl+A to "beginning of line" by
+// default. Remove that mapping so Firefox receives Ctrl+A normally and uses
+// its standard Select All behavior in text inputs and contenteditable fields.
+api.iunmap("<Ctrl-a>");
+
 // Directional scrolling. j/k retain Surfingkeys' defaults.
 api.unmap("h");
 api.unmap("l");
@@ -76,4 +81,3 @@ settings.theme = `
     border: 1px solid #504945;
 }
 `;
-
