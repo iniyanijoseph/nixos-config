@@ -135,7 +135,7 @@
   programs.git = {
     enable = true;
     config = {
-      user.name = "Wug";
+      user.name = "iniyanijoseph";
       user.email = "iniyanijoseph@gmail.com";
       init.defaultBranch = "main";
     };
