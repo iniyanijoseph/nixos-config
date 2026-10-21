@@ -30,6 +30,12 @@
       "memories.vod.ffmpeg" = "${pkgs.ffmpeg-headless}/bin/ffmpeg";
       "memories.vod.ffprobe" = "${pkgs.ffmpeg-headless}/bin/ffprobe";
       preview_ffmpeg_path = "${pkgs.ffmpeg-headless}/bin/ffmpeg";
+      preview_ffprobe_path = "${pkgs.ffmpeg-headless}/bin/ffprobe";
+
+      # Conserve SSD space and reduce CPU work on the 100 GB VPS.
+      # Limits generated previews, not the original image files.
+      preview_max_x = 2048;
+      preview_max_y = 2048;
     };
   };
 
