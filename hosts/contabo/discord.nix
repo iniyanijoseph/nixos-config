@@ -26,17 +26,17 @@
           "*" = "block";
           "@me:iniyanjoseph.com" = "admin";
         };
-        # Create portals for a large number of existing direct messages.
-        startup_private_channel_create_limit = 1000;
+        # Stage initial DM portal creation to avoid simultaneous huge backfills.
+        startup_private_channel_create_limit = 5;
         sync_direct_chat_list = true;
-        # Initial backfill does not support -1; large finite bounds give the
-        # bridge an opportunity to import long archives when first bridged.
-        # Large channels may take time and encounter Discord rate limits.
+        # Bound each initial fetch batch; massive parallel history requests
+        # previously triggered Discord rate limiting and HTML error responses.
+        # This does NOT automatically replay incomplete earlier backfills.
         backfill.forward_limits = {
           initial = {
-            dm = 100000;
-            channel = 100000;
-            thread = 100000;
+            dm = 500;
+            channel = 200;
+            thread = 200;
           };
           missed = {
             dm = -1;
