@@ -14,6 +14,12 @@
         address = "http://127.0.0.1:29334";
         hostname = "127.0.0.1";
         port = 29334;
+        database = {
+          type = "sqlite3";
+          uri = "file:/var/lib/mautrix-discord/mautrix-discord.db?_txlock=immediate";
+          max_open_conns = 20;
+          max_idle_conns = 2;
+        };
       };
       bridge = {
         permissions = {
