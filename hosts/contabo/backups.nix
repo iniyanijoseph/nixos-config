@@ -28,6 +28,7 @@
         "/var/lib/nextcloud"
         "/var/lib/matrix-synapse"
         "/var/lib/mautrix-whatsapp"
+        "/var/lib/mautrix-discord"
         "/var/lib/restic-staging/postgres-all.sql"
         "/var/lib/secrets"
         "/var/lib/acme"
