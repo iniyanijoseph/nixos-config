@@ -27,6 +27,7 @@
       paths = [
         "/var/lib/nextcloud"
         "/var/lib/matrix-synapse"
+        "/var/lib/mautrix-whatsapp"
         "/var/lib/restic-staging/postgres-all.sql"
         "/var/lib/secrets"
         "/var/lib/acme"
