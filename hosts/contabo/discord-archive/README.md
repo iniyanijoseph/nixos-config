@@ -115,6 +115,21 @@ For a long run, `tmux` avoids SSH disconnection:
 nix shell nixpkgs#tmux --command tmux new -s discord-archive
 ```
 
+## If Discord returns HTTP 400 before collection
+
+The collector first checks `GET /users/@me` to distinguish a rejected
+account credential from errors specific to discovery. It prints only the
+HTTP status, numeric Discord API error code (when present), and the API
+route, **never the token or unfiltered server response**.
+
+`GET /users/@me/channels` is an undocumented user-session endpoint, not
+the public documented OAuth2 mechanism for exhaustive DM enumeration.
+If the identity check succeeds but DM inventory remains HTTP 400, do not
+assume the archive can be collected directly or work around an access
+restriction. Discord's official data-package export provides a
+consent-based alternative inventory of messages authored by the account,
+but not messages from other participants.
+
 **Completeness limitation:** A green verification only proves that the
 collector exhausted history for *registered, visible* channels. Dormant old
 DMs can be omitted from Discord's current API inventory; the official
