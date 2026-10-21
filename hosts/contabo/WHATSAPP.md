@@ -4,7 +4,7 @@ This adds mautrix-whatsapp to the existing private Matrix server. WhatsApp
 runs as a linked device on your phone; it does not require Docker, new public
 ports, new DNS entries, or an additional Nginx virtual host.
 
-## 1. Provision encryption secret (once; never commit it)
+The pinned package is built with experimental pure-Go `goolm` rather than\nthe deprecated, security-flagged `libolm`. This avoids permitting an insecure\nNix package, but the implementation is not yet recommended by mautrix for\nproduction-critical encrypted conversations. Test encryption carefully.\n\n## 1. Provision encryption secret (once; never commit it)
 
 Run on Contabo. This is fish-compatible and idempotent:
 
