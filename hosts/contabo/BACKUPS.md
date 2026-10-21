@@ -1,8 +1,9 @@
 # Encrypted Contabo backups — Cloudflare R2
 
-The NixOS module `backups.nix` is imported by Contabo but remains **disabled**
-until `contabo.backups.enable = true;` is set in `configuration.nix`.
-The remote storage and keys must exist first.
+`contabo.backups.enable = true;` is set in Contabo's NixOS configuration.
+**Before rebuilding and switching on the VPS**, create the root-only R2 credentials
+and the Restic encryption password described below. The service has not been
+proven functional until a snapshot and restore test succeed.
 
 ## Set up R2
 
@@ -39,13 +40,21 @@ sudo chmod 600 /var/lib/secrets/restic-r2.env /var/lib/secrets/restic-password
 
 ## Enable, run, and verify
 
-After the files exist, set `contabo.backups.enable = true;` in
-`hosts/contabo/configuration.nix`, commit the change, and on Contabo run:
+Once the files exist and have permissions `0600`, deploy the committed
+configuration on Contabo. **Also update the server's lock file for the
+2026-10-21 PHP security patch** before switching; the old pinned lock file
+still targets vulnerable PHP 8.4.26. Stop if the evaluated PHP version isn't
+at least 8.4.27.
 
 ```sh
 cd /etc/nixos
 sudo git pull --ff-only
-sudo nixos-rebuild switch --flake ./hosts/contabo#contabo
+cd hosts/contabo
+sudo nix flake update nixpkgs
+sudo nix eval --raw '.#nixosConfigurations.contabo.config.services.nextcloud.phpPackage.version'
+# Expected PHP 8.4.27; stop if older.
+sudo nixos-rebuild build --flake .#contabo
+sudo nixos-rebuild switch --flake .#contabo
 sudo systemctl start restic-backups-contabo.service
 sudo journalctl -u restic-backups-contabo.service -n 60 --no-pager
 sudo restic-contabo snapshots
@@ -63,10 +72,10 @@ excluded; they can be regenerated.
 ### Test a partial restore (never over production)
 
 ```sh
-sudo mkdir -p /var/tmp/restic-restore-test
-sudo restic-contabo restore latest --target /var/tmp/restic-restore-test \
+sudo install -d -m 0700 -o root -g root /var/lib/restic-restore-test
+sudo restic-contabo restore latest --target /var/lib/restic-restore-test \
   --include /var/lib/restic-staging/postgres-all.sql
-sudo test -s /var/tmp/restic-restore-test/var/lib/restic-staging/postgres-all.sql
+sudo test -s /var/lib/restic-restore-test/var/lib/restic-staging/postgres-all.sql
 ```
 
 This verifies the SQL dump can be recovered, not full application recovery.

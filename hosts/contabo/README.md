@@ -58,9 +58,10 @@ The Preview Generator app depends on Nextcloud cron mode for automatic jobs.
 If it is not set, run `sudo nextcloud-occ background:cron`; for an initial
 backlog, optionally run `sudo nextcloud-occ preview:pre-generate`.
 
-**Backups are prepared but not enabled.** Follow [the encrypted Cloudflare R2
-backup setup](./BACKUPS.md), then test a restore before bulk photo migration.
-Backups remain disabled until the external bucket and local secrets exist.
+**Encrypted backups are enabled in the NixOS configuration**, but they are
+not operational until the R2 credentials and Restic password exist locally,
+the VPS is rebuilt, and a backup plus restore test succeeds. Follow
+[the Cloudflare R2 setup](./BACKUPS.md) before rebuilding.
 
 ## Maintenance
 

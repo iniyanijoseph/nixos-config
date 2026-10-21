@@ -8,6 +8,9 @@
     ./shell.nix
   ];
 
+  # Enabled only after provisioning root-only Restic keys and R2 credentials.
+  contabo.backups.enable = true;
+
   networking.hostName = "contabo";
   time.timeZone = "UTC";
 
