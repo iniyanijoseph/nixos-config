@@ -22,6 +22,18 @@ from urllib.request import Request, urlopen
 API = "https://discord.com/api/v9"
 
 
+def error_summary(status, body, path):
+    """Safe diagnostic: never print raw responses or authorization headers."""
+    endpoint = path.split("?")[0]
+    try:
+        payload = json.loads(body)
+        if isinstance(payload, dict) and isinstance(payload.get("code"), int):
+            return f"HTTP {status}, Discord code {payload['code']}: {endpoint}"
+    except (ValueError, UnicodeDecodeError, TypeError):
+        pass
+    return f"HTTP {status}, non-JSON or unrecognized error response: {endpoint}"
+
+
 def stamp():
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
@@ -77,8 +89,9 @@ class APIClient:
                 return result
             except HTTPError as err:
                 body = err.read(4096)
-                if err.code in (401, 403, 404):
-                    raise RuntimeError(f"HTTP {err.code}: {path.split('?')[0]}") from None
+                detail = error_summary(err.code, body, path)
+                if err.code in (400, 401, 403, 404, 405):
+                    raise RuntimeError(detail) from None
                 if err.code == 429:
                     try:
                         value = json.loads(body)
@@ -92,7 +105,7 @@ class APIClient:
                 elif err.code in (500, 502, 503, 504, 520, 522, 524):
                     cooldown = min(600.0, 2 ** min(attempt + 2, 9))
                 else:
-                    raise RuntimeError(f"HTTP {err.code}: {path.split('?')[0]}") from None
+                    raise RuntimeError(detail) from None
             except (URLError, TimeoutError, OSError, ValueError):
                 # A transient outage or HTML anti-abuse page is not JSON.
                 cooldown = min(600.0, 2 ** min(attempt + 2, 9))
@@ -329,6 +342,10 @@ def main():
         db = connect(path)
         if args.action in ("run", "discover", "collect", "refresh"):
             api = APIClient(credentials(), args.delay)
+            identity = api.get("/users/@me")
+            if not isinstance(identity, dict) or not str(identity.get("id", "")).isdecimal():
+                raise RuntimeError("Discord token preflight returned an unexpected user object")
+            print("Discord identity request accepted; attempting channel discovery.", flush=True)
             if args.action in ("run", "discover"):
                 discover(db, api)
             if args.action in ("run", "collect"):
