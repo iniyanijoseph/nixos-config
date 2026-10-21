@@ -6,6 +6,7 @@
     ./nextcloud.nix
     ./backups.nix
     ./matrix.nix
+    ./whatsapp.nix
     ./shell.nix
   ];
 
