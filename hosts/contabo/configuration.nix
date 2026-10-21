@@ -4,6 +4,7 @@
     ./disk-config.nix
     ./network.nix
     ./nextcloud.nix
+    ./backups.nix
     ./shell.nix
   ];
 

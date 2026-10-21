@@ -58,10 +58,9 @@ The Preview Generator app depends on Nextcloud cron mode for automatic jobs.
 If it is not set, run `sudo nextcloud-occ background:cron`; for an initial
 backlog, optionally run `sudo nextcloud-occ preview:pre-generate`.
 
-**Backups are not yet configured.** Do not bulk-import the existing photo
-library until an encrypted offsite backup is configured and a test restoration
-has succeeded. Nextcloud data, PostgreSQL, application configuration, and
-the secrets needed to restore the instance all require protection.
+**Backups are prepared but not enabled.** Follow [the encrypted Cloudflare R2
+backup setup](./BACKUPS.md), then test a restore before bulk photo migration.
+Backups remain disabled until the external bucket and local secrets exist.
 
 ## Maintenance
 
