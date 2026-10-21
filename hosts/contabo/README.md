@@ -75,3 +75,10 @@ sudo nixos-rebuild switch --flake /etc/nixos/hosts/contabo#contabo
 
 No `nixos-anywhere` or `disko` formatting command is needed for ordinary
 updates. The running system already has partitions and Nextcloud data.
+
+## Matrix Synapse + Cinny
+
+The homeserver and web client are described in [`matrix.nix`](./matrix.nix).
+Follow [`MATRIX.md`](./MATRIX.md) to provision the DNS records, create the
+root-only registration secret, deploy, verify federation and register `@me`.
+The existing Restic job includes `/var/lib/matrix-synapse` and PostgreSQL.

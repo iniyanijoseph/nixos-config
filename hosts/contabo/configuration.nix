@@ -5,6 +5,7 @@
     ./network.nix
     ./nextcloud.nix
     ./backups.nix
+    ./matrix.nix
     ./shell.nix
   ];
 
