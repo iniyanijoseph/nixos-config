@@ -7,6 +7,7 @@
     ./backups.nix
     ./matrix.nix
     ./whatsapp.nix
+    ./discord.nix
     ./shell.nix
   ];
 
