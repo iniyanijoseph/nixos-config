@@ -85,6 +85,18 @@ class CollectorTests(unittest.TestCase):
         issues = collector.summary(self.db)["issues"]
         self.assertTrue(any("guilds" in issue for issue in issues))
 
+    def test_error_diagnostics_are_safe(self):
+        self.assertEqual(
+            collector.error_summary(400, b'{"code":40333,"message":"request blocked"}',
+                                    "/users/@me/guilds?with_counts=true"),
+            "HTTP 400, Discord code 40333: /users/@me/guilds")
+        self.assertEqual(
+            collector.error_summary(400, b"<html>opaque response</html>",
+                                    "/users/@me/channels"),
+            "HTTP 400, non-JSON or unrecognized error response: /users/@me/channels")
+        self.assertNotIn("secret", collector.error_summary(
+            400, b'{"message":"secret value"}', "/users/@me"))
+
     def test_invalid_cursor_rejected(self):
         with self.assertRaises(ValueError):
             collector.page_ids([msg(4), msg(5)])
