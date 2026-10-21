@@ -1,10 +1,13 @@
 # WhatsApp linked-device bridge for the private Synapse homeserver.
 # The NixOS module generates and registers the Matrix application service.
-{ ... }:
+{ pkgs, ... }:
 {
   services.mautrix-whatsapp = {
     enable = true;
     registerToSynapse = true;
+    # Avoid deprecated/insecure libolm. This uses mautrix's experimental
+    # pure-Go Olm implementation; verify encrypted chat behavior before reliance.
+    package = pkgs.mautrix-whatsapp.override { withGoolm = true; };
 
     # Keep the encryption pickle key out of Git and the world-readable Nix store.
     environmentFile = "/var/lib/secrets/mautrix-whatsapp.env";
