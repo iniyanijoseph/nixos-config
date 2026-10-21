@@ -3,7 +3,7 @@
   # Small subset of desktop conveniences; deliberately no GUI/TeX toolchain.
   programs.fish.enable = true;
   environment.systemPackages = with pkgs; [
-    helix git curl wget htop btop ripgrep fd jq
+    helix git gh curl wget htop btop ripgrep fd jq
   ];
   environment.shellAliases = {
     nixedit = "sudoedit /etc/nixos/hosts/contabo/configuration.nix";
