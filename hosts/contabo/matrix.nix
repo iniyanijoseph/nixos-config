@@ -116,6 +116,9 @@
             };
           };
         };
+        # Cinny uses client-side routes (e.g. /room/...). Serve its
+        # entrypoint rather than returning a filesystem 404 on refresh.
+        locations."/".tryFiles = "$uri $uri/ /index.html";
       };
     };
   };
