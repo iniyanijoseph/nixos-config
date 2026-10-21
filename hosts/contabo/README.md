@@ -12,43 +12,56 @@ The Contabo config includes static IPv4/IPv6 networking, matching the NIC's MAC
 address, BIOS GRUB, existing SSH public keys, the `wug` sudo account, a small
 Fish/Helix environment, and Nextcloud.
 
-## First migration (on Contabo, **no rebuild yet**)
+## Deployment
 
-1. **Back up the currently working live config** before replacing `/etc/nixos`.
-   Keep a recovery console available.
-2. Clone this repository to a new staging directory, such as
-   `/etc/nixos-new`, without overwriting the existing `/etc/nixos`.
-3. Copy the *existing* `/etc/nixos/flake.lock` to
-   `/etc/nixos-new/hosts/contabo/flake.lock`. Both server flakes have the
-   same `nixpkgs` and `disko` inputs. Retain this lock file in Git when
-   updating from the server.
-4. Compare `/etc/nixos/nextcloud.nix` against
-   `/etc/nixos-new/hosts/contabo/nextcloud.nix` and **retain any changes
-   already working on the VPS**. In particular, preserve newer Memories or
-   Nextcloud settings. The file in Git is a baseline, not a verified export
-   of the live VPS.
-5. Ensure `/var/lib/secrets/nextcloud-admin` remains present; it is
-   intentionally not in Git. Never commit plaintext secrets or tokens.
-6. Git flakes ignore untracked files. Stage the copied server `flake.lock`
-   in the staged checkout before evaluation (e.g. `git add -N
-   hosts/contabo/flake.lock`), then run:
+The initial migration to GitHub-managed NixOS is complete. The original
+configuration was saved as `/etc/nixos-bootstrap-backup` on the VPS; keep it
+until a clean reboot and SSH reconnection have been tested.
 
-   ```bash
-   sudo nix flake check /etc/nixos-new/hosts/contabo
-   sudo nixos-rebuild build --flake /etc/nixos-new/hosts/contabo#contabo
-   ```
+On Contabo:
 
-   **Do not switch** until both pass and the effective network/boot/SSH
-   settings have been compared to the current running system.
+```bash
+cd /etc/nixos
+sudo git pull --ff-only
+sudo nix flake check ./hosts/contabo
+sudo nixos-rebuild switch --flake ./hosts/contabo#contabo
+```
 
-7. Only then arrange the checked-out repository at `/etc/nixos`, and
-   deploy with `sudo nixos-rebuild switch --flake
-   /etc/nixos/hosts/contabo#contabo`. Confirm SSH access in a second
-   session before closing the first.
+The NixOS version of this host is locked in `hosts/contabo/flake.lock`,
+separate from the desktop's `flake.lock`. Commit deliberate changes to either
+lock file. Never add passwords, tokens, or the Nextcloud data directory to Git.
 
-The repo contains no user data. Nextcloud databases/files, authentication
-tokens, private keys, and Cloudflare credentials remain on the server or in
-separate encrypted backups.
+## Nextcloud Memories smoke test
+
+The NixOS configuration supplies ExifTool, Perl and FFmpeg/FFprobe using
+absolute Nix store paths. It limits generated image previews to 2048 pixels;
+original photos remain unchanged.
+
+After deployment:
+
+```bash
+sudo nextcloud-occ status
+sudo nextcloud-occ config:system:get memories.exiftool
+sudo nextcloud-occ config:system:get memories.vod.ffmpeg
+sudo nextcloud-occ config:system:get preview_ffprobe_path
+systemctl list-timers 'nextcloud*' --all
+sudo nextcloud-occ memories:index
+```
+
+In Nextcloud's **Administration settings → Memories**, confirm ExifTool
+and video preview tools now pass their checks. For ordinary uploads, Memories
+indexes via Nextcloud background jobs; do not add a second periodic full-index
+job. For a small test library, the initial `memories:index` is sufficient.
+Test a photo with GPS EXIF and a small video before bulk migration.
+
+The Preview Generator app depends on Nextcloud cron mode for automatic jobs.
+If it is not set, run `sudo nextcloud-occ background:cron`; for an initial
+backlog, optionally run `sudo nextcloud-occ preview:pre-generate`.
+
+**Backups are not yet configured.** Do not bulk-import the existing photo
+library until an encrypted offsite backup is configured and a test restoration
+has succeeded. Nextcloud data, PostgreSQL, application configuration, and
+the secrets needed to restore the instance all require protection.
 
 ## Maintenance
 
