@@ -26,17 +26,19 @@
           "*" = "block";
           "@me:iniyanjoseph.com" = "admin";
         };
-        # Stage initial DM portal creation to avoid simultaneous huge backfills.
-        startup_private_channel_create_limit = 5;
+        # Create just one DM portal on startup to reduce parallel API requests.
+        # This is a creation cap, not a sequential all-history queue.
+        startup_private_channel_create_limit = 1;
         sync_direct_chat_list = true;
-        # Bound each initial fetch batch; massive parallel history requests
-        # previously triggered Discord rate limiting and HTML error responses.
-        # This does NOT automatically replay incomplete earlier backfills.
+        # Large initial limits preserve more history, but the upstream bridge
+        # fetches the whole limit before importing and has no durable retry
+        # queue for failed initial backfills. This is NOT a reliable full
+        # historical synchronization solution; a bridge patch is required.
         backfill.forward_limits = {
           initial = {
-            dm = 500;
-            channel = 200;
-            thread = 200;
+            dm = 100000;
+            channel = 100000;
+            thread = 100000;
           };
           missed = {
             dm = -1;
