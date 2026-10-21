@@ -38,11 +38,14 @@
       provisioning.shared_secret = "disable";
       backfill = {
         enabled = true;
-        max_initial_messages = 50;
+        # Import as many messages as the phone actually supplies for new rooms.
+        max_initial_messages = 10000;
       };
       network.history_sync = {
         max_initial_conversations = -1;
-        request_full_sync = false;
+        # Ask WhatsApp for the larger history payload at the next pairing.
+        request_full_sync = true;
+        full_sync_config.days_limit = 1095;
       };
     };
   };
