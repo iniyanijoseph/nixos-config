@@ -52,6 +52,23 @@ def atomic_json(path, data):
     os.replace(tmp, path)
 
 
+def matrix_notify(event, body):
+    """Best-effort private Matrix alert, deduplicated across queue restarts."""
+    secret = Path("/var/lib/secrets/matrix-alerts.json")
+    if not secret.is_file():
+        return
+    marker = STATE / ("matrix-alert-" + event + ".json")
+    if marker.exists():
+        return
+    try:
+        cmd = [sys.executable, str(REPO / "hosts/contabo/matrix-alert.py"), body]
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=25)
+        atomic_json(marker, {"sent_at": now(), "event": event})
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as err:
+        # Alert delivery failure must never corrupt or block photo migration.
+        print(f"Matrix notification failed for {event}: {type(err).__name__}", flush=True)
+
+
 def discord_running():
     """Treat a still-running collector (possibly tmux-detached) as busy."""
     me = os.getpid()
@@ -246,6 +263,7 @@ def prepare_photos():
     atomic_json(REPAIR_MARK, {"reconciled_at": now(), "quarantine": str(QUARANTINE),
                              "manifest": str(MANIFEST), "verified": strict_reason})
     print(f"Google Photos tree reconciled: {strict_reason}", flush=True)
+    matrix_notify("photos-reconciled", "[Contabo] Google Photos upload verified and misplaced files reconciled. Discord archive may still be running.")
     return True, strict_reason
 
 
@@ -265,11 +283,13 @@ def photos_migrate():
         subprocess.run([OCC, "memories:migrate-google-takeout",
                         "--user=wug", f"--folder={FOLDER}"], check=True)
         atomic_json(MARK, {"finished": now(), "input": str(MANIFEST), "files_checked": why})
+        matrix_notify("photos-migrated", "[Contabo] Google Takeout metadata migration completed.")
     if not INDEX_MARK.exists():
         print("Indexing photos in Nextcloud Memories...", flush=True)
         subprocess.run([OCC, "memories:index", "--user=wug",
                         f"--path={FOLDER}", "--force"], check=True)
         atomic_json(INDEX_MARK, {"finished": now(), "photos_migrated": str(MARK)})
+        matrix_notify("photos-indexed", "[Contabo] Google Photos Memories indexing completed.")
 
 
 def stage_services():
@@ -298,6 +318,7 @@ def stage_services():
                         "mail_enabled": False, "bridges_enabled": False,
                         "next": "Review DNS, secrets, auth, and switch manually"})
     print(f"Service readiness staged: {POST}, log: {logfile}")
+    matrix_notify("migration-complete", "[Contabo] Photo migration and preflight steps completed. Mail and messaging bridges remain disabled pending review.")
 
 
 def status():
@@ -383,5 +404,6 @@ if __name__ == "__main__":
         main()
     except (RuntimeError, OSError, sqlite3.Error, subprocess.CalledProcessError,
             subprocess.TimeoutExpired, ValueError) as exc:
+        matrix_notify("queue-failed", "[Contabo] Migration queue failed and needs review. Check journalctl -u discord-photos-queue.")
         print(f"QUEUE FAILED (safe to retry): {exc}", file=sys.stderr)
         sys.exit(1)
