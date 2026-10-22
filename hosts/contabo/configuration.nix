@@ -10,6 +10,7 @@
     ./discord.nix
     ./email.nix
     ./mail.nix
+    ./bridges-extra.nix
     ./shell.nix
   ];
 
@@ -19,6 +20,8 @@
   contabo.emailBridge.enable = false;
   # Stage only: no mail ports, listeners, credentials or DNS changed yet.
   contabo.mail.enable = false;
+  contabo.messagingBridges.sms.enable = false;
+  contabo.messagingBridges.slack.enable = false;
 
   networking.hostName = "contabo";
   time.timeZone = "UTC";
