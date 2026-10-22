@@ -67,13 +67,14 @@ in {
     # registration.yaml; do not enable before provisioning both.
     # Synapse needs to read private registrations without world-readable
     # appservice tokens. Bridge user groups are restricted to each bridge.
-    systemd.services.matrix-synapse.serviceConfig.SupplementaryGroups =
-      lib.mapAttrsToList (_: b: b.name) enabled;
+    systemd.services = {
+      matrix-synapse.serviceConfig.SupplementaryGroups =
+        lib.mapAttrsToList (_: b: b.name) enabled;
+    } // (lib.mapAttrs' (_: b:
+      lib.nameValuePair b.name (mkService b)) enabled);
     services.matrix-synapse.settings.app_service_config_files =
       lib.mapAttrsToList (_: b: "/var/lib/${b.name}/registration.yaml") enabled;
 
-    systemd.services = lib.mapAttrs' (_: b:
-      lib.nameValuePair b.name (mkService b)) enabled;
     })
   ];
 }
