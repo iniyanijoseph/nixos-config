@@ -45,7 +45,7 @@ def _read_json(path):
 
 def _size(n):
     value=float(n)
-    for unit in ("B", "KiB", "GiB", "TiB"):
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if value < 1024 or unit == "TiB":
             return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
         value /= 1024
