@@ -53,6 +53,13 @@ class QueueTests(unittest.TestCase):
         with patch.object(queue.Path, "is_file", side_effect=PermissionError("private")):
             queue.matrix_notify("test", "private test")
 
+    def test_memories_occ_runs_with_perl_visible_after_sudo(self):
+        self.assertEqual(queue.OCC_ENV[:3],
+                         ["/run/current-system/sw/bin/sudo", "--user=nextcloud", "--"])
+        self.assertIn("PATH=/run/current-system/sw/bin:/run/wrappers/bin",
+                      queue.OCC_ENV)
+        self.assertEqual(queue.OCC_ENV[-1], queue.OCC)
+
     def test_occ_uses_system_profile_wrapper(self):
         self.assertEqual(queue.OCC, "/run/current-system/sw/bin/nextcloud-occ")
 
