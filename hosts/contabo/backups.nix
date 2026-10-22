@@ -34,7 +34,9 @@
         "/var/lib/acme"
         "/etc/ssh"
         "/etc/nixos"
-      ];
+      ]
+      ++ lib.optionals config.contabo.mail.enable [ "/var/lib/stalwart" ]
+      ++ lib.optionals config.contabo.emailBridge.enable [ "/var/lib/matrimail" ];
       exclude = [ "**/appdata_*/preview/**" ];
       pruneOpts = [
         "--keep-daily 7"
