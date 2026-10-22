@@ -16,8 +16,11 @@ def selected_kind(kind, parents):
 
 def selected_rows(db):
     parents=selected_parent_ids(db)
-    return [row for row in db.execute("SELECT * FROM channels")
-            if selected_kind(row["kind"],parents)]
+    # Explicit sqlite3.Row output, independent of the caller connection\'s row_factory.
+    cursor=db.execute("SELECT * FROM channels")
+    names=[column[0] for column in cursor.description]
+    return [dict(zip(names,row)) for row in cursor.fetchall()
+            if selected_kind(row[names.index("kind")],parents)]
 
 def selected_scan(scope,parents):
     return (scope in ("dms","guilds",f"guild:{TARGET_GUILD}",f"threads-active:{TARGET_GUILD}")
