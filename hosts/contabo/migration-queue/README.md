@@ -14,10 +14,20 @@ Discord SQLite scan/refresh checkpoints all clean (0 incomplete)
           +
 A complete local Takeout SHA-256 manifest exists on Contabo
           +
-Every uploaded Nextcloud file matches that manifest exactly
+All canonical uploaded files + Google JSON match Takeout SHA-256
+          +
+Extra misnested files are only byte-identical Takeout duplicates
+          +
+Entire tree stays unchanged for 1 hour (no upload activity)
           |
           v
 Fresh encrypted restic-backups-contabo snapshot (must succeed)
+          |
+          v
+Quarantine only verified extra copies; refresh Nextcloud file cache
+          |
+          v
+Re-verify canonical Takeout directory exactly
           |
           v
 Nextcloud Memories: migrate Google Takeout JSON metadata to EXIF
@@ -88,10 +98,46 @@ The queue checks the actual Nextcloud files in
 directory is discovered through `nextcloud-occ`). If the drag/drop
 uploaded a different destination, update `FOLDER` in
 `migration-queue.py` and ensure the manifest matches the real contents.
-File counts and checksums must match exactly. Only **then** is the upload
-considered finished.
+File counts and checksums must match exactly for the canonical files.
+The reconciliation helper recognizes only extra identical files accidentally
+nested under `Photos from 2016`. Those extras must themselves match both
+your manifest and their correct, fully-uploaded top-level counterparts.
+Everything else blocks the queue; it never guesses or overwrites a file.
 
-## Stage 3 — Start the queue detached, without switching NixOS
+Because Firefox is uploading a large library, the first complete and
+fully hashed audit only **starts a one-hour quiescence timer**. All file
+paths, byte sizes, modification times and inode identities must remain
+unchanged for that whole interval. Only after the interval and a second
+unchanged audit does the queue start an encrypted Restic backup. It then
+moves verified redundant copies into
+`/var/lib/migration-queue/photos-duplicate-quarantine/`
+rather than permanently deleting them, and runs
+`nextcloud-occ files:scan --path=/wug/files/Photos/Google Photos`
+to refresh Nextcloud's database.
+
+If an expected file is missing, still uploading, corrupted, or unexpectedly
+different, **nothing is moved** and the queue keeps waiting. This also
+means a permanently missing or mismatched file requires manual review,
+not an automatic overwrite. Empty extra folders may remain after cleanup;
+they can be removed later in Nextcloud Files once all indexing passes.
+
+## Stage 3 — Start (or update) the queue detached, without switching NixOS
+
+If you already started `discord-photos-queue`, the running Python process
+will not automatically reload source changes after `git pull`. **Restart
+only the queue service**, not Discord, NixOS or Synapse:
+
+```fish
+cd /etc/nixos
+sudo git pull --ff-only
+nix shell nixpkgs#python3 --command python3 -m unittest   hosts/contabo/test_migration_queue.py -v
+sudo systemctl restart discord-photos-queue
+```
+
+This preserves existing checkpoint files, the local Takeout upload,
+the Discord collector and the Nextcloud browser session. Review
+`journalctl -u discord-photos-queue` afterward. If the unit doesn't
+exist, use the initial `systemd-run` command below.
 
 On **Contabo**:
 
@@ -165,17 +211,23 @@ API listings could still be missing.
 ## Photos migration is destructive to metadata
 
 Memories' `memories:migrate-google-takeout` edits the uploaded photos.
-The queue starts an encrypted Restic backup *before* migration. Failure
-stops the workflow. All 13GB+ of Takeout originals should still be kept
+The queue starts an encrypted Restic backup *before duplicate cleanup*
+and again before EXIF migration. Failure stops the workflow. All 13GB+ of Takeout originals should still be kept
 on your local machine until the results are audited.
 
-Checkpoint files are under `/var/lib/migration-queue/`.
+Checkpoint files and quarantined duplicates are under
+`/var/lib/migration-queue/`. Do not delete the quarantine or old
+Restic snapshots until the final Takeout verification and Memories
+indexing are audited. The original exported Takeout remains the
+best independent recovery source.
 If the index fails after EXIF migration, restarting only re-runs indexing.
 If the preflight evaluation fails, the queue records an error and retries;
 it **does not** enable a mail or chat bridge.
 
 ## When the queue completes
 
+- `photos-reconciled.json` indicates complete upload verification,
+  one-hour quiescence and optional safe duplicate quarantine.
 - `photos-migrated.json` and `photos-indexed.json` indicate the
   metadata update and Memories index steps were successful.
 - `services-staged.json` indicates the future NixOS profiles passed
