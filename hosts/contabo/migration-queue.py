@@ -31,6 +31,9 @@ QUARANTINE = STATE / "photos-duplicate-quarantine"
 REPAIR_MARK = STATE / "photos-reconciled.json"
 FOLDER = "Photos/Google Photos"
 REPO = Path("/etc/nixos")
+# NixOS installs a preconfigured Nextcloud OCC wrapper in the system profile.
+# The transient unit runs inside `nix shell`, whose PATH can omit this wrapper.
+OCC = "/run/current-system/sw/bin/nextcloud-occ"
 
 
 def now():
@@ -164,7 +167,7 @@ def validate_manifest(manifest, photo_dir):
 
 def nc_data_dir():
     result = subprocess.run(
-        ["nextcloud-occ", "config:system:get", "datadirectory"],
+        [OCC, "config:system:get", "datadirectory"],
         check=True, capture_output=True, text=True, timeout=60)
     folder = result.stdout.strip()
     if not folder.startswith("/"):
@@ -235,7 +238,7 @@ def prepare_photos():
     # Also run scan on restart if a prior rename succeeded but the
     # following files:scan failed, so file cache cannot remain stale.
     if duplicates or relocations or QUARANTINE.exists() or not REPAIR_MARK.exists():
-        subprocess.run(["nextcloud-occ", "files:scan",
+        subprocess.run([OCC, "files:scan",
                         f"--path=/wug/files/{FOLDER}"], check=True)
     strict_ok, strict_reason = photos_status()
     if not strict_ok:
@@ -259,12 +262,12 @@ def photos_migrate():
         if not okay:
             raise RuntimeError(f"Upload changed during backup: {why}")
         print("Migrating Google Takeout metadata...", flush=True)
-        subprocess.run(["nextcloud-occ", "memories:migrate-google-takeout",
+        subprocess.run([OCC, "memories:migrate-google-takeout",
                         "--user=wug", f"--folder={FOLDER}"], check=True)
         atomic_json(MARK, {"finished": now(), "input": str(MANIFEST), "files_checked": why})
     if not INDEX_MARK.exists():
         print("Indexing photos in Nextcloud Memories...", flush=True)
-        subprocess.run(["nextcloud-occ", "memories:index", "--user=wug",
+        subprocess.run([OCC, "memories:index", "--user=wug",
                         f"--path={FOLDER}", "--force"], check=True)
         atomic_json(INDEX_MARK, {"finished": now(), "photos_migrated": str(MARK)})
 
