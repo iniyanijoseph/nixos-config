@@ -127,10 +127,18 @@ class QueueTests(unittest.TestCase):
                 }
             }}
             result = cleaner.audit(root, original)
-            self.assertFalse(result["ok"])
-            self.assertIn("canonical files missing", result["reason"])
+            self.assertTrue(result["ok"], result["reason"])
+            self.assertEqual(result["relocations"], [
+                ("Photos from 2016/Photos from 2026/photo.jpg", "Photos from 2026/photo.jpg")
+            ])
+            obs = Path(temp) / "obs.json"
+            self.assertFalse(cleaner.stable_observation(
+                result, obs, epoch=100, quiet_seconds=3600)[0])
             (root / "Photos from 2026").mkdir()
             (root / "Photos from 2026/photo.jpg").write_bytes(b"different")
+            with self.assertRaises(RuntimeError):
+                cleaner.relocate_missing(root, original, result["relocations"])
+            self.assertTrue((wrong / "photo.jpg").exists())
             result = cleaner.audit(root, original)
             self.assertFalse(result["ok"])
             self.assertIn("mismatch", result["reason"].lower())
@@ -138,6 +146,28 @@ class QueueTests(unittest.TestCase):
             self.assertTrue(cleaner.audit(root, original)["ok"])
             (root / "Photos from 2016/Photos from 2026/photo.jpg").write_bytes(b"bad")
             self.assertFalse(cleaner.audit(root, original)["ok"])
+
+    def test_missing_canonical_is_recovered_without_overwrite(self):
+        import photo_reconcile as cleaner
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "Nextcloud"
+            alias = root / "Photos from 2016/Train/old.jpg"
+            alias.parent.mkdir(parents=True)
+            alias.write_bytes(b"original")
+            meta = {"format": 1, "files": {
+                "Train/old.jpg": {"size": 8,
+                    "sha256": hashlib.sha256(b"original").hexdigest()}
+            }}
+            plan = cleaner.audit(root, meta)
+            self.assertTrue(plan["ok"], plan["reason"])
+            self.assertEqual(plan["duplicates"], [])
+            self.assertEqual(len(plan["relocations"]), 1)
+            self.assertEqual(cleaner.relocate_missing(root, meta, plan["relocations"]), 1)
+            self.assertFalse(alias.exists())
+            self.assertEqual((root / "Train/old.jpg").read_bytes(), b"original")
+            self.assertTrue(queue.validate_manifest(meta, root)[0])
 
     def test_photo_index_failure_does_not_mark_complete(self):
         with tempfile.TemporaryDirectory() as temp:
