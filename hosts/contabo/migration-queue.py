@@ -472,7 +472,13 @@ def main():
                 print(f"{now()} Awaiting photos: {p[1]}", flush=True)
             if not d[0]:
                 print(f"{now()} Awaiting Discord: {d[1]}", flush=True)
-            # Discord progress is cheap to poll. Keep the expensive photos\n            # inventory on its configured interval instead.\n            for _ in range(0, args.interval, 60):\n                time.sleep(min(60, args.interval))\n                if not discord_running():\n                    break\n                discord_progress()\n
+            # Poll Discord cheaply every minute without rehashing photos.
+            for _ in range(0, args.interval, 60):
+                time.sleep(min(60, args.interval))
+                if not discord_running():
+                    break
+                discord_progress()
+
 
 if __name__ == "__main__":
     try:
