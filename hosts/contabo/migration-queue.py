@@ -353,8 +353,13 @@ def photos_migrate():
         if not okay:
             raise RuntimeError(f"Upload changed during backup: {why}")
         print("Migrating Google Takeout metadata...", flush=True)
+        # Memories expects an interactive yes/no confirmation. In a systemd
+        # service stdin is EOF, and upstream currently raises trim(false).
+        # Explicitly answer only this known confirmation after the mandatory
+        # successful offsite backup and repeated manifest verification.
         subprocess.run([OCC, "memories:migrate-google-takeout",
-                        "--user=wug", f"--folder={FOLDER}"], check=True)
+                        "--user=wug", f"--folder={FOLDER}"],
+                       input="y\n", text=True, check=True)
         atomic_json(MARK, {"finished": now(), "input": str(MANIFEST), "files_checked": why})
         progress_notify("Google Photos metadata migration", 1, 1, done=True)
         matrix_notify("photos-migrated", "[Contabo] Google Takeout metadata migration completed.")
