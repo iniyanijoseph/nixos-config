@@ -147,6 +147,25 @@ class QueueTests(unittest.TestCase):
             (root / "Photos from 2016/Photos from 2026/photo.jpg").write_bytes(b"bad")
             self.assertFalse(cleaner.audit(root, original)["ok"])
 
+    def test_incomplete_browser_upload_never_hashes_large_library(self):
+        import photo_reconcile as cleaner
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "photos"
+            root.mkdir()
+            (root / "first.jpg").write_bytes(b"first")
+            info = {"format": 1, "files": {
+                "first.jpg": {"size": 5,
+                    "sha256": hashlib.sha256(b"first").hexdigest()},
+                "second.jpg": {"size": 6,
+                    "sha256": hashlib.sha256(b"second").hexdigest()},
+            }}
+            with patch.object(cleaner, "sha256_file",
+                              side_effect=AssertionError("hashed while still uploading")):
+                result = cleaner.audit(root, info)
+            self.assertFalse(result["ok"])
+            self.assertIn("not uploaded", result["reason"])
+
     def test_missing_canonical_is_recovered_without_overwrite(self):
         import photo_reconcile as cleaner
         import hashlib
