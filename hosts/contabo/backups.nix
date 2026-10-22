@@ -29,6 +29,7 @@
         "/var/lib/matrix-synapse"
         "/var/lib/mautrix-whatsapp"
         "/var/lib/discord-archive"
+        "/var/lib/migration-queue"
         "/var/lib/restic-staging/postgres-all.sql"
         "/var/lib/secrets"
         "/var/lib/acme"
