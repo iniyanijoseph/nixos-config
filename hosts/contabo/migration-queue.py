@@ -356,18 +356,21 @@ def main():
         except BlockingIOError:
             raise RuntimeError("Another migration queue is already running")
         while True:
+            # Photo reconciliation is independent of Discord collection.
+            # Keep only EXIF migration/indexing and service staging gated by
+            # a completed, verified Discord archive.
+            p = prepare_photos()
             d = discord_status()
-            if d[0]:
-                p = prepare_photos()
-                if p[0] or MARK.exists():
-                    print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
-                    photos_migrate()
-                    if INDEX_MARK.exists():
-                        stage_services()
-                    print("Queued work finished. No NixOS switch was performed.", flush=True)
-                    return
+            if p[0] and d[0]:
+                print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
+                photos_migrate()
+                if INDEX_MARK.exists():
+                    stage_services()
+                print("Queued work finished. No NixOS switch was performed.", flush=True)
+                return
+            if not p[0]:
                 print(f"{now()} Awaiting photos: {p[1]}", flush=True)
-            else:
+            if not d[0]:
                 print(f"{now()} Awaiting Discord: {d[1]}", flush=True)
             time.sleep(args.interval)
 
