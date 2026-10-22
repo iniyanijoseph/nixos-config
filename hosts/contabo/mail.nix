@@ -95,8 +95,13 @@ in
         '';
       };
     };
-    # Allow the unprivileged Stalwart process to read the renewal-managed key.
-    security.acme.certs.${host}.group = "stalwart";
+    # Share only this ACME certificate with Stalwart and Nginx.
+    # NixOS checks that every consuming service belongs to the cert group.
+    users.groups.mail-tls = { };
+    security.acme.certs.${host}.group = "mail-tls";
+    systemd.services.stalwart.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
+    systemd.services.nginx.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
+    systemd.services.nginx-config-reload.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
 
     networking.firewall.allowedTCPPorts = [ 25 465 587 993 ];
 
