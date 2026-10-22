@@ -20,6 +20,21 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 API = "https://discord.com/api/v9"
+TARGET_GUILD = "804408079940583475"
+
+def selected_scopes(db):
+    parents = {r[0] for r in db.execute("SELECT id FROM channels WHERE kind=?", (f"guild:{TARGET_GUILD}",))}
+    return parents
+
+def selected_kind(kind, parents):
+    return (kind == "dms" or kind in (f"guild:{TARGET_GUILD}", f"threads-active:{TARGET_GUILD}")
+            or any(kind == f"archived-{type_}:{pid}" for pid in parents for type_ in ("public","private")))
+
+def selected_channels(db):
+    parents = selected_scopes(db)
+    return [row for row in db.execute("SELECT * FROM channels ORDER BY id").fetchall()
+            if selected_kind(row["kind"], parents)]
+
 
 
 def error_summary(status, body, path):
@@ -166,6 +181,8 @@ def discover(db, api):
         return
     for guild in guilds:
         gid = str(guild["id"])
+        if gid != TARGET_GUILD:
+            continue
         name = guild.get("name", gid)
         parents = inventory(db, api, f"guild:{gid}", f"/guilds/{gid}/channels",
                             extract=lambda items: [
@@ -249,7 +266,7 @@ def store(db, cid, messages, cursor, *, fresh=False, done=False, floor=None):
 
 
 def fetch_history(db, api):
-    for channel in db.execute("SELECT * FROM channels WHERE complete=0 ORDER BY id").fetchall():
+    for channel in (c for c in selected_channels(db) if not c["complete"]):
         cid, before = channel["id"], channel["before_id"]
         print(f"History {channel['name']}: continuing from {before or 'newest'}", flush=True)
         try:
@@ -271,7 +288,7 @@ def fetch_history(db, api):
 
 
 def catch_up(db, api):
-    for channel in db.execute("SELECT * FROM channels WHERE complete=1 ORDER BY id").fetchall():
+    for channel in (c for c in selected_channels(db) if c["complete"]):
         cid = channel["id"]
         if channel["refresh_active"]:
             floor, before = channel["refresh_floor"], channel["refresh_before"]
@@ -304,18 +321,25 @@ def catch_up(db, api):
 
 
 def summary(db):
-    rows = db.execute("""SELECT c.*, (SELECT COUNT(*) FROM messages m
+    selected = {c["id"] for c in selected_channels(db)}
+    rows = [r for r in db.execute("""SELECT c.*, (SELECT COUNT(*) FROM messages m
         WHERE m.channel_id=c.id) AS n FROM channels c ORDER BY c.id""").fetchall()
-    scans = db.execute("SELECT * FROM scans ORDER BY scope").fetchall()
+        if r["id"] in selected]
+    parents = selected_scopes(db)
+    def relevant_scope(scope):
+        return (scope in ("dms","guilds",f"guild:{TARGET_GUILD}",f"threads-active:{TARGET_GUILD}")
+                or any(scope == f"archived-{kind}:{pid}" for pid in parents for kind in ("public","private")))
+    scans = [s for s in db.execute("SELECT * FROM scans ORDER BY scope").fetchall()
+             if relevant_scope(s["scope"])]
     issues = [f"{r['id']} {r['name']}: {r['error'] or 'not complete'}" for r in rows
               if not r["complete"] or r["refresh_active"] or not r["refreshed_at"] or r["error"]]
     issues += [f"Discovery {s['scope']}: {s['error']}" for s in scans if not s["ok"]]
-    for must in ("dms", "guilds"):
+    for must in ("dms", "guilds", f"guild:{TARGET_GUILD}"):
         if not any(s["scope"] == must and s["ok"] for s in scans):
             issues.append(f"Missing successful {must} discovery")
     return {
         "timestamp": stamp(),
-        "scope": "VISIBLE / REGISTERED CHANNELS ONLY, NOT ALL HISTORICAL DISCORD DATA",
+        "scope": f"All visible DMs and target guild {TARGET_GUILD} only; no other guild history",
         "channels": [dict(r) for r in rows],
         "scans": [dict(r) for r in scans],
         "messages": sum(r["n"] for r in rows),
