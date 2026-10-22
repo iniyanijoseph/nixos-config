@@ -15,6 +15,10 @@ spec.loader.exec_module(queue)
 
 
 class QueueTests(unittest.TestCase):
+    def test_optional_matrix_alert_unreadable_secret_is_harmless(self):
+        with patch.object(queue.Path, "is_file", side_effect=PermissionError("private")):
+            queue.matrix_notify("test", "private test")
+
     def test_occ_uses_system_profile_wrapper(self):
         self.assertEqual(queue.OCC, "/run/current-system/sw/bin/nextcloud-occ")
 
