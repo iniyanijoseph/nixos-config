@@ -84,10 +84,10 @@ def matrix_notify(event, body):
 # merely from file counts while validation is pending.
 PROGRESS_MARK = STATE / "matrix-progress.json"
 
-def progress_notify(task, complete, total, *, done=False):
+def progress_notify(task, complete, total, *, done=False, step=10):
     if total <= 0:
         return
-    pct = 100 if done else min(90, (max(0, complete) * 100 // total // 10) * 10)
+    pct = 100 if done else min(99 if step == 1 else 90, (max(0, complete) * 100 // total // step) * step)
     if pct < 10:
         return
     try:
@@ -115,19 +115,27 @@ def progress_notify(task, complete, total, *, done=False):
 
 
 def discord_progress():
+    """Report 1% steps across historical backfill and refresh.
+
+    Work units are two passes per discovered channel. This is progress
+    through the currently known set, NOT an ETA or proof of completeness;
+    discovery may add channels during collection.
+    """
     if not DB.is_file():
         return
     try:
         uri = "file:" + str(DB.absolute()) + "?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=5) as conn:
-            complete, total = conn.execute(
-                "SELECT COALESCE(SUM(CASE WHEN complete=1 AND refresh_active=0 "
+            backfilled, refreshed, total = conn.execute(
+                "SELECT COALESCE(SUM(CASE WHEN complete=1 THEN 1 ELSE 0 END),0), "
+                "COALESCE(SUM(CASE WHEN complete=1 AND refresh_active=0 "
                 "AND refreshed_at IS NOT NULL AND error IS NULL THEN 1 ELSE 0 END),0), "
                 "COUNT(*) FROM channels").fetchone()
-        progress_notify("Discord archive", complete, total)
+            conn.close()
+        if total:
+            progress_notify("Discord archive", backfilled + refreshed, 2 * total, step=1)
     except sqlite3.Error:
         pass
-
 
 
 def overall_progress(*, discord_ready=False, photos_ready=False):
