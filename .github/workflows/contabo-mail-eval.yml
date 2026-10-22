@@ -1,10 +1,13 @@
-name: Contabo mail Nix evaluation
+name: Contabo future mail and messaging bridge Nix evaluation
 
 on:
   push:
     paths:
       - 'hosts/contabo/mail.nix'
       - 'hosts/contabo/email.nix'
+      - 'hosts/contabo/bridges-extra.nix'
+      - 'hosts/contabo/bridges-extra-pkgs.nix'
+      - 'hosts/contabo/evaluate-future-bridges.sh'
       - 'hosts/contabo/configuration.nix'
       - 'hosts/contabo/flake.nix'
       - 'hosts/contabo/flake.lock'
@@ -19,7 +22,7 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - name: Evaluate staging config (no service activation)
         run: nix eval --raw ./hosts/contabo#nixosConfigurations.contabo.config.system.build.toplevel.drvPath
-      - name: Evaluate future mail-enabled configuration (no build or switch)
+      - name: Evaluate all future mail and messaging bridge configurations (no build or switch)
         run: |
           nix eval --impure --raw --expr '
             let
@@ -31,7 +34,9 @@ jobs:
                   ./hosts/contabo/configuration.nix
                   ({ lib, ... }: {
                     contabo.mail.enable = lib.mkForce true;
-                    contabo.emailBridge.enable = lib.mkForce false;
+                    contabo.emailBridge.enable = lib.mkForce true;
+                    contabo.messagingBridges.sms.enable = lib.mkForce true;
+                    contabo.messagingBridges.slack.enable = lib.mkForce true;
                   })
                 ];
               };
