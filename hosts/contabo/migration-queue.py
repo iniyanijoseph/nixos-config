@@ -527,11 +527,11 @@ def main():
                 print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
                 photos_migrate()
                 if INDEX_MARK.exists():
-                    stage_services()
                     if not cleanup_quarantine():
                         print("Photo quarantine cleanup still queued; will check again.", flush=True)
                         time.sleep(args.interval)
                         continue
+                    stage_services()
                 overall_progress(discord_ready=True, photos_ready=True)
                 print("Queued work finished. No NixOS switch was performed.", flush=True)
                 return
