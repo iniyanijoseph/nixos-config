@@ -108,6 +108,48 @@ def _backup_summary():
     except (OSError,ValueError,TypeError):
         return "unavailable (repository query/JSON error)"
 
+
+def _clock(epoch):
+    return datetime.fromtimestamp(epoch,timezone.utc).strftime("%b %d %H:%M UTC")
+
+def _duration(seconds):
+    minutes=max(0,round(seconds/60))
+    return f"{minutes}m" if minutes<60 else f"{minutes//60}h {minutes%60}m"
+
+def _discord_trend(backfilled,refreshed,messages,total):
+    """Actual change between status requests; no fictional message-volume target."""
+    file=STATE/"discord-status-sample.json"
+    old=_read_json(file)
+    now_epoch=time.time()
+    elapsed=now_epoch-float(old.get("timestamp",now_epoch))
+    if old.get("total")==total and elapsed>=600:
+        completed=backfilled+refreshed-int(old.get("completed",0))
+        new_messages=messages-int(old.get("messages",0))
+        if completed<0 or new_messages<0:
+            description="Trend: archive counters changed/reset; collecting new baseline"
+        else:
+            description=f"Last {_duration(elapsed)}: +{new_messages:,} messages, +{completed} channel passes"
+            if completed:
+                remaining=max(0,2*total-backfilled-refreshed)
+                projection=remaining*elapsed/completed
+                description+=f"\\nChannel-rate extrapolation: ~{_duration(projection)} (around {_clock(now_epoch+projection)})"
+                description+="; low confidence, excludes discovery blocker"
+            else:
+                description+="; channel-rate ETA not available"
+    else:
+        description="Trend: send !status again after 10+ minutes for measured throughput"
+    if elapsed>=600 or old.get("total")!=total or not old:
+        try:
+            file.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+            tmp=file.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"timestamp":now_epoch,"total":total,
+                        "completed":backfilled+refreshed,"messages":messages}))
+            os.chmod(tmp,0o600)
+            tmp.replace(file)
+        except OSError:
+            description+=" (sample storage unavailable)"
+    return description
+
 def status_text():
     """Read-only operational summary. No hashing, mutation or network requests."""
     lines=["CONTABO | Migration and health",
@@ -138,6 +180,8 @@ def status_text():
                 lines.append(f"Upload quiet period: {min(600,elapsed)}/600s")
             except (ValueError, TypeError):
                 pass
+    photo_done=sum(flags[n] for n in ("Photo reconciliation","Google Takeout metadata","Memories indexing"))
+    lines.append(f"Photo milestones: {photo_done}/3 ({photo_done*100//3}%), not continuous task progress")
     for name,_ in stages[1:]:
         checkpoint=_read_json(STATE/dict(stages)[name])
         detail="done" if flags[name] else "pending"
@@ -194,10 +238,14 @@ def status_text():
             percentage=(done+fresh)*100//(2*total) if total else 0
             lines.append(f"Saved messages (selected scope): {messages:,}")
             lines.append(f"Backfill: {done}/{total}; refresh: {fresh}/{total}")
-            lines.append(f"Two-pass completion: ~{percentage}% of discovered work; not an ETA")
+            lines.append(f"Two-pass completion: {percentage}% of known channel passes (not message volume)")
+            lines.append(f"Remaining known channel passes: {max(0,2*total-done-fresh)}")
+            lines.append(_discord_trend(done,fresh,messages,total))
             for label,counts in sorted(types.items()):
                 lines.append(f"  {label}: {counts[1]}/{counts[0]} backfilled, {counts[2]}/{counts[0]} refreshed")
             lines.append(f"Channel errors: {len(errors)}; discovery failures: {len(bad)}/{len(known)}")
+            if bad:
+                lines.append("Final Discord completion blocked until discovery is resolved")
             for r in bad[:3]:
                 lines.append(f"  BLOCKER: {r['scope']} — {str(r['error'] or 'unspecified')[:110]}")
             for r in errors[:2]:
@@ -223,8 +271,22 @@ def status_text():
            ("Cleanup",flags["Quarantine cleanup"]),
            ("Preflight",flags["Mail/bridge preflight"])]
     next_step=next((name for name,ready in steps if not ready),"All photo stages complete")
-    if not flags["Google Takeout metadata"]:
-        next_step="Discord completion, then Google Takeout metadata"
+    if not flags["Google Takeout metadata"] and flags["Photo reconciliation"]:
+        next_step="Google Takeout metadata (independent of Discord)"
+    lines.append("")
+    lines.append("ESTIMATED TIMELINE")
+    if flags["Memories indexing"]:
+        lines.append("Memories: complete; see indexing checkpoint above")
+    elif flags["Photo reconciliation"]:
+        lines.append("Photo import: eligible now; exact start requires live queue logs")
+        lines.append(f"Planning window from now: {_clock(time.time()+1800)} – {_clock(time.time()+10800)}")
+        lines.append("30m–3h is an assumption, NOT measured remaining time")
+    else:
+        lines.append("Photo migration ETA: unavailable until reconciliation")
+    if not flags["Mail/bridge preflight"]:
+        lines.append("Offline mail/bridge preflight: independent, queued")
+    else:
+        lines.append("Offline mail/bridge preflight: done; no services enabled")
     lines.extend(["","NEXT",next_step,
                   "Bridges: WhatsApp configured; Discord, SMS/RCS, Slack, Matrimail and mail staged/disabled.",
                   "Note: service status is systemd state, not a live chat delivery test."])
