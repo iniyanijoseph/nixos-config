@@ -15,6 +15,9 @@ spec.loader.exec_module(queue)
 
 
 class QueueTests(unittest.TestCase):
+    def test_occ_uses_system_profile_wrapper(self):
+        self.assertEqual(queue.OCC, "/run/current-system/sw/bin/nextcloud-occ")
+
     def test_manifest_detects_missing_and_modified_upload(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
