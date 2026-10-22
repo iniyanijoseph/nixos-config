@@ -6,6 +6,7 @@ deletion is performed. Run explicitly under a supervised systemd transient
 service. Disk state is durable; rerun after reboot.
 """
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ STATE = Path("/var/lib/migration-queue")
 DB = Path("/var/lib/discord-archive/archive.sqlite")
 MANIFEST = STATE / "photos-manifest.json"
 MARK = STATE / "photos-migrated.json"
+INDEX_MARK = STATE / "photos-indexed.json"
 POST = STATE / "services-staged.json"
 FOLDER = "Photos/Google Photos"
 REPO = Path("/etc/nixos")
@@ -176,27 +178,26 @@ def photos_status(manifest_path=MANIFEST, photo_dir=None):
 
 
 def photos_migrate():
-    if MARK.exists():
-        print("Photos migration already recorded; skipping.")
-        return
-    okay, why = photos_status()
-    if not okay:
-        raise RuntimeError(f"Upload no longer verified: {why}")
-    # This backup MUST succeed before mutating uploaded originals.
-    print("Starting encrypted offsite backup before EXIF changes...", flush=True)
-    subprocess.run(["systemctl", "start", "restic-backups-contabo.service"], check=True)
-    # Double-check after backup; concurrent uploads must not change inputs.
-    okay, why = photos_status()
-    if not okay:
-        raise RuntimeError(f"Upload changed during backup: {why}")
-    print("Migrating Google Takeout metadata...", flush=True)
-    subprocess.run(["nextcloud-occ", "memories:migrate-google-takeout",
-                    "--user=wug", f"--folder={FOLDER}"], check=True)
-    # Deliberately re-run index on restarts, but NOT the EXIF-mutating step
-    # after marking success.
-    atomic_json(MARK, {"finished": now(), "input": str(MANIFEST), "files_checked": why})
-    subprocess.run(["nextcloud-occ", "memories:index", "--user=wug",
-                    f"--path={FOLDER}", "--force"], check=True)
+    if not MARK.exists():
+        okay, why = photos_status()
+        if not okay:
+            raise RuntimeError(f"Upload no longer verified: {why}")
+        # This backup MUST succeed before mutating uploaded originals.
+        print("Starting encrypted offsite backup before EXIF changes...", flush=True)
+        subprocess.run(["systemctl", "start", "restic-backups-contabo.service"], check=True)
+        # Double-check after backup; concurrent uploads must not change inputs.
+        okay, why = photos_status()
+        if not okay:
+            raise RuntimeError(f"Upload changed during backup: {why}")
+        print("Migrating Google Takeout metadata...", flush=True)
+        subprocess.run(["nextcloud-occ", "memories:migrate-google-takeout",
+                        "--user=wug", f"--folder={FOLDER}"], check=True)
+        atomic_json(MARK, {"finished": now(), "input": str(MANIFEST), "files_checked": why})
+    if not INDEX_MARK.exists():
+        print("Indexing photos in Nextcloud Memories...", flush=True)
+        subprocess.run(["nextcloud-occ", "memories:index", "--user=wug",
+                        f"--path={FOLDER}", "--force"], check=True)
+        atomic_json(INDEX_MARK, {"finished": now(), "photos_migrated": str(MARK)})
 
 
 def stage_services():
@@ -232,6 +233,7 @@ def status():
     print(json.dumps({"discord": {"ready": d[0], "reason": d[1]},
                       "photos": {"ready": p[0], "reason": p[1]},
                       "migration_done": MARK.exists(),
+                      "index_done": INDEX_MARK.exists(),
                       "services_staged": POST.exists()}, indent=2))
 
 
@@ -257,21 +259,26 @@ def main():
     if args.interval < 60:
         ap.error("minimum interval 60 seconds")
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
-    while True:
-        d = discord_status()
-        if d[0]:
-            p = photos_status()
-            if p[0]:
-                print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
-                photos_migrate()
-                if MARK.exists():
-                    stage_services()
-                print("Queued work finished. No NixOS switch was performed.", flush=True)
-                return
-            print(f"{now()} Awaiting photos: {p[1]}", flush=True)
-        else:
-            print(f"{now()} Awaiting Discord: {d[1]}", flush=True)
-        time.sleep(args.interval)
+    with open(STATE / "queue.lock", "a+") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Another migration queue is already running")
+        while True:
+            d = discord_status()
+            if d[0]:
+                p = photos_status()
+                if p[0] or MARK.exists():
+                    print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
+                    photos_migrate()
+                    if INDEX_MARK.exists():
+                        stage_services()
+                    print("Queued work finished. No NixOS switch was performed.", flush=True)
+                    return
+                print(f"{now()} Awaiting photos: {p[1]}", flush=True)
+            else:
+                print(f"{now()} Awaiting Discord: {d[1]}", flush=True)
+            time.sleep(args.interval)
 
 
 if __name__ == "__main__":
