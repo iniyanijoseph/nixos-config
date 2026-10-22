@@ -30,6 +30,34 @@ def safe_key(key):
             path.as_posix() == key)
 
 
+def quick_coverage(root, originals):
+    """Cheap existence/size check: never hash gigabytes during upload."""
+    accounted = set()
+    for base, dirs, names in os.walk(root, followlinks=False):
+        dirs.sort()
+        names.sort()
+        if any((Path(base) / dirname).is_symlink() for dirname in dirs):
+            return False, "Unexpected symlinked directory"
+        for name in names:
+            file = Path(base) / name
+            if file.is_symlink() or not file.is_file():
+                return False, f"Unexpected special file: {file}"
+            rel = file.relative_to(root).as_posix()
+            candidate = rel
+            if candidate not in originals and rel.startswith(MISPLACED_PREFIX):
+                candidate = rel[len(MISPLACED_PREFIX):]
+            info = originals.get(candidate)
+            if not isinstance(info, dict) or "size" not in info or "sha256" not in info:
+                return False, f"Unknown/misnested file: {rel}"
+            if file.stat().st_size != info["size"]:
+                return False, f"Incomplete or incorrect size: {rel}"
+            accounted.add(candidate)
+    missing = originals.keys() - accounted
+    if missing:
+        return False, f"{len(missing)} Takeout files not uploaded, e.g. {min(missing)}"
+    return True, "Every Takeout file exists with expected size"
+
+
 def audit(root, manifest):
     """Return an all-or-nothing candidate cleanup plan; never modify files.
 
@@ -46,6 +74,12 @@ def audit(root, manifest):
         return {"ok": False, "reason": "Invalid/empty Takeout manifest"}
     if any(not isinstance(k, str) or not safe_key(k) for k in original):
         return {"ok": False, "reason": "Unsafe manifest file name"}
+    # As the browser is still uploading, avoid repeatedly hashing the
+    # existing 13GB collection. Full hashes start only after EVERY
+    # expected file is found at a canonical or permitted alternate path.
+    quick_ok, quick_reason = quick_coverage(root, original)
+    if not quick_ok:
+        return {"ok": False, "reason": quick_reason}
     found = set()
     extras = []
     fingerprint = hashlib.sha256()
