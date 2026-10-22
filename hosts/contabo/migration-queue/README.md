@@ -258,3 +258,42 @@ Tests:
 nix shell nixpkgs#python3 --command python3 -m unittest \
     hosts/contabo/test_migration_queue.py -v
 ```
+
+## October 22: content-hash recovery of scrambled Google Photos
+
+The folder-based upload has misplaced files across different albums, not
+just below `Photos from 2016`. The new
+`migration-queue/hash-recovery.py` uses original SHA-256 content and sizes
+to restore files to every original manifest path, creating **independent**
+copies (not hardlinks) so Memories' EXIF edits cannot affect other albums.
+Files beyond the manifest are quarantined, not deleted. A successful
+Restic snapshot and a one-hour unchanged-file verification are required
+before any recovery operation.
+
+**Incomplete exports remain blocked.** Run:
+
+```fish
+cd /etc/nixos
+sudo nix shell nixpkgs#python3 --command python3 \
+  hosts/contabo/migration-queue/export-missing.py
+```
+
+This prints the missing counts and saves **every** absent Takeout path
+to `/var/lib/migration-queue/photos-missing.txt`, with a full read-only
+recovery plan at `photos-recovery-plan.json`. Use this list against the
+**original local Google Takeout export** to selectively upload only truly
+missing files; do not invent supplemental JSON metadata for older photos.
+If an original manifest entry lists a JSON sidecar, however, that exact
+file is needed for a complete verified import. Do not modify or delete
+the original Takeout and don't run metadata migration early.
+
+After selectively uploading missing files through Nextcloud Files,
+restart only the transient queue (no switch or Discord interruption):
+
+```fish
+sudo systemctl restart discord-photos-queue
+```
+
+The queue will automatically rehash and recover verified files once all
+manifest content exists. No automatic network uploads are performed
+by the queue. Verify all paths and backup space before proceeding.
