@@ -2,12 +2,13 @@
 """Safe SHA256-based Takeout recovery from files anywhere in upload tree.
 
 Call only after one hour of identical full content inventory and successful
-restic backup. Original paths may be added via hard links; no overwrites.
+restic backup. Original paths are restored as independent files; no overwrites.
 Redundant upload paths are moved to quarantine, not deleted.
 """
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 
 def sha(path):
@@ -46,7 +47,7 @@ def inventory(root, originals):
             "fingerprint":fingerprint,"actual_count":len(signatures)}
 
 def restore(root,originals,quarantine):
-    """Verify then restore originals with no-clobber hardlinks, quarantine extra paths."""
+    """Verify then copy originals without overwriting; quarantine extra paths."""
     root=Path(root); quarantine=Path(quarantine)
     report=inventory(root,originals)
     if not report["ok"]:
@@ -71,9 +72,20 @@ def restore(root,originals,quarantine):
         if not source.is_file() or source.is_symlink() or sha(source)!=key[1]:
             raise RuntimeError(f"Source changed: {source}")
         target.parent.mkdir(parents=True,exist_ok=True)
-        os.link(source,target,follow_symlinks=False) # Atomic, fails if target appeared.
-        if sha(target)!=key[1]:
-            raise RuntimeError(f"Linked copy changed: {rel}")
+        # Independent copy: Memories later mutates EXIF, so hardlinks would
+        # unexpectedly alter other albums. Exclusive creation forbids clobber.
+        try:
+            with source.open("rb") as read, target.open("xb") as write:
+                shutil.copyfileobj(read,write,4*1024*1024)
+                write.flush()
+                os.fsync(write.fileno())
+            shutil.copystat(source,target,follow_symlinks=False)
+            if target.stat().st_size!=key[0] or sha(target)!=key[1]:
+                raise RuntimeError(f"Copied original differs: {rel}")
+        except Exception:
+            # Preserve existing successful copies and original sources; an
+            # incomplete exclusive copy may be left for manual review.
+            raise
         restored+=1
     # Verify ALL canonical files exist before moving any original uploads.
     for rel,m in originals.items():
