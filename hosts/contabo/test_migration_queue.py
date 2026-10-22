@@ -47,12 +47,12 @@ class QueueTests(unittest.TestCase):
             db_path = Path(temp) / "discord.sqlite"
             db = sqlite3.connect(db_path)
             db.execute("""CREATE TABLE channels (
-                 id TEXT, complete INTEGER, refresh_active INTEGER,
+                 id TEXT, kind TEXT, complete INTEGER, refresh_active INTEGER,
                  refreshed_at TEXT, error TEXT)""")
             db.execute("CREATE TABLE scans(scope TEXT, ok INTEGER)")
-            db.execute("INSERT INTO channels VALUES ('100',1,0,'yesterday',NULL)")
+            db.execute("INSERT INTO channels VALUES ('100','dms',1,0,'yesterday',NULL)")
             db.executemany("INSERT INTO scans VALUES(?,?)",
-                           [("dms", 1), ("guilds", 1), ("threads-active:42", 0)])
+                           [("dms", 1), ("guilds", 1), ("guild:804408079940583475", 1), ("threads-active:804408079940583475", 0)])
             db.commit()
             db.close()
             with patch.object(queue, "discord_running", return_value=False):
