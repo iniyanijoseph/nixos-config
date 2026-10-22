@@ -141,7 +141,7 @@ class QueueTests(unittest.TestCase):
             self.assertTrue((wrong / "photo.jpg").exists())
             result = cleaner.audit(root, original)
             self.assertFalse(result["ok"])
-            self.assertIn("mismatch", result["reason"].lower())
+            self.assertIn("incorrect size", result["reason"].lower())
             (root / "Photos from 2026/photo.jpg").write_bytes(b"one")
             self.assertTrue(cleaner.audit(root, original)["ok"])
             (root / "Photos from 2016/Photos from 2026/photo.jpg").write_bytes(b"bad")
