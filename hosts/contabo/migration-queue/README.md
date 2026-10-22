@@ -144,6 +144,20 @@ timer. Review `collector.py verify` and its error report; decide
 separately whether a partial archive is acceptable. There is **no**
 silent success or automatic completeness override.
 
+If Discord's blocked endpoints remain impossible to collect, and you
+**explicitly accept** incomplete history, you can release this gate
+only **after the collector is no longer running**:
+
+```fish
+sudo nix shell nixpkgs#python3 --command python3   /etc/nixos/hosts/contabo/migration-queue.py   approve-partial-discord   --reason "Discord API blocks unsupported channels and thread discovery"
+```
+
+The command requires typing `ACCEPT INCOMPLETE DISCORD`. It writes a
+private, auditable `discord-partial-approved.json`; no old messages are
+deleted. The queue will then proceed with Photos if its manifest matches.
+This does **not** magically restore missing Discord data. To revoke
+approval before migration, stop the queue and delete just that marker.
+
 Even a passing collector verification only means all **registered,
 discoverable** channels were exhausted. Old DMs absent from Discord's
 API listings could still be missing.
