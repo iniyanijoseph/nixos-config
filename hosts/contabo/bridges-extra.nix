@@ -48,19 +48,23 @@ in {
     slack.enable = lib.mkEnableOption "mautrix-slack integration";
   };
 
-  config = lib.mkIf (enabled != { }) {
+  config = lib.mkMerge [
+    # Create service identities during ordinary future NixOS staging, so
+    # registrations can be provisioned before either bridge is enabled.
+    {
+      users.groups = lib.mapAttrs' (_: b: lib.nameValuePair b.name {}) bridge;
+      users.users = lib.mapAttrs' (_: b: lib.nameValuePair b.name {
+        isSystemUser = true;
+        group = b.name;
+        home = "/var/lib/${b.name}";
+      }) bridge;
+      systemd.tmpfiles.rules = lib.mapAttrsToList (_: b:
+        "d /var/lib/${b.name} 0750 ${b.name} ${b.name} -") bridge;
+    }
+
+    (lib.mkIf (enabled != { }) {
     # Staged configuration relies on locally generated config.yaml and
     # registration.yaml; do not enable before provisioning both.
-    users.groups = lib.mapAttrs' (_: b: lib.nameValuePair b.name {}) enabled;
-    users.users = lib.mapAttrs' (_: b: lib.nameValuePair b.name {
-      isSystemUser = true;
-      group = b.name;
-      home = "/var/lib/${b.name}";
-    }) enabled;
-
-    systemd.tmpfiles.rules = lib.mapAttrsToList (_: b:
-      "d /var/lib/${b.name} 0750 ${b.name} ${b.name} -") enabled;
-
     # Synapse needs to read private registrations without world-readable
     # appservice tokens. Bridge user groups are restricted to each bridge.
     systemd.services.matrix-synapse.serviceConfig.SupplementaryGroups =
@@ -70,5 +74,6 @@ in {
 
     systemd.services = lib.mapAttrs' (_: b:
       lib.nameValuePair b.name (mkService b)) enabled;
-  };
+    })
+  ];
 }
