@@ -129,6 +129,18 @@ def discord_progress():
         pass
 
 
+
+def overall_progress(*, discord_ready=False, photos_ready=False):
+    # Weighted milestones; unlike task-level partial counts, overall progress
+    # advances only on durable, verified completion of each phase.
+    points = (20 if discord_ready else 0) + (20 if photos_ready else 0)
+    points += 20 if REPAIR_MARK.exists() else 0
+    points += 20 if MARK.exists() else 0
+    points += 10 if INDEX_MARK.exists() else 0
+    points += 10 if POST.exists() else 0
+    progress_notify("Overall migration", points, 100, done=POST.exists())
+
+
 def discord_running():
     """Treat a still-running collector (possibly tmux-detached) as busy."""
     me = os.getpid()
@@ -437,11 +449,13 @@ def main():
                 progress_notify("Discord archive", 1, 1, done=True)
             else:
                 discord_progress()
+            overall_progress(discord_ready=d[0], photos_ready=p[0])
             if p[0] and d[0]:
                 print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
                 photos_migrate()
                 if INDEX_MARK.exists():
                     stage_services()
+                overall_progress(discord_ready=True, photos_ready=True)
                 print("Queued work finished. No NixOS switch was performed.", flush=True)
                 return
             if not p[0]:
