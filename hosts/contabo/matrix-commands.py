@@ -79,23 +79,34 @@ def _unit_health():
         return "unavailable"
 
 def _backup_summary():
-    # Report only confirmed completed snapshots, never infer from service activity.
+    """Describe the latest actual Restic snapshot; never imply backup success."""
+    # The listener runs in a Nix shell where PATH can omit system-profile tools.
+    executable=next((str(p) for p in (
+        Path("/run/current-system/sw/bin/restic-contabo"),
+        Path("/usr/local/bin/restic-contabo"),
+        Path("/usr/bin/restic-contabo"))
+        if p.is_file() and os.access(p,os.X_OK)),None)
+    executable=executable or shutil.which("restic-contabo")
+    if not executable:
+        return "unavailable (restic-contabo not found in listener environment)"
     try:
-        proc=subprocess.run(["restic-contabo","snapshots","--json"],
-                            capture_output=True,text=True,timeout=12,check=False)
-        if proc.returncode != 0:
-            return "unavailable (snapshot query failed)"
+        proc=subprocess.run([executable,"snapshots","--json"],
+                            capture_output=True,text=True,timeout=30,check=False)
+        if proc.returncode!=0:
+            return f"unavailable (repository query exit {proc.returncode}; check listener credentials)"
         snapshots=json.loads(proc.stdout)
         if not snapshots:
             return "no snapshots found"
         newest=max(snapshots,key=lambda x:x.get("time",""))
         paths=set(newest.get("paths",[]))
-        coverage=("photos + queue" if {"/var/lib/nextcloud","/var/lib/migration-queue"}<=paths
-                  else "photos only" if "/var/lib/nextcloud" in paths
-                  else "Nextcloud not in latest snapshot")
+        coverage=("Nextcloud + migration queue" if {"/var/lib/nextcloud","/var/lib/migration-queue"}<=paths
+                  else "Nextcloud only; migration queue NOT backed up" if "/var/lib/nextcloud" in paths
+                  else "Nextcloud NOT in latest snapshot")
         return f"{_age(newest.get('time'))} [{str(newest.get('short_id') or newest.get('id',''))[:8]}]; {coverage}"
-    except (OSError,ValueError,TypeError,subprocess.TimeoutExpired):
-        return "unavailable"
+    except subprocess.TimeoutExpired:
+        return "unavailable (snapshot query timed out)"
+    except (OSError,ValueError,TypeError):
+        return "unavailable (repository query/JSON error)"
 
 def status_text():
     """Read-only operational summary. No hashing, mutation or network requests."""
