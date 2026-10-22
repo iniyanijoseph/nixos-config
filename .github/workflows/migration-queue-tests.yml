@@ -1,0 +1,19 @@
+name: Discord and Google Photos deferred queue tests
+
+on:
+  push:
+    paths:
+      - 'hosts/contabo/migration-queue.py'
+      - 'hosts/contabo/test_migration_queue.py'
+      - '.github/workflows/migration-queue-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test-queue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile queue scripts
+        run: python3 -m py_compile hosts/contabo/migration-queue.py hosts/contabo/test_migration_queue.py
+      - name: Validate archive checkpoint and SHA-256 readiness gates
+        run: python3 -m unittest hosts/contabo/test_migration_queue.py -v
