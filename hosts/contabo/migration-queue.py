@@ -217,22 +217,24 @@ def prepare_photos():
         UPLOAD_OBS.unlink(missing_ok=True)
         return False, "Upload changed during final verification; waiting again"
     duplicates = fresh["duplicates"]
-    if duplicates:
-        print(f"Backing up verified originals before quarantining {len(duplicates)} redundant copies...",
-              flush=True)
+    relocations = fresh["relocations"]
+    if duplicates or relocations:
+        print(f"Backing up Takeout before recovering {len(relocations)} missing files "
+              f"and quarantining {len(duplicates)} redundant copies...", flush=True)
         subprocess.run(["systemctl", "start", "restic-backups-contabo.service"], check=True)
-        # Backup can take substantial time: do not act without rechecking
-        # that files are unchanged throughout.
+        # The browser may upload more files during a long backup. Never act
+        # if anything changed; restart the one-hour observation instead.
         after_backup = photo_reconcile.audit(root, manifest)
         if not after_backup["ok"] or after_backup["fingerprint"] != fresh["fingerprint"]:
             UPLOAD_OBS.unlink(missing_ok=True)
-            return False, "Upload changed during backup; no duplicates were moved"
+            return False, "Upload changed during backup; no files were moved"
+        recovered = photo_reconcile.relocate_missing(root, manifest, relocations)
         moved = photo_reconcile.quarantine_duplicates(root, manifest, duplicates, QUARANTINE)
-        print(f"Reversibly quarantined {moved} redundant files; refreshing Nextcloud index...",
-              flush=True)
+        print(f"Recovered {recovered} missing canonical files; reversibly quarantined "
+              f"{moved} redundant files; refreshing Nextcloud index...", flush=True)
     # Also run scan on restart if a prior rename succeeded but the
     # following files:scan failed, so file cache cannot remain stale.
-    if duplicates or QUARANTINE.exists():
+    if duplicates or relocations or QUARANTINE.exists() or not REPAIR_MARK.exists():
         subprocess.run(["nextcloud-occ", "files:scan",
                         f"--path=/wug/files/{FOLDER}"], check=True)
     strict_ok, strict_reason = photos_status()
