@@ -22,6 +22,7 @@ DB = Path("/var/lib/discord-archive/archive.sqlite")
 MANIFEST = STATE / "photos-manifest.json"
 MARK = STATE / "photos-migrated.json"
 INDEX_MARK = STATE / "photos-indexed.json"
+PARTIAL = STATE / "discord-partial-approved.json"
 POST = STATE / "services-staged.json"
 FOLDER = "Photos/Google Photos"
 REPO = Path("/etc/nixos")
@@ -63,6 +64,13 @@ def discord_status(db_path=DB):
         return False, "collector.py is still running"
     if not db_path.exists():
         return False, "Discord archive DB absent"
+    if db_path == DB and PARTIAL.is_file():
+        try:
+            record = json.loads(PARTIAL.read_text(encoding="utf-8"))
+            if record.get("approved") is True and record.get("archive") == str(DB):
+                return True, "PARTIAL DISCORD ARCHIVE manually accepted: " + str(record.get("reason"))
+        except (OSError, ValueError):
+            pass
     try:
         # SQLite read-only respects WAL and in-progress commits.
         uri = "file:" + str(db_path.absolute()) + "?mode=ro"
@@ -245,6 +253,8 @@ def main():
     man.add_argument("source", help="local Google Photos Takeout directory")
     man.add_argument("output", help="manifest output file")
     sub.add_parser("status")
+    partial = sub.add_parser("approve-partial-discord")
+    partial.add_argument("--reason", required=True, help="human-readable reason for accepting incomplete history")
     run = sub.add_parser("run")
     run.add_argument("--interval", type=int, default=600)
     args = ap.parse_args()
@@ -254,6 +264,24 @@ def main():
         return
     if args.action == "status":
         status()
+        return
+    if args.action == "approve-partial-discord":
+        if os.geteuid() != 0:
+            ap.error("approval must be made by root on Contabo")
+        if discord_running():
+            raise RuntimeError("Collector is still running; cannot approve partial archive yet")
+        if not DB.is_file():
+            raise RuntimeError("No Discord archive to approve")
+        reason = args.reason.strip()
+        if len(reason) < 12:
+            raise ValueError("Please specify a meaningful reason (at least 12 characters)")
+        print("WARNING: Discord archive is NOT complete; missing conversations may be permanent.")
+        print("The queue will proceed to Photos migration, but cannot certify Discord history.")
+        if input('Type exactly "ACCEPT INCOMPLETE DISCORD" to continue: ') != "ACCEPT INCOMPLETE DISCORD":
+            raise RuntimeError("Partial-archive approval cancelled")
+        atomic_json(PARTIAL, {"approved": True, "archive": str(DB),
+                              "reason": reason, "approved_at": now()})
+        print(f"Recorded an explicit, auditable partial-archive exception in {PARTIAL}")
         return
     if os.geteuid() != 0:
         ap.error("run must execute as root for Nextcloud/Restic filesystem access")
