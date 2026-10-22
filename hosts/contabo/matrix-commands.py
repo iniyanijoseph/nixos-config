@@ -132,7 +132,7 @@ def _discord_trend(backfilled,refreshed,messages,total):
             if completed:
                 remaining=max(0,2*total-backfilled-refreshed)
                 projection=remaining*elapsed/completed
-                description+=f"\\nChannel-rate extrapolation: ~{_duration(projection)} (around {_clock(now_epoch+projection)})"
+                description+=f"\nChannel-rate extrapolation: ~{_duration(projection)} (around {_clock(now_epoch+projection)})"
                 description+="; low confidence, excludes discovery blocker"
             else:
                 description+="; channel-rate ETA not available"
