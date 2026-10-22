@@ -207,8 +207,7 @@ def stage_services():
     logfile = STATE / "service-readiness.log"
     commands = [
         ["bash", str(REPO / "hosts/contabo/mail-server/preflight.sh")],
-        ["nix", "eval", "--raw", str(REPO / "hosts/contabo") +
-         "#nixosConfigurations.contabo.config.system.build.toplevel.drvPath"],
+        ["bash", str(REPO / "hosts/contabo/evaluate-future-bridges.sh")],
     ]
     results = []
     with logfile.open("a", encoding="utf-8") as out:
@@ -220,7 +219,9 @@ def stage_services():
             results.append({"command": cmd, "returncode": proc.returncode})
             if proc.returncode != 0:
                 break
-    # Report readiness without inventing successful activation.
+    # Never record readiness as successful after a failed evaluation.
+    if any(result["returncode"] != 0 for result in results):
+        raise RuntimeError(f"Post-migration preflight failed; see {logfile}")
     atomic_json(POST, {"checked": now(), "results": results,
                         "mail_enabled": False, "bridges_enabled": False,
                         "next": "Review DNS, secrets, auth, and switch manually"})
