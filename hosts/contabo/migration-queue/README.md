@@ -8,10 +8,6 @@ the repository. It records progress and is safe to rerun after failure.
 The dependency graph is:
 
 ```text
-Discord collector process stopped
-          +
-Discord SQLite scan/refresh checkpoints all clean (0 incomplete)
-          +
 A complete local Takeout SHA-256 manifest exists on Contabo
           +
 All canonical uploaded files + Google JSON match Takeout SHA-256
@@ -28,6 +24,8 @@ Recover verified missing canonical files (no overwrite), quarantine exact duplic
           |
           v
 Re-verify canonical Takeout directory exactly
+          +
+Discord collector has stopped AND SQLite discovery/history checkpoints are clean
           |
           v
 Nextcloud Memories: migrate Google Takeout JSON metadata to EXIF
@@ -42,6 +40,10 @@ run read-only mail DNS/port preflight
           v
 Write "services-staged.json" for MANUAL review and later activation
 ```
+
+**Photo verification and safe duplicate repair run while Discord is still
+collecting. Only metadata migration, Memories indexing, and future service
+evaluations wait for the Discord completion gate.**
 
 **No NixOS switch, bridge login, DNS/MX change, mail service start,
 or message sending happens in this workflow.** Those steps require
