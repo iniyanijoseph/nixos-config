@@ -33,10 +33,10 @@ def safe_key(key):
 def audit(root, manifest):
     """Return an all-or-nothing candidate cleanup plan; never modify files.
 
-    Only *extra* files nested under Photos from 2016 are candidates, and
-    only if both the canonical file and the candidate hash match the
-    original Takeout manifest. The top-level Photos from 2016 folder
-    itself remains protected.
+    Only *extra* files nested under Photos from 2016 are candidates.
+    An exact shadow copy can be quarantined when its canonical copy is
+    verified, or safely relocated when the canonical copy is missing.
+    Every input must match the manifest; no overwrite is ever allowed.
     """
     root = Path(root)
     if root.is_symlink() or not root.is_dir():
@@ -91,13 +91,20 @@ def audit(root, manifest):
             if not is_extra:
                 found.add(rel)
     missing = original.keys() - found
-    if missing:
-        sample = min(missing)
-        return {"ok": False, "reason": f"{len(missing)} canonical files missing; first: {sample}"}
-    # Crucially, even an exact misplaced copy isn't enough if its correct
-    # canonical target hasn't been completely uploaded and verified.
-    return {"ok": True, "reason": f"{len(found)} canonical files verified; {len(extras)} redundant copies",
-            "duplicates": extras, "fingerprint": fingerprint.hexdigest()}
+    alternate_locations = {canonical for _, canonical in extras}
+    truly_missing = missing - alternate_locations
+    if truly_missing:
+        sample = min(truly_missing)
+        return {"ok": False, "reason": f"{len(truly_missing)} Takeout files missing everywhere; first: {sample}"}
+    duplicates = [(rel, canonical) for rel, canonical in extras if canonical in found]
+    relocations = [(rel, canonical) for rel, canonical in extras if canonical in missing]
+    # Every original must be fully hash-matched at its canonical location
+    # or at the ONE specifically permitted misplaced prefix.
+    return {"ok": True,
+            "reason": f"{len(found)} canonical, {len(relocations)} safely recoverable, "
+                      f"{len(duplicates)} redundant; all manifest files accounted for",
+            "duplicates": duplicates, "relocations": relocations,
+            "fingerprint": fingerprint.hexdigest()}
 
 
 def stable_observation(result, record_file, *, epoch=None, quiet_seconds=QUIET_SECONDS):
@@ -132,6 +139,38 @@ def write_json(path, data):
         os.fsync(file.fileno())
     os.chmod(tmp, 0o600)
     tmp.replace(path)
+
+
+def relocate_missing(root, manifest, relocations):
+    """Restore checked originals without ever overwriting a destination.
+
+    Use atomic hardlink creation to prevent races with the upload client.
+    The duplicate source is unlinked only after verifying the target.
+    """
+    root = Path(root)
+    originals = manifest["files"]
+    moved = 0
+    for rel, canonical in relocations:
+        if not rel.startswith(MISPLACED_PREFIX) or canonical != rel[len(MISPLACED_PREFIX):]:
+            raise RuntimeError(f"Unsafe relocation: {rel}")
+        if rel in originals or canonical not in originals:
+            raise RuntimeError(f"Manifest conflict while relocating: {rel}")
+        source = root / rel
+        target = root / canonical
+        if source.is_symlink() or not source.is_file() or target.exists() or target.is_symlink():
+            raise RuntimeError(f"Cannot safely relocate, target/source changed: {rel}")
+        expect = originals[canonical]
+        if source.stat().st_size != expect["size"] or sha256_file(source) != expect["sha256"]:
+            raise RuntimeError(f"Misplaced file changed since audit: {rel}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Fails with FileExistsError if an upload has created the target.
+        # Never use rename/replace here: those can overwrite a late upload.
+        os.link(source, target, follow_symlinks=False)
+        if sha256_file(target) != expect["sha256"]:
+            raise RuntimeError(f"Newly linked canonical file changed: {canonical}")
+        source.unlink()
+        moved += 1
+    return moved
 
 
 def quarantine_duplicates(root, manifest, duplicates, quarantine):
