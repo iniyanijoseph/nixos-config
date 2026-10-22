@@ -22,6 +22,16 @@ def finished():
     scope = status.DB
     if not scope.is_file():
         return False
+    # An in-flight collector can still add messages or discover channels.
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdecimal():
+            continue
+        try:
+            args = (proc / "cmdline").read_bytes().decode("utf-8", "replace").split("\\0")
+            if any(str(a).endswith("/collector.py") for a in args) and "run" in args:
+                return False
+        except (OSError, PermissionError):
+            pass
     import sqlite3
     try:
         uri = "file:" + str(scope) + "?mode=ro"
@@ -47,13 +57,13 @@ def main():
         return
     message = status.status_text()
     if completed:
-        message = "MIGRATION FINISHED — final report\\n\\n" + message
+        message = "MIGRATION FINISHED — final report\n\n" + message
     else:
-        message = "SCHEDULED MIGRATION REPORT (20-minute interval)\\n\\n" + message
+        message = "SCHEDULED MIGRATION REPORT (20-minute interval)\n\n" + message
     status.alerts.send(message)
     if completed:
         marker = STATE / "matrix-periodic-final-sent.json"
-        marker.write_text(json.dumps({"sent":status.datetime.now(status.timezone.utc).isoformat()})+"\\n")
+        marker.write_text(json.dumps({"sent":status.datetime.now(status.timezone.utc).isoformat()})+"\n")
         marker.chmod(0o600)
 
 if __name__ == "__main__":
