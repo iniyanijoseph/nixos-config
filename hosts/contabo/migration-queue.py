@@ -196,7 +196,7 @@ def discord_status(db_path=DB):
             parents = discord_scope.selected_parent_ids(db)
             bad_scans = [r[0] for r in db.execute("SELECT scope FROM scans WHERE ok != 1") if discord_scope.selected_scan(r[0], parents)]
             if bad_scans:
-                return False, "incomplete selected discovery: " + ", ".join(bad_scans[:5])
+                return False, "incomplete discovery in selected scope: " + ", ".join(bad_scans[:5])
             known_scans = {x[0] for x in db.execute("SELECT scope FROM scans WHERE ok=1")}
             if not {"dms", "guilds", f"guild:{discord_scope.TARGET_GUILD}"} <= known_scans:
                 return False, "DM or target guild discovery never succeeded"
