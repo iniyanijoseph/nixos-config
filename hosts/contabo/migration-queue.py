@@ -55,10 +55,15 @@ def atomic_json(path, data):
 def matrix_notify(event, body):
     """Best-effort private Matrix alert, deduplicated across queue restarts."""
     secret = Path("/var/lib/secrets/matrix-alerts.json")
-    if not secret.is_file():
-        return
-    marker = STATE / ("matrix-alert-" + event + ".json")
-    if marker.exists():
+    try:
+        if not secret.is_file():
+            return
+        marker = STATE / ("matrix-alert-" + event + ".json")
+        if marker.exists():
+            return
+    except (OSError, PermissionError):
+        # Unprivileged tests and systems without readable credentials must
+        # never have migration blocked by an optional notification feature.
         return
     try:
         cmd = [sys.executable, str(REPO / "hosts/contabo/matrix-alert.py"), body]
