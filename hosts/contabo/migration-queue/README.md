@@ -107,8 +107,10 @@ If the canonical copy already exists and matches, the misplaced extra
 is moved to a private quarantine. Everything else blocks the queue;
 it never guesses, silently merges mismatched files or overwrites a file.
 
-Because Firefox is uploading a large library, the first complete and
-fully hashed audit only **starts a one-hour quiescence timer**. All file
+While Firefox is still uploading, the queue checks names and sizes
+without repeatedly hashing gigabytes of already-uploaded photos.
+Once all original files are accounted for, a complete SHA-256
+verification **starts a one-hour quiescence timer**. All file
 paths, byte sizes, modification times and inode identities must remain
 unchanged for that whole interval. Only after the interval and a second
 unchanged audit does the queue start an encrypted Restic backup. It then
