@@ -12,7 +12,7 @@ from pathlib import Path
 import time
 
 MISPLACED_PREFIX = "Photos from 2016/"
-QUIET_SECONDS = 3600
+QUIET_SECONDS = 600
 
 
 def sha256_file(path):
