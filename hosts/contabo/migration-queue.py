@@ -301,7 +301,11 @@ def prepare_photos():
     manifest*. Never invent them for older photos. If any original content
     is unavailable, wait for a selective reupload, not a destructive merge.
     """
-    if REPAIR_MARK.exists() or MARK.exists():
+    if MARK.exists() and REPAIR_MARK.exists():
+        # Memories may modify EXIF after migration: the original SHA-256 manifest
+        # is no longer a valid test for a legitimately migrated library.
+        return True, "Reconciled Takeout; Google metadata migration checkpoint present"
+    if REPAIR_MARK.exists():
         return photos_status()
     if not MANIFEST.is_file():
         return False, "Missing original Takeout manifest"
@@ -513,28 +517,28 @@ def main():
         except BlockingIOError:
             raise RuntimeError("Another migration queue is already running")
         while True:
-            # Photo reconciliation is independent of Discord collection.
-            # Keep only EXIF migration/indexing and service staging gated by
-            # a completed, verified Discord archive.
+            # Photos are independent of Discord. The verified reconciliation
+            # checkpoint is sufficient to start metadata import and indexing.
             p = prepare_photos()
+            if p[0]:
+                photos_migrate()
+                if INDEX_MARK.exists() and not CLEANUP_MARK.exists():
+                    # Cleanup is optional and fail-closed; it must never block
+                    # successfully indexed photos or ongoing Discord collection.
+                    cleanup_quarantine()
+
             d = discord_status()
             if d[0]:
                 progress_notify("Discord archive", 1, 1, done=True)
             else:
                 discord_progress()
             overall_progress(discord_ready=d[0], photos_ready=p[0])
-            if p[0] and d[0]:
-                print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
-                photos_migrate()
-                if INDEX_MARK.exists():
-                    if not cleanup_quarantine():
-                        print("Photo quarantine cleanup still queued; will check again.", flush=True)
-                        time.sleep(args.interval)
-                        continue
-                    stage_services()
+            if INDEX_MARK.exists() and d[0]:
+                stage_services()
                 overall_progress(discord_ready=True, photos_ready=True)
-                print("Queued work finished. No NixOS switch was performed.", flush=True)
-                return
+                if CLEANUP_MARK.exists():
+                    print("Queued work finished. No NixOS switch was performed.", flush=True)
+                    return
             if not p[0]:
                 print(f"{now()} Awaiting photos: {p[1]}", flush=True)
             if not d[0]:
