@@ -517,37 +517,28 @@ def main():
         except BlockingIOError:
             raise RuntimeError("Another migration queue is already running")
         while True:
-            # Photos are independent of Discord. The verified reconciliation
-            # checkpoint is sufficient to start metadata import and indexing.
+            # Verified Takeout migration does not depend on Discord completion.
             p = prepare_photos()
-            if p[0]:
-                photos_migrate()
-                if INDEX_MARK.exists() and not CLEANUP_MARK.exists():
-                    # Cleanup is optional and fail-closed; it must never block
-                    # successfully indexed photos or ongoing Discord collection.
-                    try:
-                        cleanup_quarantine()
-                    except (OSError, RuntimeError, ValueError, KeyError,
-                            subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
-                        print(f"Quarantine cleanup deferred: {err}", flush=True)
-
             d = discord_status()
             if d[0]:
                 progress_notify("Discord archive", 1, 1, done=True)
             else:
                 discord_progress()
-            overall_progress(discord_ready=d[0], photos_ready=p[0])
-            if INDEX_MARK.exists() and d[0]:
-                stage_services()
-                overall_progress(discord_ready=True, photos_ready=True)
-                if CLEANUP_MARK.exists():
-                    print("Queued work finished. No NixOS switch was performed.", flush=True)
-                    return
-            if not p[0]:
+            if p[0]:
+                photos_migrate()
+                if INDEX_MARK.exists() and not cleanup_quarantine():
+                    print(f"{now()} Quarantine retained until covered backup verified.", flush=True)
+            else:
                 print(f"{now()} Awaiting photos: {p[1]}", flush=True)
+            # Optional bridge/mail preflight still follows both migrations.
+            if p[0] and d[0] and INDEX_MARK.exists() and CLEANUP_MARK.exists():
+                stage_services()
+            overall_progress(discord_ready=d[0], photos_ready=p[0])
+            if POST.exists():
+                print("Queued work finished. No NixOS switch was performed.", flush=True)
+                return
             if not d[0]:
                 print(f"{now()} Awaiting Discord: {d[1]}", flush=True)
-            # Poll Discord cheaply every minute without rehashing photos.
             for _ in range(0, args.interval, 60):
                 time.sleep(min(60, args.interval))
                 if not discord_running():
