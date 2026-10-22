@@ -23,6 +23,9 @@ import importlib.util
 _recovery_spec = importlib.util.spec_from_file_location("hash_recovery", Path(__file__).parent / "migration-queue" / "hash-recovery.py")
 hash_recovery = importlib.util.module_from_spec(_recovery_spec)
 _recovery_spec.loader.exec_module(hash_recovery)
+_scope_spec = importlib.util.spec_from_file_location("discord_scope", Path(__file__).parent / "discord-archive" / "scope.py")
+discord_scope = importlib.util.module_from_spec(_scope_spec)
+_scope_spec.loader.exec_module(discord_scope)
 
 STATE = Path("/var/lib/migration-queue")
 DB = Path("/var/lib/discord-archive/archive.sqlite")
@@ -131,14 +134,12 @@ def discord_progress():
     try:
         uri = "file:" + str(DB.absolute()) + "?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=5) as conn:
-            backfilled, refreshed, total = conn.execute(
-                "SELECT COALESCE(SUM(CASE WHEN complete=1 THEN 1 ELSE 0 END),0), "
-                "COALESCE(SUM(CASE WHEN complete=1 AND refresh_active=0 "
-                "AND refreshed_at IS NOT NULL AND error IS NULL THEN 1 ELSE 0 END),0), "
-                "COUNT(*) FROM channels").fetchone()
+            rows = discord_scope.selected_rows(conn)
+            total = len(rows)
+            backfilled = sum(r["complete"] == 1 for r in rows)
+            refreshed = sum(r["complete"] == 1 and r["refresh_active"] == 0 and r["refreshed_at"] is not None and r["error"] is None for r in rows)
             conn.close()
-        if total:
-            progress_notify("Discord archive", backfilled + refreshed, 2 * total, step=1)
+        progress_notify("Discord archive", backfilled + refreshed, 2 * total, step=1)
     except sqlite3.Error:
         pass
 
@@ -185,24 +186,20 @@ def discord_status(db_path=DB):
         # SQLite read-only respects WAL and in-progress commits.
         uri = "file:" + str(db_path.absolute()) + "?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=5) as db:
-            n = db.execute("SELECT count(*) FROM channels").fetchone()[0]
+            rows = discord_scope.selected_rows(db)
+            n = len(rows)
             if n == 0:
-                return False, "no Discord conversations archived"
-            pending = db.execute(
-                """SELECT count(*) FROM channels WHERE complete != 1
-                   OR refresh_active != 0 OR refreshed_at IS NULL
-                   OR error IS NOT NULL"""
-            ).fetchone()[0]
+                return False, "no selected conversations archived"
+            pending = sum(r["complete"] != 1 or r["refresh_active"] != 0 or r["refreshed_at"] is None or r["error"] is not None for r in rows)
             if pending:
-                return False, f"{pending} conversation(s) incomplete or unrefreshed"
-            bad_scans = db.execute(
-                "SELECT scope FROM scans WHERE ok != 1 ORDER BY scope"
-            ).fetchall()
+                return False, f"{pending} selected conversation(s) incomplete or unrefreshed"
+            parents = discord_scope.selected_parent_ids(db)
+            bad_scans = [r[0] for r in db.execute("SELECT scope FROM scans WHERE ok != 1") if discord_scope.selected_scan(r[0], parents)]
             if bad_scans:
-                return False, "incomplete discovery: " + ", ".join(x[0] for x in bad_scans[:5])
+                return False, "incomplete selected discovery: " + ", ".join(bad_scans[:5])
             known_scans = {x[0] for x in db.execute("SELECT scope FROM scans WHERE ok=1")}
-            if not {"dms", "guilds"} <= known_scans:
-                return False, "DM or guild discovery never succeeded"
+            if not {"dms", "guilds", f"guild:{discord_scope.TARGET_GUILD}"} <= known_scans:
+                return False, "DM or target guild discovery never succeeded"
             return True, f"{n} registered Discord channels finished"
     except sqlite3.Error as exc:
         return False, f"Discord DB unreadable: {exc}"
