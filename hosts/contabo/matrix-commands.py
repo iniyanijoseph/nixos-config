@@ -22,6 +22,9 @@ OWNER="@me:iniyanjoseph.com"
 SYSPATH=Path(__file__).resolve().parent
 sys.path.insert(0,str(SYSPATH))
 import importlib.util
+scopespec=importlib.util.spec_from_file_location("discord_scope",SYSPATH/"discord-archive"/"scope.py")
+discord_scope=importlib.util.module_from_spec(scopespec)
+scopespec.loader.exec_module(discord_scope)
 spec=importlib.util.spec_from_file_location("matrix_alert",SYSPATH/"matrix-alert.py")
 alerts=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(alerts)
@@ -53,16 +56,20 @@ def status_text():
     try:
         uri="file:"+str(DB)+"?mode=ro"
         conn=sqlite3.connect(uri,uri=True,timeout=5)
+        conn.row_factory=sqlite3.Row
         try:
-            backfilled,refreshed,errors,total=conn.execute(
-                "SELECT COALESCE(SUM(CASE WHEN complete=1 THEN 1 ELSE 0 END),0), "
-                "COALESCE(SUM(CASE WHEN complete=1 AND refresh_active=0 "
-                "AND refreshed_at IS NOT NULL AND error IS NULL THEN 1 ELSE 0 END),0), "
-                "COALESCE(SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END),0), "
-                "COUNT(*) FROM channels").fetchone()
-            messages=conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            rows=discord_scope.selected_rows(conn)
+            total=len(rows)
+            backfilled=sum(r["complete"] == 1 for r in rows)
+            refreshed=sum(r["complete"] == 1 and r["refresh_active"] == 0 and r["refreshed_at"] is not None and r["error"] is None for r in rows)
+            errors=sum(r["error"] is not None for r in rows)
+            ids=[r["id"] for r in rows]
+            messages=sum(conn.execute("SELECT COUNT(*) FROM messages WHERE channel_id=?", (cid,)).fetchone()[0] for cid in ids)
             failed,total_scans=0,0
-            total_scans,failed=conn.execute("SELECT COUNT(*), COALESCE(SUM(CASE WHEN ok=0 THEN 1 ELSE 0 END),0) FROM scans").fetchone()
+            parents=discord_scope.selected_parent_ids(conn)
+            scans=[r for r in conn.execute("SELECT scope,ok FROM scans") if discord_scope.selected_scan(r["scope"],parents)]
+            total_scans=len(scans)
+            failed=sum(not r["ok"] for r in scans)
             pct=min(99,(backfilled+refreshed)*100//(2*total)) if total else 0
             discord=(f"{backfilled}/{total} backfilled; {refreshed}/{total} refreshed; "
                      f"{messages} messages saved; {errors} channel errors; "
