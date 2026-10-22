@@ -13,7 +13,26 @@
     disko.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { nixpkgs, disko, ... }: {
+  outputs = { nixpkgs, disko, ... }:
+    let
+      system = "x86_64-linux";
+      emailPkgs = import nixpkgs {
+        inherit system;
+        # Matrimail currently requires deprecated libolm for Matrix E2EE.
+        # Keep this exception limited to the opt-in development shell.
+        config.permittedInsecurePackages = [ "olm-3.2.16" ];
+      };
+    in {
+    devShells.x86_64-linux.email-bridge = emailPkgs.mkShell {
+      packages = [
+        emailPkgs.go
+        emailPkgs.git
+        emailPkgs.pkg-config
+        emailPkgs.olm
+        emailPkgs.gcc
+      ];
+    };
+
     nixosConfigurations.contabo = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
