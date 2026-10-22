@@ -9,6 +9,7 @@
     ./whatsapp.nix
     ./discord.nix
     ./email.nix
+    ./mail.nix
     ./shell.nix
   ];
 
@@ -16,6 +17,8 @@
   contabo.backups.enable = true;
   # Kept off until Matrimail is built, configured and Gmail integration tested.
   contabo.emailBridge.enable = false;
+  # Stage only: no mail ports, listeners, credentials or DNS changed yet.
+  contabo.mail.enable = false;
 
   networking.hostName = "contabo";
   time.timeZone = "UTC";
