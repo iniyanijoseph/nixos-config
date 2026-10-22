@@ -178,8 +178,12 @@ Initial acceptance tests:
 
 Backups: when their services are enabled, encrypted Restic includes
 `/var/lib/stalwart` and `/var/lib/matrimail` plus existing
-`/var/lib/secrets` and ACME keys. Confirm by checking a fresh snapshot
-and performing a file-level restore test.
+`/var/lib/secrets` and ACME keys. A **live filesystem copy of RocksDB is
+not guaranteed to be application-consistent**. Before treating this as a
+production mailbox, arrange a tested consistent snapshot / brief service
+stop during backup or a supported Stalwart export, then perform a real
+restore test. Do not assume existing Restic snapshots are independently
+sufficient.
 
 Rollback service configuration via the previous boot generation if needed,
 but **DNS rollback is separate**: restore the original MX and SPF records
