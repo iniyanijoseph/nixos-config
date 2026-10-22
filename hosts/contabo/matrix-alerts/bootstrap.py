@@ -46,10 +46,6 @@ def main():
     if not admin_token:
         raise RuntimeError("Empty admin token")
     # Verify permissions before making any changes.
-    who = api("GET", "/_synapse/admin/v1/whois/" + quote(OWNER, safe=""),
-              token=admin_token)
-    # whois is admin-only when querying another user, but own-account whois
-    # may be allowed. Server admin check is explicit below.
     admin_check = api("GET", "/_synapse/admin/v1/users/" + quote(OWNER, safe="") +
                       "/admin", token=admin_token)
     if not admin_check.get("admin"):
