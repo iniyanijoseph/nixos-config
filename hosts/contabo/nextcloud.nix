@@ -39,6 +39,11 @@
     };
   };
 
+  # The interactive and unattended Nextcloud OCC wrappers also need Perl in
+  # their execution PATH. Memories spawns ExifTool from OCC, not only cron.
+  # Store both executables in the system profile after the next NixOS switch.
+  environment.systemPackages = [ pkgs.perl pkgs.exiftool ];
+
   # Let Memories' scheduled indexing find Perl.
   systemd.services.nextcloud-cron.path = [ pkgs.perl ];
 
