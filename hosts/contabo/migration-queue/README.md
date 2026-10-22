@@ -16,7 +16,7 @@ A complete local Takeout SHA-256 manifest exists on Contabo
           +
 All canonical uploaded files + Google JSON match Takeout SHA-256
           +
-Extra misnested files are only byte-identical Takeout duplicates
+Extra misnested files are verified against their original manifest paths
           +
 Entire tree stays unchanged for 1 hour (no upload activity)
           |
@@ -24,7 +24,7 @@ Entire tree stays unchanged for 1 hour (no upload activity)
 Fresh encrypted restic-backups-contabo snapshot (must succeed)
           |
           v
-Quarantine only verified extra copies; refresh Nextcloud file cache
+Recover verified missing canonical files (no overwrite), quarantine exact duplicates, refresh Nextcloud file cache
           |
           v
 Re-verify canonical Takeout directory exactly
@@ -99,26 +99,31 @@ directory is discovered through `nextcloud-occ`). If the drag/drop
 uploaded a different destination, update `FOLDER` in
 `migration-queue.py` and ensure the manifest matches the real contents.
 File counts and checksums must match exactly for the canonical files.
-The reconciliation helper recognizes only extra identical files accidentally
-nested under `Photos from 2016`. Those extras must themselves match both
-your manifest and their correct, fully-uploaded top-level counterparts.
-Everything else blocks the queue; it never guesses or overwrites a file.
+The reconciliation helper recognizes only files accidentally nested under
+`Photos from 2016` that exactly match their original Takeout manifest.
+If a canonical file is missing, the verified misplaced copy can be
+relocated to its proper original location **without overwriting anything**.
+If the canonical copy already exists and matches, the misplaced extra
+is moved to a private quarantine. Everything else blocks the queue;
+it never guesses, silently merges mismatched files or overwrites a file.
 
 Because Firefox is uploading a large library, the first complete and
 fully hashed audit only **starts a one-hour quiescence timer**. All file
 paths, byte sizes, modification times and inode identities must remain
 unchanged for that whole interval. Only after the interval and a second
 unchanged audit does the queue start an encrypted Restic backup. It then
-moves verified redundant copies into
+recovers hash-matched missing files at their canonical paths and moves
+verified redundant copies into
 `/var/lib/migration-queue/photos-duplicate-quarantine/`
 rather than permanently deleting them, and runs
 `nextcloud-occ files:scan --path=/wug/files/Photos/Google Photos`
 to refresh Nextcloud's database.
 
-If an expected file is missing, still uploading, corrupted, or unexpectedly
-different, **nothing is moved** and the queue keeps waiting. This also
-means a permanently missing or mismatched file requires manual review,
-not an automatic overwrite. Empty extra folders may remain after cleanup;
+If an expected file is missing **both** from its canonical location and
+from the known misplaced prefix, still uploading, corrupted, or
+unexpectedly different, **nothing is moved** and the queue keeps
+waiting. A permanently missing or mismatched file requires manual
+review, not an automatic overwrite. Empty extra folders may remain after cleanup;
 they can be removed later in Nextcloud Files once all indexing passes.
 
 ## Stage 3 — Start (or update) the queue detached, without switching NixOS
