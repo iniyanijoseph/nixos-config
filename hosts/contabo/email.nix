@@ -9,7 +9,10 @@ in
   options.contabo.emailBridge.enable = lib.mkEnableOption
     "experimental Matrimail bridge to existing email inboxes";
 
-  config = lib.mkIf cfg.enable {
+  # Provision an isolated system user and private directory even while disabled,
+  # so configuration/registration can be prepared before enabling the bridge.
+  config = lib.mkMerge [
+    {
     users.groups.matrimail = { };
     users.users.matrimail = {
       isSystemUser = true;
@@ -19,8 +22,10 @@ in
     };
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/matrimail 0700 matrimail matrimail -"
+      "d /var/lib/matrimail 0750 matrimail matrimail -"
     ];
+    }
+    (lib.mkIf cfg.enable {
 
     # The registration file is created locally with the bridge's own CLI.
     # DO NOT enable before provisioning it. Synapse must read this file at
@@ -55,5 +60,6 @@ in
         RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
       };
     };
-  };
+    })
+  ];
 }
