@@ -97,22 +97,27 @@ def progress_notify(task, complete, total, *, done=False, step=10):
     prev = int(history.get(task, 0))
     if pct <= prev:
         return
-    # Do not advance the persisted marker if the message was not delivered;
-    # matrix_notify's event marker is deliberately NOT used here.
+    # On 1%-granularity tasks, emit each newly crossed percentage.
+    # 100% is reserved for verified completion, not an intermediate counter.
     secret = Path("/var/lib/secrets/matrix-alerts.json")
     try:
         if not secret.is_file():
             return
-        body = f"{task}: {pct}%"
-        subprocess.run([sys.executable, str(REPO / "hosts/contabo/matrix-alert.py"), body],
-                       check=True, capture_output=True, text=True, timeout=25)
-        history[task] = pct
-        atomic_json(PROGRESS_MARK, history)
-        print(f"Matrix progress: {body}", flush=True)
-    except (OSError, PermissionError, subprocess.CalledProcessError,
-            subprocess.TimeoutExpired) as err:
-        print(f"Matrix progress delivery failed for {task}: {type(err).__name__}", flush=True)
-
+    except (OSError, PermissionError):
+        return
+    levels = range(prev + 1, pct + 1) if step == 1 else [pct]
+    for level in levels:
+        body = f"{task}: {level}%"
+        try:
+            subprocess.run([sys.executable, str(REPO / "hosts/contabo/matrix-alert.py"), body],
+                           check=True, capture_output=True, text=True, timeout=25)
+            history[task] = level
+            atomic_json(PROGRESS_MARK, history)
+            print(f"Matrix progress: {body}", flush=True)
+        except (OSError, PermissionError, subprocess.CalledProcessError,
+                subprocess.TimeoutExpired) as err:
+            print(f"Matrix progress delivery failed for {task}: {type(err).__name__}", flush=True)
+            break
 
 def discord_progress():
     """Report 1% steps across historical backfill and refresh.
