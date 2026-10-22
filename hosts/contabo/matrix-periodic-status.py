@@ -27,7 +27,7 @@ def finished():
         if not proc.name.isdecimal():
             continue
         try:
-            args = (proc / "cmdline").read_bytes().decode("utf-8", "replace").split("\\0")
+            args = (proc / "cmdline").read_bytes().decode("utf-8", "replace").split("\0")
             if any(str(a).endswith("/collector.py") for a in args) and "run" in args:
                 return False
         except (OSError, PermissionError):
