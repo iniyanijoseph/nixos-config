@@ -525,7 +525,11 @@ def main():
                 if INDEX_MARK.exists() and not CLEANUP_MARK.exists():
                     # Cleanup is optional and fail-closed; it must never block
                     # successfully indexed photos or ongoing Discord collection.
-                    cleanup_quarantine()
+                    try:
+                        cleanup_quarantine()
+                    except (OSError, RuntimeError, ValueError, KeyError,
+                            subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
+                        print(f"Quarantine cleanup deferred: {err}", flush=True)
 
             d = discord_status()
             if d[0]:
