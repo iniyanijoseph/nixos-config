@@ -1,0 +1,39 @@
+name: Contabo mail Nix evaluation
+
+on:
+  push:
+    paths:
+      - 'hosts/contabo/mail.nix'
+      - 'hosts/contabo/email.nix'
+      - 'hosts/contabo/configuration.nix'
+      - 'hosts/contabo/flake.nix'
+      - 'hosts/contabo/flake.lock'
+      - '.github/workflows/contabo-mail-eval.yml'
+  workflow_dispatch:
+
+jobs:
+  evaluate-mail:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Evaluate staging config (no service activation)
+        run: nix eval --raw ./hosts/contabo#nixosConfigurations.contabo.config.system.build.toplevel.drvPath
+      - name: Evaluate future mail-enabled configuration (no build or switch)
+        run: |
+          nix eval --impure --raw --expr '
+            let
+              f = builtins.getFlake (toString ./hosts/contabo);
+              sys = f.inputs.nixpkgs.lib.nixosSystem {
+                system = "x86_64-linux";
+                modules = [
+                  f.inputs.disko.nixosModules.disko
+                  ./hosts/contabo/configuration.nix
+                  ({ lib, ... }: {
+                    contabo.mail.enable = lib.mkForce true;
+                    contabo.emailBridge.enable = lib.mkForce false;
+                  })
+                ];
+              };
+            in sys.config.system.build.toplevel.drvPath
+          '
