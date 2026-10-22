@@ -18,6 +18,11 @@ import time
 from datetime import datetime, timezone
 
 import photo_reconcile
+import importlib.util
+
+_recovery_spec = importlib.util.spec_from_file_location("hash_recovery", Path(__file__).parent / "migration-queue" / "hash-recovery.py")
+hash_recovery = importlib.util.module_from_spec(_recovery_spec)
+_recovery_spec.loader.exec_module(hash_recovery)
 
 STATE = Path("/var/lib/migration-queue")
 DB = Path("/var/lib/discord-archive/archive.sqlite")
@@ -216,60 +221,43 @@ def photos_status(manifest_path=MANIFEST, photo_dir=None):
 
 
 def prepare_photos():
-    """Wait for a complete unchanged upload, then quarantine exact duplicates.
+    """Reconcile verified Takeout originals independent of folder layout.
 
-    Never touch Nextcloud until every *canonical* file is present and hashes
-    correctly, every extra file is a verified extra copy, and the complete
-    tree has been unchanged for at least one hour.
+    Missing JSON sidecars remain missing *only when listed in the original
+    manifest*. Never invent them for older photos. If any original content
+    is unavailable, wait for a selective reupload, not a destructive merge.
     """
     if REPAIR_MARK.exists() or MARK.exists():
         return photos_status()
     if not MANIFEST.is_file():
-        return False, "Missing Takeout manifest"
+        return False, "Missing original Takeout manifest"
     try:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        originals = manifest["files"]
         root = nc_photo_dir()
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as err:
-        return False, f"Cannot inspect Takeout upload: {err}"
-    result = photo_reconcile.audit(root, manifest)
+        result = hash_recovery.inventory(root, originals)
+    except (OSError, ValueError, RuntimeError, KeyError) as err:
+        return False, f"Photo audit cannot proceed: {err}"
+    if not result["ok"]:
+        UPLOAD_OBS.unlink(missing_ok=True)
+        return False, f"{len(result['missing'])} Takeout files unavailable by SHA-256; use export-missing.py"
     stable, why = photo_reconcile.stable_observation(result, UPLOAD_OBS)
     if not stable:
         return False, why
-    # A new audit just before any change guards against background browser
-    # uploads that began after the prior stable observation.
-    fresh = photo_reconcile.audit(root, manifest)
-    if not fresh["ok"] or fresh["fingerprint"] != result["fingerprint"]:
+    subprocess.run(["systemctl", "start", "restic-backups-contabo.service"], check=True)
+    again = hash_recovery.inventory(root, originals)
+    if not again["ok"] or again["fingerprint"] != result["fingerprint"]:
         UPLOAD_OBS.unlink(missing_ok=True)
-        return False, "Upload changed during final verification; waiting again"
-    duplicates = fresh["duplicates"]
-    relocations = fresh["relocations"]
-    if duplicates or relocations:
-        print(f"Backing up Takeout before recovering {len(relocations)} missing files "
-              f"and quarantining {len(duplicates)} redundant copies...", flush=True)
-        subprocess.run(["systemctl", "start", "restic-backups-contabo.service"], check=True)
-        # The browser may upload more files during a long backup. Never act
-        # if anything changed; restart the one-hour observation instead.
-        after_backup = photo_reconcile.audit(root, manifest)
-        if not after_backup["ok"] or after_backup["fingerprint"] != fresh["fingerprint"]:
-            UPLOAD_OBS.unlink(missing_ok=True)
-            return False, "Upload changed during backup; no files were moved"
-        recovered = photo_reconcile.relocate_missing(root, manifest, relocations)
-        moved = photo_reconcile.quarantine_duplicates(root, manifest, duplicates, QUARANTINE)
-        print(f"Recovered {recovered} missing canonical files; reversibly quarantined "
-              f"{moved} redundant files; refreshing Nextcloud index...", flush=True)
-    # Also run scan on restart if a prior rename succeeded but the
-    # following files:scan failed, so file cache cannot remain stale.
-    if duplicates or relocations or QUARANTINE.exists() or not REPAIR_MARK.exists():
-        subprocess.run([OCC, "files:scan",
-                        f"--path=/wug/files/{FOLDER}"], check=True)
-    strict_ok, strict_reason = photos_status()
-    if not strict_ok:
-        raise RuntimeError(f"Upload remains inconsistent after reconciliation: {strict_reason}")
-    atomic_json(REPAIR_MARK, {"reconciled_at": now(), "quarantine": str(QUARANTINE),
-                             "manifest": str(MANIFEST), "verified": strict_reason})
-    print(f"Google Photos tree reconciled: {strict_reason}", flush=True)
-    matrix_notify("photos-reconciled", "[Contabo] Google Photos upload verified and misplaced files reconciled. Discord archive may still be running.")
-    return True, strict_reason
+        return False, "Upload changed during backup; deferred reconciliation"
+    outcomes = hash_recovery.restore(root, originals, QUARANTINE)
+    subprocess.run([OCC, "files:scan", f"--path=/wug/files/{FOLDER}"], check=True)
+    good, reason = photos_status()
+    if not good:
+        raise RuntimeError(f"Reconciliation did not pass canonical verification: {reason}")
+    atomic_json(REPAIR_MARK, {"finished": now(), "result": outcomes, "verified": reason})
+    print(f"Reconciled Takeout: {outcomes}, {reason}", flush=True)
+    matrix_notify("photos-reconciled", "[Contabo] Google Photos upload fully verified and reconciled.")
+    return True, reason
 
 
 def photos_migrate():
