@@ -79,6 +79,56 @@ def matrix_notify(event, body):
         print(f"Matrix notification failed for {event}: {type(err).__name__}", flush=True)
 
 
+# Task progress notifications are monotone deciles (10,20,...,100).
+# A task's 100% means its checkpoint was actually completed, never inferred
+# merely from file counts while validation is pending.
+PROGRESS_MARK = STATE / "matrix-progress.json"
+
+def progress_notify(task, complete, total, *, done=False):
+    if total <= 0:
+        return
+    pct = 100 if done else min(90, (max(0, complete) * 100 // total // 10) * 10)
+    if pct < 10:
+        return
+    try:
+        history = json.loads(PROGRESS_MARK.read_text(encoding="utf-8")) if PROGRESS_MARK.exists() else {}
+    except (OSError, ValueError, PermissionError):
+        history = {}
+    prev = int(history.get(task, 0))
+    if pct <= prev:
+        return
+    # Do not advance the persisted marker if the message was not delivered;
+    # matrix_notify's event marker is deliberately NOT used here.
+    secret = Path("/var/lib/secrets/matrix-alerts.json")
+    try:
+        if not secret.is_file():
+            return
+        body = f"{task}: {pct}%"
+        subprocess.run([sys.executable, str(REPO / "hosts/contabo/matrix-alert.py"), body],
+                       check=True, capture_output=True, text=True, timeout=25)
+        history[task] = pct
+        atomic_json(PROGRESS_MARK, history)
+        print(f"Matrix progress: {body}", flush=True)
+    except (OSError, PermissionError, subprocess.CalledProcessError,
+            subprocess.TimeoutExpired) as err:
+        print(f"Matrix progress delivery failed for {task}: {type(err).__name__}", flush=True)
+
+
+def discord_progress():
+    if not DB.is_file():
+        return
+    try:
+        uri = "file:" + str(DB.absolute()) + "?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=5) as conn:
+            complete, total = conn.execute(
+                "SELECT COALESCE(SUM(CASE WHEN complete=1 AND refresh_active=0 "
+                "AND refreshed_at IS NOT NULL AND error IS NULL THEN 1 ELSE 0 END),0), "
+                "COUNT(*) FROM channels").fetchone()
+        progress_notify("Discord archive", complete, total)
+    except sqlite3.Error:
+        pass
+
+
 def discord_running():
     """Treat a still-running collector (possibly tmux-detached) as busy."""
     me = os.getpid()
@@ -238,6 +288,7 @@ def prepare_photos():
         result = hash_recovery.inventory(root, originals)
     except (OSError, ValueError, RuntimeError, KeyError) as err:
         return False, f"Photo audit cannot proceed: {err}"
+    progress_notify("Google Photos upload", len(originals) - len(result["missing"]), len(originals), done=result["ok"])
     if not result["ok"]:
         UPLOAD_OBS.unlink(missing_ok=True)
         return False, f"{len(result['missing'])} Takeout files unavailable by SHA-256; use export-missing.py"
@@ -255,6 +306,7 @@ def prepare_photos():
     if not good:
         raise RuntimeError(f"Reconciliation did not pass canonical verification: {reason}")
     atomic_json(REPAIR_MARK, {"finished": now(), "result": outcomes, "verified": reason})
+    progress_notify("Google Photos reconciliation", 1, 1, done=True)
     print(f"Reconciled Takeout: {outcomes}, {reason}", flush=True)
     matrix_notify("photos-reconciled", "[Contabo] Google Photos upload fully verified and reconciled.")
     return True, reason
@@ -276,12 +328,14 @@ def photos_migrate():
         subprocess.run([OCC, "memories:migrate-google-takeout",
                         "--user=wug", f"--folder={FOLDER}"], check=True)
         atomic_json(MARK, {"finished": now(), "input": str(MANIFEST), "files_checked": why})
+        progress_notify("Google Photos metadata migration", 1, 1, done=True)
         matrix_notify("photos-migrated", "[Contabo] Google Takeout metadata migration completed.")
     if not INDEX_MARK.exists():
         print("Indexing photos in Nextcloud Memories...", flush=True)
         subprocess.run([OCC, "memories:index", "--user=wug",
                         f"--path={FOLDER}", "--force"], check=True)
         atomic_json(INDEX_MARK, {"finished": now(), "photos_migrated": str(MARK)})
+        progress_notify("Memories indexing", 1, 1, done=True)
         matrix_notify("photos-indexed", "[Contabo] Google Photos Memories indexing completed.")
 
 
@@ -310,6 +364,7 @@ def stage_services():
     atomic_json(POST, {"checked": now(), "results": results,
                         "mail_enabled": False, "bridges_enabled": False,
                         "next": "Review DNS, secrets, auth, and switch manually"})
+    progress_notify("Service preflight", 1, 1, done=True)
     print(f"Service readiness staged: {POST}, log: {logfile}")
     matrix_notify("migration-complete", "[Contabo] Photo migration and preflight steps completed. Mail and messaging bridges remain disabled pending review.")
 
@@ -378,6 +433,10 @@ def main():
             # a completed, verified Discord archive.
             p = prepare_photos()
             d = discord_status()
+            if d[0]:
+                progress_notify("Discord archive", 1, 1, done=True)
+            else:
+                discord_progress()
             if p[0] and d[0]:
                 print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
                 photos_migrate()
