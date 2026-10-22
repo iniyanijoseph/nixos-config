@@ -44,7 +44,7 @@ def status_text():
         try:
             observed=json.loads(obs.read_text())
             elapsed=max(0,int(time.time()-float(observed["first_seen"])))
-            photos=f"SHA-256 verified; quiet-period {min(3600,elapsed)}/3600 seconds"
+            photos=f"SHA-256 verified; quiet-period {min(600,elapsed)}/600 seconds"
         except (OSError,ValueError,KeyError,TypeError):
             photos="SHA-256 verified; waiting for unchanged-file safety interval"
     else:
@@ -54,11 +54,20 @@ def status_text():
         uri="file:"+str(DB)+"?mode=ro"
         conn=sqlite3.connect(uri,uri=True,timeout=5)
         try:
-            done,total=conn.execute(
-                "SELECT COALESCE(SUM(CASE WHEN complete=1 AND refresh_active=0 "
+            backfilled,refreshed,errors,total=conn.execute(
+                "SELECT COALESCE(SUM(CASE WHEN complete=1 THEN 1 ELSE 0 END),0), "
+                "COALESCE(SUM(CASE WHEN complete=1 AND refresh_active=0 "
                 "AND refreshed_at IS NOT NULL AND error IS NULL THEN 1 ELSE 0 END),0), "
+                "COALESCE(SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END),0), "
                 "COUNT(*) FROM channels").fetchone()
-            discord=f"{done}/{total} channels refreshed (completion not certified)"
+            messages=conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            failed,total_scans=0,0
+            total_scans,failed=conn.execute("SELECT COUNT(*), COALESCE(SUM(CASE WHEN ok=0 THEN 1 ELSE 0 END),0) FROM scans").fetchone()
+            pct=min(99,(backfilled+refreshed)*100//(2*total)) if total else 0
+            discord=(f"{backfilled}/{total} backfilled; {refreshed}/{total} refreshed; "
+                     f"{messages} messages saved; {errors} channel errors; "
+                     f"{failed}/{total_scans} discovery checks failed; "
+                     f"~{pct}% of currently known two-pass work (not an ETA)")
         finally:
             conn.close()
     except (sqlite3.Error,OSError):
