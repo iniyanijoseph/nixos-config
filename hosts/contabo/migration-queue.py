@@ -17,6 +17,8 @@ import sys
 import time
 from datetime import datetime, timezone
 
+import photo_reconcile
+
 STATE = Path("/var/lib/migration-queue")
 DB = Path("/var/lib/discord-archive/archive.sqlite")
 MANIFEST = STATE / "photos-manifest.json"
@@ -24,6 +26,9 @@ MARK = STATE / "photos-migrated.json"
 INDEX_MARK = STATE / "photos-indexed.json"
 PARTIAL = STATE / "discord-partial-approved.json"
 POST = STATE / "services-staged.json"
+UPLOAD_OBS = STATE / "photos-upload-observation.json"
+QUARANTINE = STATE / "photos-duplicate-quarantine"
+REPAIR_MARK = STATE / "photos-reconciled.json"
 FOLDER = "Photos/Google Photos"
 REPO = Path("/etc/nixos")
 
@@ -185,6 +190,60 @@ def photos_status(manifest_path=MANIFEST, photo_dir=None):
         return False, f"Photo verification failed: {err}"
 
 
+def prepare_photos():
+    """Wait for a complete unchanged upload, then quarantine exact duplicates.
+
+    Never touch Nextcloud until every *canonical* file is present and hashes
+    correctly, every extra file is a verified extra copy, and the complete
+    tree has been unchanged for at least one hour.
+    """
+    if REPAIR_MARK.exists() or MARK.exists():
+        return photos_status()
+    if not MANIFEST.is_file():
+        return False, "Missing Takeout manifest"
+    try:
+        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        root = nc_photo_dir()
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as err:
+        return False, f"Cannot inspect Takeout upload: {err}"
+    result = photo_reconcile.audit(root, manifest)
+    stable, why = photo_reconcile.stable_observation(result, UPLOAD_OBS)
+    if not stable:
+        return False, why
+    # A new audit just before any change guards against background browser
+    # uploads that began after the prior stable observation.
+    fresh = photo_reconcile.audit(root, manifest)
+    if not fresh["ok"] or fresh["fingerprint"] != result["fingerprint"]:
+        UPLOAD_OBS.unlink(missing_ok=True)
+        return False, "Upload changed during final verification; waiting again"
+    duplicates = fresh["duplicates"]
+    if duplicates:
+        print(f"Backing up verified originals before quarantining {len(duplicates)} redundant copies...",
+              flush=True)
+        subprocess.run(["systemctl", "start", "restic-backups-contabo.service"], check=True)
+        # Backup can take substantial time: do not act without rechecking
+        # that files are unchanged throughout.
+        after_backup = photo_reconcile.audit(root, manifest)
+        if not after_backup["ok"] or after_backup["fingerprint"] != fresh["fingerprint"]:
+            UPLOAD_OBS.unlink(missing_ok=True)
+            return False, "Upload changed during backup; no duplicates were moved"
+        moved = photo_reconcile.quarantine_duplicates(root, manifest, duplicates, QUARANTINE)
+        print(f"Reversibly quarantined {moved} redundant files; refreshing Nextcloud index...",
+              flush=True)
+    # Also run scan on restart if a prior rename succeeded but the
+    # following files:scan failed, so file cache cannot remain stale.
+    if duplicates or QUARANTINE.exists():
+        subprocess.run(["nextcloud-occ", "files:scan",
+                        f"--path=/wug/files/{FOLDER}"], check=True)
+    strict_ok, strict_reason = photos_status()
+    if not strict_ok:
+        raise RuntimeError(f"Upload remains inconsistent after reconciliation: {strict_reason}")
+    atomic_json(REPAIR_MARK, {"reconciled_at": now(), "quarantine": str(QUARANTINE),
+                             "manifest": str(MANIFEST), "verified": strict_reason})
+    print(f"Google Photos tree reconciled: {strict_reason}", flush=True)
+    return True, strict_reason
+
+
 def photos_migrate():
     if not MARK.exists():
         okay, why = photos_status()
@@ -241,6 +300,7 @@ def status():
     p = photos_status()
     print(json.dumps({"discord": {"ready": d[0], "reason": d[1]},
                       "photos": {"ready": p[0], "reason": p[1]},
+                      "reconciliation_done": REPAIR_MARK.exists(),
                       "migration_done": MARK.exists(),
                       "index_done": INDEX_MARK.exists(),
                       "services_staged": POST.exists()}, indent=2))
@@ -296,7 +356,7 @@ def main():
         while True:
             d = discord_status()
             if d[0]:
-                p = photos_status()
+                p = prepare_photos()
                 if p[0] or MARK.exists():
                     print(f"{now()} Both dependency checks passed: {d[1]}; {p[1]}", flush=True)
                     photos_migrate()
