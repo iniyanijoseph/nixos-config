@@ -229,6 +229,23 @@ class QueueTests(unittest.TestCase):
             self.assertEqual((root / "Train/old.jpg").read_bytes(), b"original")
             self.assertTrue(queue.validate_manifest(meta, root)[0])
 
+    def test_takeout_migration_confirms_prompt_noninteractively(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            with patch.object(queue,"MARK",root/"migrated.json"), \
+                 patch.object(queue,"INDEX_MARK",root/"indexed.json"), \
+                 patch.object(queue,"photos_status",return_value=(True,"verified")), \
+                 patch.object(queue,"progress_notify"), \
+                 patch.object(queue,"matrix_notify"), \
+                 patch.object(queue.subprocess,"run") as run:
+                queue.photos_migrate()
+                migrate=[call for call in run.call_args_list if
+                         "memories:migrate-google-takeout" in call.args[0]]
+                self.assertEqual(len(migrate),1)
+                self.assertEqual(migrate[0].kwargs["input"],"y\\n")
+                self.assertTrue(migrate[0].kwargs["text"])
+                self.assertTrue(migrate[0].kwargs["check"])
+
     def test_photo_index_failure_does_not_mark_complete(self):
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)
