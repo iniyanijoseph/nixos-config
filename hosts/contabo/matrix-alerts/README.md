@@ -45,3 +45,32 @@ Messages are emitted for verified/reconciled photos, Takeout metadata migration,
 For future services, invoke this same script from systemd `OnFailure` handlers or service hooks. A VPS-wide outage also requires an external heartbeat checker; an unavailable Synapse server cannot notify you of its own outage.
 
 No NixOS switch is required for the existing queue. Git commits alone do not configure the bot or change running services.
+## Query migration progress from Matrix
+
+A separate long-polling listener (`hosts/contabo/matrix-commands.py`) handles
+`!status`, `!progress`, and `!help` in the private **Server Alerts** room.
+It responds only to `@me:iniyanjoseph.com`; it does not need an admin account
+or any additional credentials beyond the existing root-only bot token.
+
+Start without switching NixOS or restarting the Discord collector:
+
+```fish
+cd /etc/nixos
+sudo git pull --ff-only
+sudo systemd-run --unit=matrix-command-listener \
+  --description="Matrix private migration status responder" \
+  --property=Restart=always --property=RestartSec=10s \
+  /run/current-system/sw/bin/nix shell nixpkgs#python3 --command python3 \
+  /etc/nixos/hosts/contabo/matrix-commands.py
+sudo journalctl -u matrix-command-listener -n 20 --no-pager
+```
+
+The first sync skips old commands; send a NEW `!status` message after
+starting the listener. A systemd **transient** service survives SSH disconnects
+but does not persist across a reboot. Add a declarative service for reboot
+persistence after the Discord collection permits a NixOS switch.
+
+The photo repair's one-hour unchanged snapshot check protects against active
+uploads and races. It starts only after all expected SHA256 contents are
+present. If files change, the quiet period resets. The listener displays the
+elapsed quiet period when queried.
