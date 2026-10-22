@@ -15,6 +15,40 @@ spec.loader.exec_module(queue)
 
 
 class QueueTests(unittest.TestCase):
+    def test_preflight_runs_offline_and_checkpoints_independently(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state=Path(temp)
+            recorded=[]
+            def offline(argv, **kwargs):
+                recorded.append(argv)
+                return type("Result", (), {"returncode": 0})()
+            with patch.object(queue, "STATE", state), \\
+                 patch.object(queue, "POST", state/"services-staged.json"), \\
+                 patch.object(queue, "matrix_notify"), \\
+                 patch.object(queue, "progress_notify"), \\
+                 patch.object(queue.subprocess, "run", side_effect=offline):
+                queue.stage_services()
+                self.assertTrue(queue.POST.exists())
+                self.assertEqual(len(recorded), 2)
+                self.assertTrue(all(argv[0] == "bash" for argv in recorded))
+                self.assertFalse(__import__("json").loads(queue.POST.read_text())["mail_enabled"])
+                queue.stage_services()
+                self.assertEqual(len(recorded), 2)
+
+    def test_incomplete_discord_never_announces_overall_100_even_after_preflight(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state=Path(temp)
+            (state/"services-staged.json").write_text("{}")
+            (state/"photos-reconciled.json").write_text("{}")
+            with patch.object(queue, "POST", state/"services-staged.json"), \\
+                 patch.object(queue, "REPAIR_MARK", state/"photos-reconciled.json"), \\
+                 patch.object(queue, "MARK", state/"missing-metadata"), \\
+                 patch.object(queue, "INDEX_MARK", state/"missing-index"), \\
+                 patch.object(queue, "CLEANUP_MARK", state/"missing-cleanup"), \\
+                 patch.object(queue, "progress_notify") as notify:
+                queue.overall_progress(discord_ready=False, photos_ready=True)
+                self.assertFalse(notify.call_args.kwargs.get("done"))
+
     def test_optional_matrix_alert_unreadable_secret_is_harmless(self):
         with patch.object(queue.Path, "is_file", side_effect=PermissionError("private")):
             queue.matrix_notify("test", "private test")
