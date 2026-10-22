@@ -44,6 +44,15 @@ REPO = Path("/etc/nixos")
 # NixOS installs a preconfigured Nextcloud OCC wrapper in the system profile.
 # The transient unit runs inside `nix shell`, whose PATH can omit this wrapper.
 OCC = "/run/current-system/sw/bin/nextcloud-occ"
+# The OCC wrapper uses sudo to change user. Sudo may replace PATH even when
+# ExifTool and Perl are installed in the system profile. Memories runs
+# ['perl', bundled_exiftool] with no absolute Perl path.
+# Start OCC already as nextcloud and set PATH *after* sudo switches user.
+OCC_ENV = ["/run/current-system/sw/bin/sudo", "--user=nextcloud", "--",
+           "/run/current-system/sw/bin/env",
+           "PATH=/run/current-system/sw/bin:/run/wrappers/bin",
+           OCC]
+
 
 
 def now():
@@ -357,7 +366,7 @@ def photos_migrate():
         # service stdin is EOF, and upstream currently raises trim(false).
         # Explicitly answer only this known confirmation after the mandatory
         # successful offsite backup and repeated manifest verification.
-        subprocess.run([OCC, "memories:migrate-google-takeout",
+        subprocess.run([*OCC_ENV, "memories:migrate-google-takeout",
                         "--user=wug", f"--folder={FOLDER}"],
                        input="y\n", text=True, check=True)
         atomic_json(MARK, {"finished": now(), "input": str(MANIFEST), "files_checked": why})
@@ -365,7 +374,7 @@ def photos_migrate():
         matrix_notify("photos-migrated", "[Contabo] Google Takeout metadata migration completed.")
     if not INDEX_MARK.exists():
         print("Indexing photos in Nextcloud Memories...", flush=True)
-        subprocess.run([OCC, "memories:index", "--user=wug",
+        subprocess.run([*OCC_ENV, "memories:index", "--user=wug",
                         f"--path={FOLDER}", "--force"], check=True)
         atomic_json(INDEX_MARK, {"finished": now(), "photos_migrated": str(MARK)})
         progress_notify("Memories indexing", 1, 1, done=True)
