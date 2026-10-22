@@ -10,6 +10,7 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -32,6 +33,7 @@ DB = Path("/var/lib/discord-archive/archive.sqlite")
 MANIFEST = STATE / "photos-manifest.json"
 MARK = STATE / "photos-migrated.json"
 INDEX_MARK = STATE / "photos-indexed.json"
+CLEANUP_MARK = STATE / "photos-quarantine-cleaned.json"
 PARTIAL = STATE / "discord-partial-approved.json"
 POST = STATE / "services-staged.json"
 UPLOAD_OBS = STATE / "photos-upload-observation.json"
@@ -361,6 +363,67 @@ def photos_migrate():
         matrix_notify("photos-indexed", "[Contabo] Google Photos Memories indexing completed.")
 
 
+
+def cleanup_quarantine():
+    """Remove quarantined uploads only after indexing and a covered fresh backup.
+
+    A pre-reconciliation snapshot is insufficient. A fresh snapshot must include
+    BOTH the Nextcloud user data and the quarantined originals. Otherwise the
+    original upload evidence remains recoverable on disk.
+    """
+    if CLEANUP_MARK.exists():
+        return True
+    if not REPAIR_MARK.is_file() or not MARK.is_file() or not INDEX_MARK.is_file():
+        return False
+    if not QUARANTINE.exists():
+        # Never infer successful cleanup merely from an absent directory.
+        print("Quarantine absent without cleanup checkpoint; manual review needed", flush=True)
+        return False
+    if QUARANTINE.is_symlink() or not QUARANTINE.is_dir():
+        raise RuntimeError("Unsafe quarantine path")
+    # Protect a restored canonical directory from accidental deletion.
+    root = nc_photo_dir()
+    if QUARANTINE.resolve() == root.resolve() or QUARANTINE.resolve().is_relative_to(root.resolve()):
+        raise RuntimeError("Quarantine unexpectedly inside photo directory")
+    # Check the canonical count and repair checkpoint without demanding the
+    # original hashes again: the metadata migration can legitimately alter EXIF.
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    if len(manifest["files"]) != int(json.loads(REPAIR_MARK.read_text(encoding="utf-8"))["verified"].split(" files")[0]):
+        raise RuntimeError("Reconciliation checkpoint and manifest disagree")
+    if sum(1 for p in root.rglob("*") if p.is_file()) != len(manifest["files"]):
+        raise RuntimeError("Photo count changed after reconciliation; cannot clean quarantine")
+
+    # The backup unit is a blocking oneshot; starting it waits for completion.
+    subprocess.run(["systemctl", "start", "restic-backups-contabo.service"], check=True)
+    result = subprocess.run(["restic-contabo", "snapshots", "--json"],
+                            check=True, capture_output=True, text=True, timeout=120)
+    snapshots = json.loads(result.stdout)
+    checkpoint_time = datetime.fromisoformat(json.loads(INDEX_MARK.read_text(encoding="utf-8"))["finished"])
+    valid = False
+    for snapshot in snapshots:
+        try:
+            created = datetime.fromisoformat(snapshot["time"].replace("Z", "+00:00"))
+            paths = set(snapshot["paths"])
+            if (created > checkpoint_time and "/var/lib/nextcloud" in paths
+                    and "/var/lib/migration-queue" in paths):
+                valid = True
+                break
+        except (KeyError, ValueError, TypeError):
+            continue
+    if not valid:
+        print("Quarantine cleanup deferred: no post-indexing Restic snapshot containing "
+              "both /var/lib/nextcloud and /var/lib/migration-queue. "
+              "Retaining all quarantine files.", flush=True)
+        return False
+    # The directory contains only misplaced copies, not canonical Takeout paths.
+    shutil.rmtree(QUARANTINE)
+    atomic_json(CLEANUP_MARK, {"finished": now(),
+              "reason": "post-indexing covered Restic snapshot; canonical files retained"})
+    matrix_notify("photos-quarantine-cleaned",
+                  "[Contabo] Verified photo quarantine cleanup complete; space reclaimed.")
+    print("Photo quarantine cleaned after fresh covered backup.", flush=True)
+    return True
+
 def stage_services():
     if POST.exists():
         return
@@ -465,6 +528,10 @@ def main():
                 photos_migrate()
                 if INDEX_MARK.exists():
                     stage_services()
+                    if not cleanup_quarantine():
+                        print("Photo quarantine cleanup still queued; will check again.", flush=True)
+                        time.sleep(args.interval)
+                        continue
                 overall_progress(discord_ready=True, photos_ready=True)
                 print("Queued work finished. No NixOS switch was performed.", flush=True)
                 return
