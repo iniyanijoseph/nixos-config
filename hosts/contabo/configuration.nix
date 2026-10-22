@@ -8,11 +8,14 @@
     ./matrix.nix
     ./whatsapp.nix
     ./discord.nix
+    ./email.nix
     ./shell.nix
   ];
 
   # Enabled only after provisioning root-only Restic keys and R2 credentials.
   contabo.backups.enable = true;
+  # Kept off until Matrimail is built, configured and Gmail integration tested.
+  contabo.emailBridge.enable = false;
 
   networking.hostName = "contabo";
   time.timeZone = "UTC";
