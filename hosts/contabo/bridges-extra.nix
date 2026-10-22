@@ -4,17 +4,18 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.contabo.messagingBridges;
+  packages = import ./bridges-extra-pkgs.nix { inherit pkgs; };
   bridge = {
     gmessages = {
       enable = cfg.sms.enable;
       name = "mautrix-gmessages";
-      package = pkgs.mautrix-gmessages.override { withGoolm = true; };
+      package = packages.gmessages;
       port = 29320;
     };
     slack = {
       enable = cfg.slack.enable;
       name = "mautrix-slack";
-      package = pkgs.mautrix-slack.override { withGoolm = true; };
+      package = packages.slack;
       port = 29321;
     };
   };
