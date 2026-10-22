@@ -22,10 +22,10 @@ class QueueTests(unittest.TestCase):
             def offline(argv, **kwargs):
                 recorded.append(argv)
                 return type("Result", (), {"returncode": 0})()
-            with patch.object(queue, "STATE", state), \\
-                 patch.object(queue, "POST", state/"services-staged.json"), \\
-                 patch.object(queue, "matrix_notify"), \\
-                 patch.object(queue, "progress_notify"), \\
+            with patch.object(queue, "STATE", state), \
+                 patch.object(queue, "POST", state/"services-staged.json"), \
+                 patch.object(queue, "matrix_notify"), \
+                 patch.object(queue, "progress_notify"), \
                  patch.object(queue.subprocess, "run", side_effect=offline):
                 queue.stage_services()
                 self.assertTrue(queue.POST.exists())
@@ -40,11 +40,11 @@ class QueueTests(unittest.TestCase):
             state=Path(temp)
             (state/"services-staged.json").write_text("{}")
             (state/"photos-reconciled.json").write_text("{}")
-            with patch.object(queue, "POST", state/"services-staged.json"), \\
-                 patch.object(queue, "REPAIR_MARK", state/"photos-reconciled.json"), \\
-                 patch.object(queue, "MARK", state/"missing-metadata"), \\
-                 patch.object(queue, "INDEX_MARK", state/"missing-index"), \\
-                 patch.object(queue, "CLEANUP_MARK", state/"missing-cleanup"), \\
+            with patch.object(queue, "POST", state/"services-staged.json"), \
+                 patch.object(queue, "REPAIR_MARK", state/"photos-reconciled.json"), \
+                 patch.object(queue, "MARK", state/"missing-metadata"), \
+                 patch.object(queue, "INDEX_MARK", state/"missing-index"), \
+                 patch.object(queue, "CLEANUP_MARK", state/"missing-cleanup"), \
                  patch.object(queue, "progress_notify") as notify:
                 queue.overall_progress(discord_ready=False, photos_ready=True)
                 self.assertFalse(notify.call_args.kwargs.get("done"))
