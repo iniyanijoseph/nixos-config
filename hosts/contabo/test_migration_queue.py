@@ -242,7 +242,7 @@ class QueueTests(unittest.TestCase):
                 migrate=[call for call in run.call_args_list if
                          "memories:migrate-google-takeout" in call.args[0]]
                 self.assertEqual(len(migrate),1)
-                self.assertEqual(migrate[0].kwargs["input"],"y\\n")
+                self.assertEqual(migrate[0].kwargs["input"],"y\n")
                 self.assertTrue(migrate[0].kwargs["text"])
                 self.assertTrue(migrate[0].kwargs["check"])
 
