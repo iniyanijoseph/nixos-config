@@ -154,7 +154,7 @@ def overall_progress(*, discord_ready=False, photos_ready=False):
     points += 20 if MARK.exists() else 0
     points += 10 if INDEX_MARK.exists() else 0
     points += 10 if POST.exists() else 0
-    progress_notify("Overall migration", points, 100, done=POST.exists())
+    progress_notify("Overall migration", points, 100, done=(POST.exists() and discord_ready and INDEX_MARK.exists() and CLEANUP_MARK.exists()))
 
 
 def discord_running():
@@ -537,12 +537,19 @@ def main():
             else:
                 discord_progress()
             overall_progress(discord_ready=d[0], photos_ready=p[0])
-            if INDEX_MARK.exists() and d[0]:
-                stage_services()
-                overall_progress(discord_ready=True, photos_ready=True)
-                if CLEANUP_MARK.exists():
-                    print("Queued work finished. No NixOS switch was performed.", flush=True)
-                    return
+            # Offline future-service preflights do not depend on photo or
+            # Discord completion. Failures are reported and retried later
+            # without blocking either migration.
+            if not POST.exists():
+                try:
+                    stage_services()
+                except (RuntimeError, OSError, subprocess.CalledProcessError,
+                        subprocess.TimeoutExpired) as err:
+                    print(f"{now()} Service preflight deferred: {err}", flush=True)
+            overall_progress(discord_ready=d[0], photos_ready=p[0])
+            if INDEX_MARK.exists() and d[0] and CLEANUP_MARK.exists() and POST.exists():
+                print("Queued work finished. No NixOS switch was performed.", flush=True)
+                return
             if not p[0]:
                 print(f"{now()} Awaiting photos: {p[1]}", flush=True)
             if not d[0]:
