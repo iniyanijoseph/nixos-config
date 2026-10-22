@@ -36,7 +36,9 @@
         "/etc/nixos"
       ]
       ++ lib.optionals config.contabo.mail.enable [ "/var/lib/stalwart" ]
-      ++ lib.optionals config.contabo.emailBridge.enable [ "/var/lib/matrimail" ];
+      ++ lib.optionals config.contabo.emailBridge.enable [ "/var/lib/matrimail" ]
+      ++ lib.optionals config.contabo.messagingBridges.sms.enable [ "/var/lib/mautrix-gmessages" ]
+      ++ lib.optionals config.contabo.messagingBridges.slack.enable [ "/var/lib/mautrix-slack" ];
       exclude = [ "**/appdata_*/preview/**" ];
       pruneOpts = [
         "--keep-daily 7"
