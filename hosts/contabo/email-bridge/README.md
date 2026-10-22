@@ -1,4 +1,10 @@
-# Email bridge experiment (Gmail first, Outlook later)
+# Email bridge experiment (Stalwart mailbox first)
+
+The primary architecture is now Stalwart for the hosted
+`me@iniyanjoseph.com` mailbox, with Matrimail connecting to that mailbox
+for Cinny. See [`../mail-server/README.md`](../mail-server/README.md).
+Forwarding from Gmail/Outlook happens at those providers; their IMAP accounts
+are not bridged directly in the initial deployment.
 
 This repository stages [Matrimail](https://github.com/Leicas/matrimail)
 (revision `6f22bb7115063241eb91d146ad1f177a56ae3ad5`, upstream
@@ -15,6 +21,8 @@ or access Gmail.
 
 - Matrimail claims IMAP reception, one Matrix room per email thread,
   attachments, replies, and composition.
+- Hosted Stalwart: login to the local IMAP/SMTP mailbox only; ensure
+  `me@iniyanjoseph.com` exists before Matrimail account setup.
 - Gmail: app-password login may work after 2-Step Verification; upstream
   also describes a Gmail OAuth transport, but the account authorization
   flow must be verified before relying on it.
