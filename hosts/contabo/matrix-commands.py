@@ -6,6 +6,7 @@ Never displays tokens, archive contents, or raw logs.
 """
 import json
 import os
+from datetime import datetime, timezone
 import sqlite3
 import sys
 import time
@@ -40,7 +41,12 @@ def status_text():
     if (STATE/"photos-reconciled.json").exists():
         photos="reconciled (100%)"
     elif obs.exists():
-        photos="SHA-256 verified; waiting for unchanged-file safety interval"
+        try:
+            observed=json.loads(obs.read_text())
+            elapsed=max(0,int(time.time()-float(observed["first_seen"])))
+            photos=f"SHA-256 verified; quiet-period {min(3600,elapsed)}/3600 seconds"
+        except (OSError,ValueError,KeyError,TypeError):
+            photos="SHA-256 verified; waiting for unchanged-file safety interval"
     else:
         photos="upload/verification incomplete"
     discord="archive not yet complete"
@@ -69,7 +75,7 @@ def status_text():
     try:
         progress=json.loads(p.read_text())
         if progress:
-            lines.append("Progress notifications:")
+            lines.append("Last successfully notified percentages:")
             lines.extend(f"  {k}: {v}%" for k,v in sorted(progress.items()))
     except (OSError,ValueError):
         pass
