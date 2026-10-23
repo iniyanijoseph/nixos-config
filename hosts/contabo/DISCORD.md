@@ -1,4 +1,14 @@
-# Discord bridge: personal account, historical import
+# Discord bridge: retired setup notes (historical)
+
+> **Do not follow the deployment/login steps below on the current VPS.**
+> `discord.nix` deliberately disables the old bridge. The SQLite history
+> collector is independent, and native Discord-to-Matrix history import has
+> not been implemented. The authoritative current status and safe operations
+> are described in [OPERATIONS.md](./OPERATIONS.md) and
+> [discord-archive/README.md](./discord-archive/README.md).
+>
+> This file documents a superseded bridge experiment. It is **not** a
+> supported current deployment runbook.
 
 This is a legacy mautrix-discord 0.7.6 bridge on the pinned NixOS 26.05
 snapshot. It supports personal Discord DMs, group DMs, and selected guilds.
