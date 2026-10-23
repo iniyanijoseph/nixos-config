@@ -90,5 +90,12 @@ and files; for stronger consistency, use a temporary maintenance window or an
 OS filesystem snapshot during the backup. Retain Google originals until
 recovery has been tested.
 
-**Matrix is not covered yet.** Later, add Synapse media, config and signing
-keys. The PostgreSQL dump will automatically include any Synapse database.
+**Matrix is included in the current backup paths** via
+`/var/lib/matrix-synapse` and the PostgreSQL logical dump. The live
+Discord bridge directory `/var/lib/mautrix-discord` is added conditionally
+whenever `services.mautrix-discord.enable` is true; the historical SQLite
+archive is a separate backup path. Keep all bridge mappings, registration
+tokens, Synapse signing keys and encryption recovery state together when
+restoring. A live data-directory copy and separately timed PostgreSQL dump
+are **not an atomic multi-service snapshot**; test an isolated restore
+before treating it as disaster-recovery ready.

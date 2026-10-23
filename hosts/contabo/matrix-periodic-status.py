@@ -13,7 +13,11 @@ spec.loader.exec_module(status)
 STATE = Path("/var/lib/migration-queue")
 CHECKPOINTS = ("photos-reconciled.json", "photos-migrated.json",
                "photos-indexed.json", "photos-quarantine-cleaned.json",
-               "services-staged.json")
+               "services-staged.json",
+               # A completed *download* is not a native Matrix history import.
+               # These must be produced by future separately verified audits.
+               "discord-native-import-verified.json",
+               "photos-metadata-audited.json")
 
 def finished():
     if not all((STATE / name).is_file() for name in CHECKPOINTS):

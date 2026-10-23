@@ -36,6 +36,9 @@
         "/etc/ssh"
         "/etc/nixos"
       ]
+      # Future live Discord bridge mapping/authentication is NOT redundant
+      # with Matrix history. Back it up whenever the bridge is enabled.
+      ++ lib.optionals config.services.mautrix-discord.enable [ "/var/lib/mautrix-discord" ]
       ++ lib.optionals config.contabo.mail.enable [ "/var/lib/stalwart" ]
       ++ lib.optionals config.contabo.emailBridge.enable [ "/var/lib/matrimail" ]
       ++ lib.optionals config.contabo.messagingBridges.sms.enable [ "/var/lib/mautrix-gmessages" ]
