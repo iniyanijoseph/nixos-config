@@ -1,5 +1,9 @@
 # Contabo host
 
+**Current operational guide:** [OPERATIONS.md](./OPERATIONS.md). It distinguishes
+permanent NixOS services, one-time migrations and private state. The native
+Discord historical importer has not yet been implemented or deployed.
+
 This directory is an **independent flake in the same Git repository** as the
 desktop configuration. That is intentional: the desktop follows nixos-unstable,
 while this already-running server was installed with NixOS 26.05. The two
@@ -82,3 +86,10 @@ The homeserver and web client are described in [`matrix.nix`](./matrix.nix).
 Follow [`MATRIX.md`](./MATRIX.md) to provision the DNS records, create the
 root-only registration secret, deploy, verify federation and register `@me`.
 The existing Restic job includes `/var/lib/matrix-synapse` and PostgreSQL.
+
+## Optional Matrix migration monitoring (staged, disabled)
+
+`monitoring.nix` packages the private Matrix status listener and 20-minute
+migration reporter using the pinned Contabo flake. It is imported but
+`contabo.matrixMonitoring.enable = false;` until a controlled cutover replaces
+the existing transient systemd units. See [OPERATIONS.md](./OPERATIONS.md).
