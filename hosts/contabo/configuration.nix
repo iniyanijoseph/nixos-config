@@ -11,6 +11,7 @@
     ./email.nix
     ./mail.nix
     ./bridges-extra.nix
+    ./monitoring.nix
     ./shell.nix
   ];
 
@@ -22,6 +23,8 @@
   contabo.mail.enable = false;
   contabo.messagingBridges.sms.enable = false;
   contabo.messagingBridges.slack.enable = false;
+  # Opt-in only, until transient Matrix listener/timer are stopped deliberately.
+  contabo.matrixMonitoring.enable = false;
 
   networking.hostName = "contabo";
   time.timeZone = "UTC";
