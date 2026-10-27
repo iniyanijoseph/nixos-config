@@ -64,6 +64,7 @@ def parse_counts(output):
 class Setup:
     def __init__(self):
         self.results = {}
+        self.photos_deferred = True
         self.repair = load_script('mtime_repair', os.environ['CONTABO_MTIME_REPAIR_SCRIPT'])
         self.archive = load_script('archive_audit', os.environ['CONTABO_DISCORD_AUDIT_SCRIPT'])
         self.audit = load_script('photo_audit', os.environ['CONTABO_PHOTO_AUDIT_SCRIPT'])
@@ -114,7 +115,6 @@ class Setup:
         for path in ('/var/lib/nextcloud', '/nix/store', str(STATE)):
             if shutil.disk_usage(path).free < 5 * 1024**3:
                 raise RuntimeError('Less than 5 GiB free; no automatic deletion allowed')
-        self.repair.check_root(True)
         return 'Core services and Nextcloud healthy; migration jobs idle; disk headroom checked'
 
     def backup(self):
@@ -125,6 +125,7 @@ class Setup:
         return 'Fresh R2 snapshot verified; repository metadata check passed'
 
     def photos(self):
+        self.repair.check_root(True)
         self.remediation.recover()
         output = command(['contabo-photo-audit', '--sample', '0'], capture=True)
         atomic(STATE / 'photo-audit.txt', output)
@@ -199,6 +200,26 @@ class Setup:
         command(['contabo-discord-audit'])
         return 'Read-only archive inventory finished; this is not a historical Matrix import'
 
+    def integrations(self):
+        module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        detail = module.commission()
+        self.backup()
+        self.record('Integration account pairing', 'blocked', detail)
+        return 'Slack, Google Messages and Matrimail services deployed; account acceptance separate'
+
+    def mail(self):
+        module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        self.record('Mail delivery acceptance', 'blocked', module.commission_mail())
+        self.backup()
+        return 'Mail service deployment and mailbox provisioning completed; delivery acceptance separate'
+
+    def discord_native(self):
+        module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        self.record('Discord history and live cutover', 'blocked', module.commission_discord())
+        self.photos_deferred = json.loads((module.STATE/'discord-progress.json').read_text())['import_in_progress']
+        self.backup()
+        return 'Discord service deployed; import/pairing/coverage state is recorded separately'
+
     def run(self):
         # Reset stale RUNNING records after interruption; recheck actual state.
         self.record('Overall commissioning', 'blocked', 'Waiting for all deployment and acceptance checks')
@@ -206,8 +227,14 @@ class Setup:
             return 2
         backed_up = self.step('Offsite backup', self.backup)
         if backed_up:
-            self.step('Photo Files dates', self.photos)
+            self.step('Discord native deployment', self.discord_native)
+            if self.step('Messaging service deployment', self.integrations):
+                self.step('Mail service deployment', self.mail)
             self.step('Nextcloud apps', self.apps)
+            if self.photos_deferred:
+                self.record('Photo Files dates','deferred','Discord/messaging have priority; waiting for the archive import')
+            else:
+                self.step('Photo Files dates', self.photos)
         else:
             self.record('Photo Files dates', 'blocked', 'Fresh backup prerequisite failed')
             self.record('Nextcloud apps', 'blocked', 'Fresh backup prerequisite failed')
@@ -216,16 +243,10 @@ class Setup:
         # replace them with forgeable completion markers or assume that a
         # running bridge has authenticated or passed send/receive tests.
         for name, detail in (
-            ('Discord history and live cutover',
-             'Bridge-native importer and mapping adapter are not implemented; archive preserved'),
-            ('SMS/RCS and Slack',
-             'Bridge provisioning, history checks and phone/workspace pairing remain; follows Discord cutover'),
-            ('Stalwart and Matrimail',
-             'Mailbox/bridge deployment, DNS, forwarding and external delivery tests remain'),
             ('Isolated recovery',
              'Repository check passed only if recorded above; isolated application restore still needed'),
             ('Client acceptance',
-             'Verify photo timeline/map, phone upload, DAV sync, WhatsApp and encryption recovery in clients'),
+             'Verify Discord send/receive and replies, Slack, SMS/RCS, mail, WhatsApp and encryption recovery; photos are lower priority'),
             ('Declarative app migration',
              'Google apps retain stateful installation; audited migration to pinned Nix apps remains'),
         ):

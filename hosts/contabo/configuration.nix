@@ -14,6 +14,8 @@
     ./monitoring.nix
     ./google-suite.nix
     ./finish-setup.nix
+    ./integrations.nix
+    ./discord-native/service.nix
     ./shell.nix
   ];
 

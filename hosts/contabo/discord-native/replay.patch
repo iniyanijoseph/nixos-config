@@ -1,0 +1,198 @@
+--- a/backfill.go
++++ b/backfill.go
+@@ -5,6 +5,7 @@
+ 	"crypto/sha256"
+ 	"encoding/base64"
+ 	"fmt"
++ "os"
+ 	"sort"
+ 
+ 	"github.com/bwmarrin/discordgo"
+@@ -27,6 +28,9 @@
+ 		panic("forwardBackfillInitial() called without locking forwardBackfillLock")
+ 	}
+ 
++	if os.Getenv("CONTABO_DISCORD_ARCHIVE") != "" {
++ portal.ensureContaboArchive(source,thread); return
++ }
+ 	limit := portal.bridge.Config.Bridge.Backfill.Limits.Initial.Channel
+ 	if portal.GuildID == "" {
+ 		limit = portal.bridge.Config.Bridge.Backfill.Limits.Initial.DM
+@@ -77,6 +81,7 @@
+ 
+ 	portal.forwardBackfillLock.Lock()
+ 	defer portal.forwardBackfillLock.Unlock()
++ portal.ensureContaboArchive(source,thread)
+ 
+ 	var lastMessage *database.Message
+ 	if thread != nil {
+@@ -176,7 +181,7 @@
+ 	portal.sendBackfillBatch(log, source, messages, thread)
+ }
+ 
+-func (portal *Portal) backfillUnlimitedMissed(log zerolog.Logger, source *User, after string, thread *Thread) {
++func (portal *Portal) backfillUnlimitedMissed(log zerolog.Logger, source *User, after string, thread *Thread) error {
+ 	protoChannelID := portal.Key.ChannelID
+ 	if thread != nil {
+ 		protoChannelID = thread.ID
+@@ -186,7 +191,7 @@
+ 		messages, err := source.Session.ChannelMessages(protoChannelID, messageFetchChunkSize, "", after, "", portal.RefererOptIfUser(source.Session, protoChannelID)...)
+ 		if err != nil {
+ 			log.Err(err).Msg("Error fetching chunk of messages to forward backfill")
+-			return
++			return err
+ 		}
+ 		log.Debug().Int("count", len(messages)).Msg("Fetched chunk of messages to backfill")
+ 		sort.Sort(MessageSlice(messages))
+@@ -196,7 +201,7 @@
+ 		if len(messages) < messageFetchChunkSize {
+ 			// Assume that was all the missing messages
+ 			log.Debug().Msg("Chunk had less than 50 messages, stopping backfill")
+-			return
++			return nil
+ 		}
+ 		after = messages[len(messages)-1].ID
+ 	}
+--- a/portal.go
++++ b/portal.go
+@@ -11,6 +11,7 @@
+ 	"fmt"
+ 	"io"
+ 	"net/http"
++ "os"
+ 	"reflect"
+ 	"regexp"
+ 	"slices"
+@@ -54,6 +55,7 @@
+ var relayClient, _ = discordgo.New("")
+ 
+ type Portal struct {
++ contaboArchiveReady map[string]bool
+ 	*database.Portal
+ 
+ 	Parent *Portal
+@@ -402,6 +404,8 @@
+ 		return fmt.Errorf("didn't find channel metadata")
+ 	}
+ 
++ if !portal.contaboPilotAllowed() { return fmt.Errorf("Discord archive pilot is restricted to its first DM") }
++
+ 	intent := portal.MainIntent()
+ 	if err := intent.EnsureRegistered(); err != nil {
+ 		return err
+@@ -480,6 +484,13 @@
+ 		})
+ 	}
+ 
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" {
++        initialState=append(initialState,&event.Event{Type:event.StatePowerLevels,Content:event.Content{Raw:map[string]interface{}{
++            "users":map[string]int{string(intent.UserID):100,string(portal.bridge.Bot.UserID):100,"@me:iniyanjoseph.com":-1},
++            "users_default":0,"events_default":0,"state_default":50,"invite":50,"kick":50,"ban":50,"redact":50,
++        }}})
++    }
++
+ 	req := &mautrix.ReqCreateRoom{
+ 		Visibility:      "private",
+ 		Name:            portal.Name,
+@@ -491,6 +502,8 @@
+ 		CreationContent: creationContent,
+ 		RoomVersion:     "11",
+ 	}
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" {req.Topic="Discord history is importing. Sending is paused until import and catch-up finish."}
++
+ 	if !portal.shouldSetDMRoomMetadata() && !portal.FriendNick {
+ 		req.Name = ""
+ 	}
+@@ -580,6 +593,7 @@
+ 	}
+ 	portal.forwardBackfillLock.Lock()
+ 	defer portal.forwardBackfillLock.Unlock()
++ portal.ensureContaboArchive(msg.user,msg.thread)
+ 
+ 	switch convertedMsg := msg.msg.(type) {
+ 	case *discordgo.MessageCreate:
+@@ -617,7 +631,12 @@
+ 	return msg
+ }
+ 
+-func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Message, thread *Thread) {
++func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Message, thread *Thread, sourceType ...int) {
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" && len(sourceType)==0 {
++        sourceType=[]int{int(msg.Type)}
++        msg=contaboArchiveMessage(msg)
++    }
++
+ 	switch msg.Type {
+ 	case discordgo.MessageTypeChannelNameChange, discordgo.MessageTypeChannelIconChange, discordgo.MessageTypeChannelPinnedMessage:
+ 		// These are handled via channel updates
+@@ -661,6 +680,24 @@
+ 
+ 	ts, _ := discordgo.SnowflakeTimestamp(msg.ID)
+ 	parts := portal.convertDiscordMessage(ctx, puppet, intent, msg)
++    if len(sourceType)>0 {
++        for _,part:=range parts {
++            if part.Extra==nil {part.Extra=make(map[string]interface{})}
++            part.Extra["org.contabo.discord.source_type"]=sourceType[0]
++            switch sourceType[0] {case 0,3,7,19,20,23: default: part.Content.MsgType=event.MsgNotice}
++        }
++    }
++
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" {
++        for _,attachment:=range msg.Attachments {
++            found:=false
++            for _,part:=range parts {
++                if part.AttachmentID==attachment.ID && (part.Content.URL!="" || (part.Content.File!=nil && part.Content.File.URL!="")) { found=true;break }
++            }
++            if !found {panic(fmt.Errorf("archive attachment could not be bridged; refusing partial message"))}
++        }
++    }
++
+ 	dbParts := make([]database.MessagePart, 0, len(parts))
+ 	eventIDs := zerolog.Dict()
+ 	for i, part := range parts {
+@@ -683,12 +720,13 @@
+ 		// Only set mentions for first event, but keep empty object for rest
+ 		mentions = &event.Mentions{}
+ 
+-		resp, err := portal.sendMatrixMessage(intent, part.Type, part.Content, part.Extra, ts.UnixMilli())
++		resp, err := portal.sendMatrixMessage(intent, part.Type, part.Content, part.Extra, ts.UnixMilli(), fmt.Sprintf("discord_%s_%d",msg.ID,i))
+ 		if err != nil {
+ 			log.Err(err).
+ 				Int("part_index", i).
+ 				Str("attachment_id", part.AttachmentID).
+ 				Msg("Failed to send part of message to Matrix")
++            if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" { panic(err) }
+ 			continue
+ 		}
+ 		lastThreadEvent = resp.EventID
+@@ -1081,7 +1119,7 @@
+ 	return event.EventEncrypted, nil
+ }
+ 
+-func (portal *Portal) sendMatrixMessage(intent *appservice.IntentAPI, eventType event.Type, content *event.MessageEventContent, extraContent map[string]interface{}, timestamp int64) (*mautrix.RespSendEvent, error) {
++func (portal *Portal) sendMatrixMessage(intent *appservice.IntentAPI, eventType event.Type, content *event.MessageEventContent, extraContent map[string]interface{}, timestamp int64, transactionID ...string) (*mautrix.RespSendEvent, error) {
+ 	wrappedContent := event.Content{Parsed: content, Raw: extraContent}
+ 	var err error
+ 	eventType, err = portal.encrypt(intent, &wrappedContent, eventType)
+@@ -1093,6 +1131,11 @@
+ 	if timestamp == 0 {
+ 		return intent.SendMessageEvent(portal.MXID, eventType, &wrappedContent)
+ 	} else {
++        if len(transactionID)>0 {
++            if err := intent.EnsureJoined(portal.MXID); err != nil { return nil,err }
++            intent.AddDoublePuppetValue(&wrappedContent)
++            return intent.Client.SendMessageEvent(portal.MXID,eventType,&wrappedContent,mautrix.ReqSendEvent{Timestamp:timestamp,TransactionID:transactionID[0]})
++        }
+ 		return intent.SendMassagedMessageEvent(portal.MXID, eventType, &wrappedContent, timestamp)
+ 	}
+ }
+--- a/provisioning.go
++++ b/provisioning.go
+@@ -61,6 +61,7 @@
+ 
+ 	r.Use(p.authMiddleware)
+ 
++	r.HandleFunc("/v1/contabo/archive", p.contaboStartArchive).Methods(http.MethodPost)
+ 	r.HandleFunc("/v1/disconnect", p.disconnect).Methods(http.MethodPost)
+ 	r.HandleFunc("/v1/ping", p.ping).Methods(http.MethodGet)
+ 	r.HandleFunc("/v1/login/qr", p.qrLogin).Methods(http.MethodGet)

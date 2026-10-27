@@ -23,6 +23,20 @@
         config.permittedInsecurePackages = [ "olm-3.2.16" ];
       };
     in {
+    checks.x86_64-linux.contabo-commission-tests =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "commission-tests" {} ''
+        export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
+        export CONTABO_DISCORD_BINARY="${self.packages.${system}.contabo-discord-native}/bin/mautrix-discord"
+        export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
+        export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"
+        ${pkgs.python3.withPackages (ps: [ps.pyyaml])}/bin/python3 ${./test_commission_integrations.py}
+        touch "$out"
+      '';
+    packages.x86_64-linux.contabo-discord-native =
+      let pkgs = import nixpkgs { inherit system; };
+      in import ./discord-native/package.nix { inherit pkgs; };
     checks.x86_64-linux.contabo-setup-nixos-test =
       import ./test-finish-setup-nixos.nix {
         pkgs = import nixpkgs { inherit system; };
@@ -39,8 +53,12 @@
         export CONTABO_DISCORD_SCOPE_PATH="${./discord-archive/scope.py}"
         export CONTABO_PHOTO_AUDIT_SCRIPT="${./photo-metadata-audit.py}"
         export CONTABO_PHOTO_REMEDIATION_SCRIPT="${./photo-remediation.py}"
-        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils pkgs.systemd ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
-        exec ${pkgs.python3}/bin/python3 ${./finish-setup.py}
+        export CONTABO_DISCORD_BINARY="${self.packages.${system}.contabo-discord-native}/bin/mautrix-discord"
+        export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
+        export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
+        export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"
+        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils pkgs.systemd pkgs.util-linux pkgs.openssl ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
+        exec ${pkgs.python3.withPackages (ps: [ ps.pyyaml ])}/bin/python3 ${./finish-setup.py}
       '';
 
     checks.x86_64-linux.contabo-finish-setup-tests =
@@ -160,6 +178,7 @@ for path in [
         emailPkgs.pkg-config
         emailPkgs.olm
         emailPkgs.gcc
+        (emailPkgs.python3.withPackages (ps: [ ps.pyyaml ]))
       ];
     };
 

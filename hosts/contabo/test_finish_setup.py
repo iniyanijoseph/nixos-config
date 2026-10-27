@@ -23,9 +23,13 @@ class Tests(unittest.TestCase):
         self.addCleanup(self.state.stop)
         self.setup = object.__new__(finish.Setup)
         self.setup.results = {}
+        self.setup.photos_deferred = False
         self.setup.repair = Mock()
         self.setup.archive = Mock()
         self.setup.remediation = Mock()
+        self.setup.integrations = Mock(return_value='service deployment fixture')
+        self.setup.mail = Mock(return_value='mail fixture')
+        self.setup.discord_native = Mock(return_value='discord fixture')
 
     def test_failed_backup_never_changes_apps_or_photos(self):
         self.setup.preflight = Mock(return_value='healthy')
@@ -56,7 +60,24 @@ class Tests(unittest.TestCase):
         self.setup.run()
         self.setup.run()
         self.assertEqual(self.setup.apps.call_count, 2)
-        self.assertEqual(self.setup.results['Discord history and live cutover']['status'], 'blocked')
+        self.assertEqual(self.setup.results['Overall commissioning']['status'], 'blocked')
+
+    def test_discord_and_messaging_precede_photo_work(self):
+        order=[]
+        for name in ('preflight','backup','discord_native','integrations','mail','apps','photos','discord'):
+            setattr(self.setup,name,Mock(side_effect=lambda n=name:order.append(n) or n))
+        self.setup.run()
+        self.assertLess(order.index('backup'),order.index('discord_native'))
+        self.assertLess(order.index('discord_native'),order.index('integrations'))
+        self.assertLess(order.index('integrations'),order.index('photos'))
+
+    def test_photos_do_not_compete_with_pending_discord_import(self):
+        self.setup.photos_deferred=True
+        for name in ('preflight','backup','discord_native','integrations','mail','apps','photos','discord'):
+            setattr(self.setup,name,Mock(return_value='fixture'))
+        self.setup.run()
+        self.setup.photos.assert_not_called()
+        self.assertEqual(self.setup.results['Photo Files dates']['status'],'deferred')
 
     def test_audit_cannot_treat_partial_scan_as_success(self):
         text = ('Media files found: 100\nSample: 100\nExif inspected: 50\n'
