@@ -13,7 +13,7 @@
     disko.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { nixpkgs, disko, ... }:
+  outputs = { self, nixpkgs, disko, ... }:
     let
       system = "x86_64-linux";
       emailPkgs = import nixpkgs {
@@ -23,6 +23,29 @@
         config.permittedInsecurePackages = [ "olm-3.2.16" ];
       };
     in {
+    # Logout/reboot-safe commissioning runner. Missing implementations and
+    # client checks remain explicit blockers, never fabricated success markers.
+    packages.x86_64-linux.contabo-finish-setup =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.writeShellScriptBin "contabo-finish-setup" ''
+        export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_MTIME_REPAIR_SCRIPT="${./photo-mtime-repair.py}"
+        export CONTABO_DISCORD_AUDIT_SCRIPT="${./discord-archive/audit.py}"
+        export CONTABO_DISCORD_SCOPE_PATH="${./discord-archive/scope.py}"
+        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.coreutils pkgs.systemd ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
+        exec ${pkgs.python3}/bin/python3 ${./finish-setup.py}
+      '';
+
+    checks.x86_64-linux.contabo-finish-setup-tests =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "contabo-finish-setup-tests" { } ''
+        export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_FINISH_SCRIPT="${./finish-setup.py}"
+        ${pkgs.bash}/bin/bash -n ${./finish-setup.sh}
+        ${pkgs.python3}/bin/python3 ${./test_finish_setup.py}
+        touch "$out"
+      '';
+
     # Compare Google Takeout JSON, embedded photo EXIF, GPS and upload mtime
     # without mutating photos, sidecars, files cache or Memories database.
     packages.x86_64-linux.contabo-photo-audit =
