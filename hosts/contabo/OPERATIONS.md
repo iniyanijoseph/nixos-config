@@ -63,6 +63,51 @@ Repair pathways are **not interchangeable**:
 the live app list to avoid Nix/store-appstore collision. Existing Memories
 remains enabled through the stateful Nextcloud app store.
 
+### Safe Files-date repair (explicit, never automatic)
+
+The first 500-file audit found 490 uniquely paired Takeout capture dates,
+all 490 different from filesystem mtimes, and 334 matching GPS fields.
+Existing EXIF should not be mass rewritten based on that result.
+
+Run the **read-only** full-library comparison first:
+
+```fish
+cd /etc/nixos
+sudo nix run ./hosts/contabo#contabo-photo-audit -- --sample 0
+sudo nix run ./hosts/contabo#contabo-photo-mtime-repair -- --limit 20
+```
+
+The repair program changes nothing unless explicitly given `--apply` and
+a confirmation phrase. To do a 20-file pilot (requires a fresh R2 backup,
+durable pre-change journal and a scoped Nextcloud Files rescan):
+
+```fish
+sudo nix run ./hosts/contabo#contabo-photo-mtime-repair -- \
+  --apply --limit 20 --confirm APPLY-PHOTO-MTIMES
+```
+
+If Nextcloud displays the expected dates after the pilot and the full audit
+shows no unexpected metadata conflicts, perform the remaining eligible
+files with `--limit 0`. This triggers **another fresh backup**, and
+does not edit EXIF/GPS/media bytes, move folders, or delete duplicates.
+
+Private rollback journals are saved in
+`/var/lib/migration-queue/photo-mtime-journals/<timestamp>-<id>/`. If a
+rescan fails, keep the journal and redo the scoped rescan or roll back:
+
+```fish
+sudo nix run ./hosts/contabo#contabo-photo-mtime-repair -- \
+  --rollback /var/lib/migration-queue/photo-mtime-journals/EXACT-JOURNAL-DIR \
+  --confirm ROLLBACK-PHOTO-MTIMES
+```
+
+Never guess the journal directory; use the exact one printed by the repair.
+The journal contains private relative paths and must not be published.
+If the **Memories** timeline is wrong despite valid embedded dates, a Files
+mtime repair by itself will not correct it: inspect the Memories index and
+camera timezone handling. Missing EXIF dates and ambiguous Google sidecars
+require separate conservative treatment after classification.
+
 ## Focused Discord archive inventory and monitoring opt-out
 
 The standard `observe.fish` report relies on the optional `sqlite3`
