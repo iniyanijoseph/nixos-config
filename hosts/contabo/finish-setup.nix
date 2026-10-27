@@ -32,7 +32,10 @@ in {
       SYSTEMD_PAGER = "cat";
     };
     serviceConfig = {
-      Type = "oneshot";
+      # A system switch re-starts active targets. A oneshot start job would
+      # remain pending until this worker exits, making the switch wait for
+      # the same worker that is waiting for it. Mark startup complete at exec.
+      Type = "exec";
       ExecStart = "${state}/runner/bin/contabo-finish-setup";
       UMask = "0077";
       TimeoutStartSec = "infinity";
