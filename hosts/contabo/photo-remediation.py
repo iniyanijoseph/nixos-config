@@ -294,6 +294,11 @@ class Remediation:
                     backup = folder / entry['backup']
                     os.link(source, backup, follow_symlinks=False)
                     syncdir(folder)
+                    linked, live = backup.lstat(), source.lstat()
+                    if ((linked.st_dev, linked.st_ino, linked.st_size, linked.st_mtime_ns) !=
+                            (row['dev'], row['ino'], row['size'], row['before']) or
+                            (live.st_dev, live.st_ino) != (linked.st_dev, linked.st_ino)):
+                        raise RuntimeError('Original file changed before metadata replacement')
                     # Only swap the verified copy after undo data is durable.
                     os.replace(temp, source)
                     syncdir(source.parent)

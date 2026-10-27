@@ -89,6 +89,21 @@ class Tests(unittest.TestCase):
                 self.setup.photos()
         self.setup.repair.apply.assert_called_once_with(rows, 20)
 
+    def test_failed_missing_date_transform_does_not_block_independent_mtimes(self):
+        missing = {'file_type': 'JPEG', 'rel': 'missing.jpg'}
+        safe = {'rel': 'safe.jpg'}
+        self.setup.remediation.plan.side_effect = [
+            {'metadata': [missing], 'mtimes': [safe], 'exceptions': []},
+            {'mtimes': [safe]}, {'mtimes': []},
+            {'mtimes': [], 'metadata': [missing], 'exceptions': []}]
+        self.setup.remediation.apply_metadata.side_effect = RuntimeError('checksum failed')
+        with patch.object(finish, 'command', return_value='audit'), \
+             patch.object(finish, 'parse_counts', return_value={}):
+            self.setup.photos()
+        self.setup.repair.apply.assert_any_call([safe], 20)
+        self.assertEqual(self.setup.results['Missing capture dates']['status'], 'blocked')
+        self.assertEqual(self.setup.results['Photo metadata exceptions']['status'], 'blocked')
+
     def test_apps_preserve_enabled_versions_enable_disabled_install_missing(self):
         states = [
             {'enabled': {'calendar': '1'}, 'disabled': {'contacts': '2'}},

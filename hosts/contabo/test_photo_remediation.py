@@ -144,6 +144,38 @@ class RealMedia(unittest.TestCase):
         self.assertEqual(path.read_bytes(), before)
         self.assertTrue((folder / 'rolled-back.json').is_file())
 
+    def test_later_failure_rolls_back_already_replaced_files(self):
+        a = self.fixture('.jpg', 'a')
+        b = self.fixture('.jpg', 'b')
+        originals = {p: (p.read_bytes(), p.stat().st_ino) for p in (a, b)}
+        rows = self.tool.plan()['metadata']
+        actual = self.tool.media_hash
+        calls = 0
+        def checksum(path):
+            nonlocal calls
+            calls += 1
+            return 'bad frames' if calls == 4 else actual(path)
+        with patch.object(self.tool, 'media_hash', side_effect=checksum):
+            with self.assertRaises(RuntimeError):
+                self.tool.apply_metadata(rows)
+        for path, (data, inode) in originals.items():
+            self.assertEqual(path.read_bytes(), data)
+            self.assertEqual(path.stat().st_ino, inode)
+            self.assertEqual(path.stat().st_nlink, 1)
+
+    def test_interruption_after_undo_link_before_replace_recovers_single_link(self):
+        path = self.fixture('.png')
+        before = path.read_bytes()
+        folder = self.tool.apply_metadata(self.tool.plan()['metadata'])
+        (folder / 'complete.json').unlink()
+        backup = folder / 'original-000000'
+        path.unlink()
+        os.link(backup, path)
+        self.assertEqual(path.stat().st_nlink, 2)
+        self.tool.recover()
+        self.assertEqual(path.stat().st_nlink, 1)
+        self.assertEqual(path.read_bytes(), before)
+
     def test_changed_source_is_not_overwritten_during_undo(self):
         path = self.fixture('.jpg')
         folder = self.tool.apply_metadata(self.tool.plan()['metadata'])
