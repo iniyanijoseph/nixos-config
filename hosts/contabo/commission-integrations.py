@@ -156,6 +156,18 @@ def discord_coverage(archive, mapping, channels, receiver=None):
         source.close()
 
 
+def validate_discord_snapshot(path):
+    source = sqlite3.connect('file:'+str(path)+'?mode=ro', uri=True)
+    try:
+        count, incomplete = source.execute("""SELECT count(*),sum(
+          complete != 1 OR refresh_active != 0 OR refreshed_at IS NULL OR error IS NOT NULL)
+          FROM channels WHERE kind IN ('dms','guild:804408079940583475')""").fetchone()
+        if not count or incomplete:
+            raise RuntimeError('Discord archive has unfinished channel collection/refresh; resume the collector before importing')
+    finally:
+        source.close()
+
+
 def commission_discord():
     prepare_identities()
     directory=Path('/var/lib/mautrix-discord-native')
@@ -181,6 +193,7 @@ def commission_discord():
             source.close();destination.close()
         os.chmod(temp,0o440);os.chown(temp,0,owner.pw_gid)
         temp.replace(snapshot)
+    validate_discord_snapshot(snapshot)
     config=directory/'config.yaml'
     if not config.exists():
         # Keep generated legacy bridge settings in its own new directory.
@@ -224,8 +237,10 @@ def commission_discord():
         private_json(STATE/'discord-progress.json', {'import_in_progress':in_progress})
         return message
     discord=ping.get('Discord',ping.get('discord',{}))
-    if not discord.get('logged_in') or not discord.get('connected'):
+    if not discord.get('logged_in'):
         return progress('ACTION REQUIRED: log in with @discord-nativebot:iniyanjoseph.com. Only one pilot DM will import initially.',True)
+    if not discord.get('connected'):
+        return progress('Discord login is saved but its connection is not ready. Wait for reconnection, then rerun; existing credentials are preserved.',True)
     receiver=discord.get('id')
     if not isinstance(receiver,str) or not receiver.isdecimal():
         raise RuntimeError('Authenticated Discord identity is missing')

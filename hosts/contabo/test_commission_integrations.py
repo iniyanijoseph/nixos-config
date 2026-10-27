@@ -25,6 +25,22 @@ class Tests(unittest.TestCase):
             self.assertTrue(c.discord_pilot_verified())
             self.assertEqual(marker.stat().st_mode & 0o777,0o600)
 
+    def test_archive_must_finish_refresh_before_import(self):
+        with tempfile.TemporaryDirectory() as d:
+            source=Path(d)/'source.sqlite'
+            with sqlite3.connect(source) as db:
+                db.execute('CREATE TABLE channels(kind TEXT,complete INTEGER,refresh_active INTEGER,refreshed_at TEXT,error TEXT)')
+                db.execute("INSERT INTO channels VALUES('dms',1,1,'timestamp',NULL)")
+            with self.assertRaises(RuntimeError):
+                c.validate_discord_snapshot(source)
+            with sqlite3.connect(source) as db:
+                db.execute('UPDATE channels SET refresh_active=0')
+            c.validate_discord_snapshot(source)
+            with sqlite3.connect(source) as db:
+                db.execute('UPDATE channels SET refreshed_at=NULL')
+            with self.assertRaises(RuntimeError):
+                c.validate_discord_snapshot(source)
+
     def test_build_returns_the_built_generation(self):
         with patch.object(c,'run',return_value='/nix/store/fixture-generation\n') as runner:
             self.assertEqual(c.build(True,mail=True,discord=True,pilot=False),'/nix/store/fixture-generation')
