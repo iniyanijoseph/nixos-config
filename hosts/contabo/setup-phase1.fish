@@ -48,13 +48,23 @@ for service in matrix-synapse nginx mautrix-whatsapp postgresql
     end
 end
 
-if command -sq nextcloud-occ
-    set -l occ (command -s nextcloud-occ)
-else if test -x /run/current-system/sw/bin/nextcloud-occ
-    set -l occ /run/current-system/sw/bin/nextcloud-occ
-else
-    fatal "nextcloud-occ unavailable."
+# Resolve OCC outside conditional scopes. Fish 'set -l' declared inside an
+# if block goes out of scope at 'end' and leaves an empty command expansion.
+# NixOS provides the OCC wrapper in the system profile.
+set -l occ /run/current-system/sw/bin/nextcloud-occ
+if not test -x "$occ"
+    # A version-dependent wrapper may only be available via PATH.
+    set -l found (command -s nextcloud-occ 2>/dev/null)
+    if test -n "$found"; and test -x "$found"
+        set occ "$found"
+    else
+        fatal "nextcloud-occ unavailable at expected path and in PATH."
+    end
 end
+if test -z "$occ"
+    fatal "OCC path resolved empty."
+end
+echo "OCC wrapper: executable found (path omitted)"
 
 echo ""
 echo "=== NEXTCLOUD STATUS ==="
