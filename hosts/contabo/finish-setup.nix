@@ -9,7 +9,14 @@ in {
     description = "Resume Contabo commissioning; see ${state}/summary.txt";
     wantedBy = [ "multi-user.target" ];
     wants = [ "network-online.target" ];
-    after = [ "network-online.target" ];
+    after = [
+      "network-online.target"
+      "matrix-synapse.service"
+      "nginx.service"
+      "mautrix-whatsapp.service"
+      "postgresql.service"
+      "nextcloud-setup.service"
+    ];
     unitConfig = {
       ConditionHost = "contabo";
       ConditionPathExists = [
