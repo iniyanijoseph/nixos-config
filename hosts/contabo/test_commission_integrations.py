@@ -79,7 +79,8 @@ class Tests(unittest.TestCase):
                 self.assertEqual(registration['url'],f'http://127.0.0.1:{port}')
                 self.assertTrue(registration['as_token'])
                 self.assertTrue(registration['hs_token'])
-                self.assertEqual(registration['sender_localpart'],name+'bot')
+                self.assertTrue(registration['sender_localpart'])
+                self.assertEqual(yaml.safe_load(cfg.read_text())['appservice']['bot']['username'],name+'bot')
 
     def test_generated_config_is_private_scoped_and_persistent(self):
         source = {'homeserver': {}, 'appservice': {'bot': {}}, 'database': {},
