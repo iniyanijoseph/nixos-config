@@ -23,6 +23,36 @@ Cloning the repository reproduces code, not account sessions or user data.
 The Discord archive is *not* currently Matrix history. No historic importer,
 live Discord bridge, or retirement command is deployed by this change.
 
+## Focused Discord archive inventory and monitoring opt-out
+
+The standard `observe.fish` report relies on the optional `sqlite3`
+binary and a narrow process matcher. A missing binary or zero processes in
+that summary **does not establish archive completion**. For a more reliable
+sanitized read-only inspection, execute this Nix-packaged Python tool:
+
+```fish
+cd /etc/nixos
+sudo nix run ./hosts/contabo#contabo-discord-audit
+```
+
+It uses the pinned Contabo Python, opens the SQLite database strictly in
+read-only mode (including WAL), scopes known conversations to the configured
+Discord guild and DMs, and reports aggregate completion/errors only. It
+never authenticates to Discord or imports messages into Matrix.
+
+If private Matrix monitoring is no longer wanted, after verifying that only
+the old transient listener/timer are active, this single-purpose script stops
+those two **only** and leaves Synapse, Nextcloud, WhatsApp and Discord alone:
+
+```fish
+sudo /run/current-system/sw/bin/fish -n /etc/nixos/hosts/contabo/stop-transient-monitoring.fish
+and sudo /run/current-system/sw/bin/fish /etc/nixos/hosts/contabo/stop-transient-monitoring.fish
+```
+
+It fails closed on unexpected unit identity, nontransient services, or
+unhealthy core services. Leave `contabo.matrixMonitoring.enable = false` to
+avoid restarting notifications on reboot.
+
 ## Read-only checks before any change
 
 ```fish
