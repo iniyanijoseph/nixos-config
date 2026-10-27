@@ -37,7 +37,9 @@
         export CONTABO_MTIME_REPAIR_SCRIPT="${./photo-mtime-repair.py}"
         export CONTABO_DISCORD_AUDIT_SCRIPT="${./discord-archive/audit.py}"
         export CONTABO_DISCORD_SCOPE_PATH="${./discord-archive/scope.py}"
-        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.coreutils pkgs.systemd ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
+        export CONTABO_PHOTO_AUDIT_SCRIPT="${./photo-metadata-audit.py}"
+        export CONTABO_PHOTO_REMEDIATION_SCRIPT="${./photo-remediation.py}"
+        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils pkgs.systemd ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
         exec ${pkgs.python3}/bin/python3 ${./finish-setup.py}
       '';
 
@@ -48,6 +50,28 @@
         export CONTABO_FINISH_SCRIPT="${./finish-setup.py}"
         ${pkgs.bash}/bin/bash -n ${./finish-setup.sh}
         ${pkgs.python3}/bin/python3 ${./test_finish_setup.py}
+        touch "$out"
+      '';
+
+    packages.x86_64-linux.contabo-photo-remediation =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.writeShellScriptBin "contabo-photo-remediation" ''
+        export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_PHOTO_AUDIT_SCRIPT="${./photo-metadata-audit.py}"
+        export CONTABO_MTIME_REPAIR_SCRIPT="${./photo-mtime-repair.py}"
+        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils pkgs.systemd ]}:/run/current-system/sw/bin"
+        exec ${pkgs.python3}/bin/python3 ${./photo-remediation.py} "$@"
+      '';
+
+    checks.x86_64-linux.contabo-photo-remediation-tests =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "contabo-photo-remediation-tests" { } ''
+        export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_PHOTO_AUDIT_SCRIPT="${./photo-metadata-audit.py}"
+        export CONTABO_MTIME_REPAIR_SCRIPT="${./photo-mtime-repair.py}"
+        export CONTABO_PHOTO_REMEDIATION_SCRIPT="${./photo-remediation.py}"
+        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils ]}:$PATH"
+        ${pkgs.python3}/bin/python3 ${./test_photo_remediation.py}
         touch "$out"
       '';
 

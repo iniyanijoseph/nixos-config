@@ -25,6 +25,7 @@ class Tests(unittest.TestCase):
         self.setup.results = {}
         self.setup.repair = Mock()
         self.setup.archive = Mock()
+        self.setup.remediation = Mock()
 
     def test_failed_backup_never_changes_apps_or_photos(self):
         self.setup.preflight = Mock(return_value='healthy')
@@ -65,19 +66,23 @@ class Tests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             finish.parse_counts('Media files found: 100\n')
 
-    def test_photo_conflicts_do_not_trigger_repair(self):
-        counts = {'embedded_date_conflicts_with_takeout': 4}
+    def test_photo_conflicts_do_not_block_unrelated_files(self):
+        plan = {'metadata': [], 'mtimes': [],
+                'exceptions': [{'reason': 'embedded_date_conflict', 'rel': 'private.jpg'}]}
+        self.setup.remediation.plan.return_value = plan
         with patch.object(finish, 'command', return_value='audit'), \
-             patch.object(finish, 'parse_counts', return_value=counts):
-            with self.assertRaises(RuntimeError):
-                self.setup.photos()
+             patch.object(finish, 'parse_counts', return_value={}):
+            self.setup.photos()
         self.setup.repair.apply.assert_not_called()
+        self.setup.repair.scoped_scan.assert_called_once()
+        self.assertEqual(self.setup.results['Photo metadata exceptions']['status'], 'blocked')
 
     def test_photo_pilot_postcondition_blocks_remaining_batch(self):
         rows = list(range(30))
-        self.setup.repair.inventory.side_effect = [
-            (rows, {'unsafe_files': 0, 'nonregular_or_hardlinked': 0}),
-            (list(range(15)), {})]
+        self.setup.remediation.plan.side_effect = [
+            {'metadata': [], 'mtimes': rows, 'exceptions': []},
+            {'metadata': []}, {'metadata': []},
+            {'mtimes': rows}, {'mtimes': list(range(15))}]
         with patch.object(finish, 'command', return_value='audit'), \
              patch.object(finish, 'parse_counts', return_value={}):
             with self.assertRaises(RuntimeError):
