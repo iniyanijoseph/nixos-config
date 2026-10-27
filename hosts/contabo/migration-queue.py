@@ -34,6 +34,7 @@ MANIFEST = STATE / "photos-manifest.json"
 MARK = STATE / "photos-migrated.json"
 INDEX_MARK = STATE / "photos-indexed.json"
 CLEANUP_MARK = STATE / "photos-quarantine-cleaned.json"
+PHOTOS_AUDITED_MARK = STATE / "photos-metadata-audited.json"
 PARTIAL = STATE / "discord-partial-approved.json"
 POST = STATE / "services-staged.json"
 UPLOAD_OBS = STATE / "photos-upload-observation.json"
@@ -389,6 +390,18 @@ def cleanup_quarantine():
     BOTH the Nextcloud user data and the quarantined originals. Otherwise the
     original upload evidence remains recoverable on disk.
     """
+    # Never authorize deletion using a successful OCC exit code alone.
+    # This marker must be issued only after an independent manual audit of
+    # historical capture dates and GPS in Memories (not just EXIF originals).
+    if not PHOTOS_AUDITED_MARK.is_file():
+        print("Quarantine cleanup gated: manual photo metadata audit required", flush=True)
+        return False
+    try:
+        audit = json.loads(PHOTOS_AUDITED_MARK.read_text(encoding="utf-8"))
+        if audit.get("approved") is not True or not audit.get("verified_at") or not audit.get("evidence"):
+            raise ValueError("photo audit marker lacks approved, verified_at or evidence")
+    except (OSError, ValueError, TypeError) as err:
+        raise RuntimeError(f"Invalid photo metadata audit checkpoint: {err}")
     if CLEANUP_MARK.exists():
         return True
     if not REPAIR_MARK.is_file() or not MARK.is_file() or not INDEX_MARK.is_file():
@@ -536,14 +549,10 @@ def main():
             p = prepare_photos()
             if p[0]:
                 photos_migrate()
-                if INDEX_MARK.exists() and not CLEANUP_MARK.exists():
-                    # Cleanup is optional and fail-closed; it must never block
-                    # successfully indexed photos or ongoing Discord collection.
-                    try:
-                        cleanup_quarantine()
-                    except (OSError, RuntimeError, ValueError, KeyError,
-                            subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
-                        print(f"Quarantine cleanup deferred: {err}", flush=True)
+                # Quarantine deletion is NEVER attempted by the polling queue.
+                # A future independently reviewed, explicit cleanup command
+                # must call cleanup_quarantine() after metadata correctness
+                # and recovery have been verified.
 
             d = discord_status()
             if d[0]:
@@ -551,17 +560,11 @@ def main():
             else:
                 discord_progress()
             overall_progress(discord_ready=d[0], photos_ready=p[0])
-            # Offline future-service preflights do not depend on photo or
-            # Discord completion. Failures are reported and retried later
-            # without blocking either migration.
-            if not POST.exists():
-                try:
-                    stage_services()
-                except (RuntimeError, OSError, subprocess.CalledProcessError,
-                        subprocess.TimeoutExpired) as err:
-                    print(f"{now()} Service preflight deferred: {err}", flush=True)
+            # Service activation/preflight is a separate reviewed step.
+            # Do not repeatedly spawn shell commands from this old polling
+            # queue, which can have a restricted PATH under nix shell.
             overall_progress(discord_ready=d[0], photos_ready=p[0])
-            if INDEX_MARK.exists() and d[0] and CLEANUP_MARK.exists() and POST.exists():
+            if INDEX_MARK.exists() and d[0]:
                 print("Queued work finished. No NixOS switch was performed.", flush=True)
                 return
             if not p[0]:
