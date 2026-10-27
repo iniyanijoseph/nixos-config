@@ -12,6 +12,7 @@
     ./mail.nix
     ./bridges-extra.nix
     ./monitoring.nix
+    ./google-suite.nix
     ./shell.nix
   ];
 
@@ -25,6 +26,9 @@
   contabo.messagingBridges.slack.enable = false;
   # Opt-in only, until transient Matrix listener/timer are stopped deliberately.
   contabo.matrixMonitoring.enable = false;
+  # Enable only after checking existing Calendar/Contacts/Tasks app IDs to avoid
+  # collisions with statefully installed copies; Memories stays stateful.
+  contabo.googleSuite.enable = false;
 
   networking.hostName = "contabo";
   time.timeZone = "UTC";
