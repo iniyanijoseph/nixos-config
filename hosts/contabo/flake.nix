@@ -42,6 +42,24 @@
         touch "$out"
       '';
 
+    # Journaled Files-mtime repair. Opt-in only: never invoked by any service,
+    # NixOS switch, timer, or ordinary nix flake check.
+    packages.x86_64-linux.contabo-photo-mtime-repair =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.writeShellScriptBin "contabo-photo-mtime-repair" ''
+        export PYTHONDONTWRITEBYTECODE=1
+        exec ${pkgs.python3}/bin/python3 ${./photo-mtime-repair.py} "$@"
+      '';
+
+    checks.x86_64-linux.contabo-photo-mtime-repair-tests =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "contabo-photo-mtime-repair-tests" { } ''
+        export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_MTIME_REPAIR_SCRIPT="${./photo-mtime-repair.py}"
+        ${pkgs.python3}/bin/python3 ${./test_photo_mtime_repair.py}
+        touch "$out"
+      '';
+
     # Scoped, sanitized read-only collector/archive inspector. This may
     # realize a pinned Python executable in /nix/store, but it does not
     # write to any application directory, database, Matrix room, or archive.
@@ -76,6 +94,7 @@ for path in [
     "${./discord-archive/scope.py}",
     "${./discord-archive/audit.py}",
     "${./photo-metadata-audit.py}",
+    "${./photo-mtime-repair.py}",
 ]:
     ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path)
 '
