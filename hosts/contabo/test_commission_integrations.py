@@ -15,6 +15,16 @@ c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class Tests(unittest.TestCase):
+    def test_interrupted_or_incomplete_pilot_marker_cannot_promote(self):
+        with tempfile.TemporaryDirectory() as d, patch.object(c,'STATE',Path(d)):
+            marker=Path(d)/'discord-pilot-verified.json'
+            for content in ('', '{', 'null', '{}', '{"expected":3,"mapped":2}'):
+                marker.write_text(content)
+                self.assertFalse(c.discord_pilot_verified())
+            c.private_json(marker, {'expected':3,'mapped':3,'channel':'123','receiver':'456'})
+            self.assertTrue(c.discord_pilot_verified())
+            self.assertEqual(marker.stat().st_mode & 0o777,0o600)
+
     def test_build_returns_the_built_generation(self):
         with patch.object(c,'run',return_value='/nix/store/fixture-generation\n') as runner:
             self.assertEqual(c.build(True,mail=True,discord=True,pilot=False),'/nix/store/fixture-generation')

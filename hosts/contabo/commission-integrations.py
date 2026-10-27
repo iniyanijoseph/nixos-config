@@ -88,6 +88,32 @@ def provision(name, binary, port, directory):
         cfg.replace(config)
 
 
+def private_json(path, data):
+    temporary = path.with_suffix('.tmp')
+    with temporary.open('w') as stream:
+        os.chmod(temporary, 0o600)
+        json.dump(data, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(path)
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def discord_pilot_verified():
+    try:
+        result = json.loads((STATE/'discord-pilot-verified.json').read_text())
+        return (isinstance(result, dict) and type(result.get('expected')) is int
+                and result['expected'] > 0 and result.get('mapped') == result['expected']
+                and isinstance(result.get('channel'), str) and result['channel'].isdecimal()
+                and isinstance(result.get('receiver'), str) and result['receiver'].isdecimal())
+    except (OSError, ValueError):
+        return False
+
+
 def build(enabled, mail=None, discord=None, pilot=None):
     def installed(unit):
         return subprocess.run(['systemctl','is-enabled','--quiet',unit],
@@ -99,7 +125,7 @@ def build(enabled, mail=None, discord=None, pilot=None):
     if discord is None:
         discord = installed('mautrix-discord-native.service')
     if pilot is None:
-        pilot = not (STATE/'discord-pilot-verified.json').exists()
+        pilot = not discord_pilot_verified()
     expression = '''let f = builtins.getFlake "/etc/nixos/hosts/contabo";
       in (f.nixosConfigurations.contabo.extendModules { modules = [
         ({lib,...}: {contabo.integrations.enable = lib.mkForce %s;
@@ -195,12 +221,7 @@ def commission_discord():
                 time.sleep(1)
     ping=api('/v1/ping')
     def progress(message,in_progress):
-        target=STATE/'discord-progress.json'
-        temporary=target.with_suffix('.tmp')
-        with temporary.open('w') as stream:
-            json.dump({'import_in_progress':in_progress},stream)
-            stream.flush();os.fsync(stream.fileno())
-        temporary.replace(target)
+        private_json(STATE/'discord-progress.json', {'import_in_progress':in_progress})
         return message
     discord=ping.get('Discord',ping.get('discord',{}))
     if not discord.get('logged_in') or not discord.get('connected'):
@@ -210,13 +231,14 @@ def commission_discord():
         raise RuntimeError('Authenticated Discord identity is missing')
     result=api('/v1/contabo/archive','POST')
     pilot=directory/'pilot-channel'
-    if not (STATE/'discord-pilot-verified.json').exists():
+    if not discord_pilot_verified():
         if not pilot.exists():
             return progress('Discord connected; no accessible archived pilot DM could be started.',True)
         expected,found=discord_coverage(snapshot,directory/'bridge.db',[pilot.read_text().strip()],receiver)
         if not expected or found!=expected or result.get('portals_ready',0)!=1:
             return progress(f'Discord pilot import running or blocked: mapped {found}/{expected}. Archive retained; full import not enabled.',True)
-        (STATE/'discord-pilot-verified.json').write_text(json.dumps({'expected':expected,'mapped':found}))
+        private_json(STATE/'discord-pilot-verified.json', {'expected':expected,'mapped':found,
+                     'channel':pilot.read_text().strip(),'receiver':receiver})
         activate(build(None,discord=True,pilot=False),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
     api('/v1/guilds/804408079940583475','POST',{'auto_create_channels':True})
     result=api('/v1/contabo/archive','POST')
