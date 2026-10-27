@@ -143,6 +143,30 @@ a repair simply to test this; an interrupted repair may need a scoped rescan.
 The first run builds its pinned closure before starting the worker. Keep SSH
 connected until it prints that setup is running under systemd.
 
+The worker uses `Type=exec`: systemd marks startup complete when the process
+executes, while the launcher follows its lifetime and checks its final result.
+This matters because commissioning switches NixOS from inside the worker.
+A `Type=oneshot` start stays pending until the worker exits; starting active
+targets during that switch can then wait for the same worker, causing a deadlock.
+`active (running)` means the worker is running, not that commissioning passed.
+
+For an older run stuck in `activating (start)` inside `switch-to-configuration`,
+stop it and apply this runtime-only override before restarting. The original
+Discord archive is retained; this does not rebuild or reboot the machine:
+
+```fish
+sudo systemctl stop contabo-finish-setup.service
+and sudo install -d /run/systemd/system/contabo-finish-setup.service.d
+and printf '[Service]\nType=exec\n' | sudo tee /run/systemd/system/contabo-finish-setup.service.d/activation-fix.conf >/dev/null
+and sudo systemctl daemon-reload
+and sudo bash /etc/nixos/hosts/contabo/finish-setup.sh
+```
+
+An older launcher may return immediately once the worker becomes active; use
+`--status` to inspect it. Updated launchers keep following the running worker.
+The repository fix sets `Type=exec` in both runtime and declarative units, so
+the override is unnecessary for subsequent launches of the fixed version.
+
 **One-command read-only inventory:** `sudo /run/current-system/sw/bin/fish /etc/nixos/hosts/contabo/observe.fish` (after pulling the reviewed Git commit). It prints sanitized state only; no secret values or private message bodies. See [SETUP-PLAN.md](./SETUP-PLAN.md) for the full service target and phased acceptance criteria.
 
 This is the **current** operational index for the NixOS 26.05 VPS.

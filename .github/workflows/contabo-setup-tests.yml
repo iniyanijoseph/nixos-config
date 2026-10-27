@@ -26,5 +26,10 @@ jobs:
           ./hosts/contabo#checks.x86_64-linux.contabo-finish-setup-tests
           ./hosts/contabo#checks.x86_64-linux.contabo-photo-mtime-repair-tests
           ./hosts/contabo#checks.x86_64-linux.contabo-photo-remediation-tests
-      - name: Verify runtime launch and reboot resume on NixOS
+  lifecycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Verify launch, switching inside the worker, exit status and reboot resume on NixOS
         run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-setup-nixos-test

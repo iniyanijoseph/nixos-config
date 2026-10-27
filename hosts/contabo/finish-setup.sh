@@ -6,13 +6,23 @@ export SYSTEMD_PAGER=cat
 repo=/etc/nixos
 state=/var/lib/migration-queue/finish-setup
 unit=contabo-finish-setup.service
+unit_busy() {
+    local active job
+    active=$(systemctl show "$unit" --value -p ActiveState 2>/dev/null || true)
+    case "$active" in
+        active|activating|deactivating|reloading) return 0 ;;
+    esac
+    # Also cover an asynchronously queued start before ActiveState changes.
+    job=$(systemctl show "$unit" --value -p Job 2>/dev/null || true)
+    [[ -n $job && $job != 0 ]]
+}
 if [[ ${EUID} != 0 || $(hostname -s) != contabo ]]; then
     echo 'Run this with sudo on Contabo.' >&2
     exit 2
 fi
 case "${1:-}" in
     --status)
-        systemctl status "$unit" --no-pager || true
+        systemctl status "$unit" --no-pager -l || true
         if [[ -f $state/summary.txt ]]; then cat "$state/summary.txt"; fi
         exit 0 ;;
     '') ;;
@@ -24,8 +34,7 @@ echo 'Waiting for any earlier setup run to finish safely...'
 flock 9
 touch "$state/run.log"
 chmod 0600 "$state/run.log"
-while systemctl is-active --quiet "$unit" ||
-      [[ $(systemctl show "$unit" --value -p ActiveState 2>/dev/null) == activating ]]; do
+while unit_busy; do
     sleep 2
 done
 [[ $(git -c safe.directory="$repo" -C "$repo" branch --show-current) == main ]]
@@ -44,7 +53,8 @@ After=network-online.target
 ConditionHost=contabo
 
 [Service]
-Type=oneshot
+# Startup must finish before the worker invokes a system configuration switch.
+Type=exec
 ExecStart=$runner/bin/contabo-finish-setup
 Environment=PATH=/run/current-system/sw/bin
 Environment=PYTHONDONTWRITEBYTECODE=1
@@ -80,7 +90,7 @@ tail -n 20 -F "$state/run.log" &
 log_pid=$!
 trap 'kill "$log_pid" 2>/dev/null || true' EXIT
 trap 'exit 130' INT TERM
-while [[ $(systemctl show "$unit" --value -p ActiveState) == activating ]]; do
+while unit_busy; do
     sleep 2
 done
 if [[ -f $state/summary.txt ]]; then cat "$state/summary.txt"; fi
