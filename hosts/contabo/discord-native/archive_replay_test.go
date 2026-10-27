@@ -52,3 +52,10 @@ func TestContaboArchiveRejectsMismatchedSource(t *testing.T) {
  tx,err:=db.Begin(); if err!=nil {t.Fatal(err)}; defer tx.Rollback()
  if _,err=contaboArchiveBatch(tx,"123","");err==nil {t.Fatal("invalid archive was accepted")}
 }
+
+func TestContaboArchiveSystemEventsArePreserved(t *testing.T) {
+ original:=&discordgo.Message{ID:"100",ChannelID:"123",Type:discordgo.MessageTypeChannelPinnedMessage}
+ converted:=contaboArchiveMessage(original)
+ if converted.Type!=discordgo.MessageTypeDefault || converted.Content=="" {t.Fatal("system event would be dropped")}
+ if original.Type!=discordgo.MessageTypeChannelPinnedMessage || original.Content!="" {t.Fatal("archived source was mutated")}
+}

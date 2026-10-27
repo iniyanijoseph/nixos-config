@@ -115,7 +115,6 @@ class Setup:
         for path in ('/var/lib/nextcloud', '/nix/store', str(STATE)):
             if shutil.disk_usage(path).free < 5 * 1024**3:
                 raise RuntimeError('Less than 5 GiB free; no automatic deletion allowed')
-        self.repair.check_root(True)
         return 'Core services and Nextcloud healthy; migration jobs idle; disk headroom checked'
 
     def backup(self):
@@ -126,6 +125,7 @@ class Setup:
         return 'Fresh R2 snapshot verified; repository metadata check passed'
 
     def photos(self):
+        self.repair.check_root(True)
         self.remediation.recover()
         output = command(['contabo-photo-audit', '--sample', '0'], capture=True)
         atomic(STATE / 'photo-audit.txt', output)

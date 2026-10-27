@@ -51,7 +51,7 @@ func (p *ProvisioningAPI) contaboStartArchive(w http.ResponseWriter,r *http.Requ
  type channel struct{id,kind string};channels:=[]channel{}
  for rows.Next(){var c channel;var n int;if rows.Scan(&c.id,&c.kind,&n)!=nil {rows.Close();jsonResponse(w,500,map[string]string{"error":"Archive inventory invalid"});return};channels=append(channels,c)}
  err=rows.Err();rows.Close();if err!=nil {jsonResponse(w,500,map[string]string{"error":"Archive inventory incomplete"});return}
- started,failed:=0,0
+ started,failed,ready:=0,0,0
  pilot:=os.Getenv("CONTABO_DISCORD_PILOT_FILE")!=""
  for _,c:=range channels {
   if pilot && c.kind!="dms" {continue}
@@ -60,9 +60,13 @@ func (p *ProvisioningAPI) contaboStartArchive(w http.ResponseWriter,r *http.Requ
   portal:=user.GetPortalByMeta(meta)
   if err=portal.CreateMatrixRoom(user,meta);err!=nil {failed++;continue}
   started++
+  if portal.forwardBackfillLock.TryLock() {
+   if portal.contaboArchiveReady[portal.Key.ChannelID] {ready++}
+   portal.forwardBackfillLock.Unlock()
+  }
   if pilot {break}
  }
- jsonResponse(w,200,map[string]int{"portals_started":started,"source_or_portal_failures":failed})
+ jsonResponse(w,200,map[string]int{"portals_started":started,"portals_ready":ready,"source_or_portal_failures":failed})
 }
 
 // Called only while the portal's native forward-backfill lock is held. The
@@ -99,7 +103,13 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
  tx, err := db.Begin(); if err != nil { return err }; defer tx.Rollback()
  var kind string; var complete int
  err = tx.QueryRow("SELECT kind,complete FROM channels WHERE id=?", channel).Scan(&kind,&complete)
- if err == sql.ErrNoRows { return nil }; if err != nil { return err }
+ if err == sql.ErrNoRows {
+  switch portal.Type {
+  case discordgo.ChannelTypeDM,discordgo.ChannelTypeGroupDM,discordgo.ChannelTypeGuildText,discordgo.ChannelTypeGuildNews:
+   return portal.backfillUnlimitedMissed(portal.log,source,"0",thread)
+  default:return nil
+  }
+ }; if err != nil { return err }
  allowed := kind == "dms" || kind == "guild:804408079940583475" || kind == "threads-active:804408079940583475"
  if strings.HasPrefix(kind,"archived-public:") || strings.HasPrefix(kind,"archived-private:") {
   parent := strings.SplitN(kind,":",2)[1]; var count int
@@ -113,10 +123,6 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
   if err!=nil { return err }
   if len(messages)==0 { break }
   for _,msg := range messages {
-   switch msg.Type {
-   case discordgo.MessageTypeChannelNameChange,discordgo.MessageTypeChannelIconChange,discordgo.MessageTypeChannelPinnedMessage:
-    // These source events are handled by native channel metadata, not messages.
-   default:
     if firstBridgeable {
      firstBridgeable=false
      if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 && portal.bridge.DB.Message.GetLast(portal.Key)!=nil {
@@ -129,9 +135,8 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
     if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 {
      if err:=contaboRefreshAttachments(source,msg);err!=nil {return fmt.Errorf("archived message %s: %w",msg.ID,err)}
     }
-    portal.handleDiscordMessageCreate(source,msg,thread)
+    portal.handleDiscordMessageCreate(source,contaboArchiveMessage(msg),thread,int(msg.Type))
     if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 { return fmt.Errorf("archived message %s was not mapped; cutover refused",msg.ID) }
-   }
    after=msg.ID
   }
  }
@@ -139,6 +144,21 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
  // since the frozen archive waterline before allowing queued live delivery.
  if after!="" { return portal.backfillUnlimitedMissed(portal.log,source,after,thread) }
  return nil
+}
+
+func contaboArchiveMessage(msg *discordgo.Message) *discordgo.Message {
+ switch int(msg.Type) {case 0,3,7,19,20,23:return msg}
+ copy:=*msg
+ copy.Type=discordgo.MessageTypeDefault
+ descriptions:=map[int]string{1:"Added a recipient.",2:"Removed a recipient.",
+  4:"Changed the channel name.",5:"Changed the channel icon.",6:"Pinned a Discord message.",
+  8:"Boosted the server.",9:"Server boost level changed.",10:"Server boost level changed.",
+  11:"Server boost level changed.",18:"Created a Discord thread.",21:"Discord thread starter.",
+  22:"Discord server invitation reminder.",24:"Discord moderation event."}
+ description,ok:=descriptions[int(msg.Type)];if !ok {description="Discord system event."}
+ copy.Content=description
+ if msg.Content!="" {copy.Content+="\n"+msg.Content}
+ return &copy
 }
 
 func contaboRefreshAttachments(source *User,msg *discordgo.Message) error {
@@ -160,8 +180,8 @@ func contaboRefreshAttachments(source *User,msg *discordgo.Message) error {
 
 func contaboArchiveBatch(tx *sql.Tx,channel,after string) ([]*discordgo.Message,error) {
  rows, err := tx.Query(`SELECT id,json FROM messages WHERE channel_id=? AND
-    (length(id)>length(?) OR (length(id)=length(?) AND id>?))
-    ORDER BY length(id),id LIMIT 100`, channel,after,after,after)
+    (length(id),id)>(length(?),?)
+    ORDER BY length(id),id LIMIT 100`, channel,after,after)
   if err != nil { return nil,err }
   messages := make([]*discordgo.Message,0,100)
   for rows.Next() {

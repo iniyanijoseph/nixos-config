@@ -20,18 +20,23 @@ case "${1:-}" in
 esac
 install -d -m 0700 "$state"
 exec 9>"$state/launcher.lock"
-flock -n 9 || { echo 'Another launcher is already displaying this run; use --status.'; exit 2; }
+echo 'Waiting for any earlier setup run to finish safely...'
+flock 9
 touch "$state/run.log"
 chmod 0600 "$state/run.log"
-if ! systemctl is-active --quiet "$unit" &&
-   [[ $(systemctl show "$unit" --value -p ActiveState 2>/dev/null) != activating ]]; then
-    [[ $(git -c safe.directory="$repo" -C "$repo" branch --show-current) == main ]]
-    [[ -z $(git -c safe.directory="$repo" -C "$repo" status --porcelain --untracked-files=no) ]]
-    echo 'Building the pinned setup runner; integration deployment will build and switch NixOS with rollback checks.'
-    nix build "$repo/hosts/contabo#contabo-finish-setup" --out-link "$state/runner"
-    # Resolve the closure now: a later pull or rebuild cannot change a running job.
-    runner=$(readlink -f "$state/runner")
-    cat > "$state/unit.tmp" <<EOF
+while systemctl is-active --quiet "$unit" ||
+      [[ $(systemctl show "$unit" --value -p ActiveState 2>/dev/null) == activating ]]; do
+    sleep 2
+done
+[[ $(git -c safe.directory="$repo" -C "$repo" branch --show-current) == main ]]
+[[ -z $(git -c safe.directory="$repo" -C "$repo" status --porcelain --untracked-files=no) ]]
+echo 'Building the pinned setup runner; integration deployment will build and switch NixOS with rollback checks.'
+nix build "$repo/hosts/contabo#contabo-finish-setup" --out-link "$state/runner"
+# Resolve the closure now: a later pull or rebuild cannot change a running job.
+runner=$(readlink -f "$state/runner")
+revision=$(git -c safe.directory="$repo" -C "$repo" rev-parse --short HEAD)
+echo "=== Messaging-first setup revision $revision ===" | tee -a "$state/run.log"
+cat > "$state/unit.tmp" <<EOF
 [Unit]
 Description=Finish Contabo setup; summary in $state/summary.txt
 Wants=network-online.target
@@ -52,17 +57,16 @@ StandardError=append:$state/run.log
 [Install]
 WantedBy=multi-user.target
 EOF
-    # NixOS owns /etc/systemd/system in the read-only Nix store. Runtime
-    # units belong under /run; never remount /nix/store or write into /etc.
-    install -d -m 0755 /run/systemd/system
-    install -m 0644 "$state/unit.tmp" "/run/systemd/system/$unit"
-    rm "$state/unit.tmp"
-    systemctl daemon-reload
-    # A future ordinary NixOS deployment installs finish-setup.nix for
-    # reboot resume. Runtime systemctl enable would write into read-only /etc.
-    touch "$state/resume-on-boot"
-    systemctl start --no-block "$unit"
-fi
+# NixOS owns /etc/systemd/system in the read-only Nix store. Runtime
+# units belong under /run; never remount /nix/store or write into /etc.
+install -d -m 0755 /run/systemd/system
+install -m 0644 "$state/unit.tmp" "/run/systemd/system/$unit"
+rm "$state/unit.tmp"
+systemctl daemon-reload
+# A future ordinary NixOS deployment installs finish-setup.nix for
+# reboot resume. Runtime systemctl enable would write into read-only /etc.
+touch "$state/resume-on-boot"
+systemctl start --no-block "$unit"
 echo 'Setup is running under systemd. Closing this terminal will not stop it.'
 if systemctl is-enabled --quiet "$unit"; then
     echo 'Declarative boot resume is installed.'

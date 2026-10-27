@@ -107,24 +107,27 @@ def build(enabled, mail=None, discord=None, pilot=None):
           contabo.discordNative.enable = lib.mkForce %s;
           contabo.discordNative.pilot = lib.mkForce %s;})
       ]; }).config.system.build.toplevel''' % ('true' if enabled else 'false', 'true' if mail else 'false', 'true' if discord else 'false', 'true' if pilot else 'false')
+    return run(['nix','build','--impure','--expr',expression,
+                '--out-link',STATE/('connected' if enabled else 'staging'),
+                '--print-out-paths'],capture=True).strip()
 
 
-def discord_coverage(archive, mapping, channels):
+def discord_coverage(archive, mapping, channels, receiver=None):
+    if not channels:
+        return 0,0
     source=sqlite3.connect('file:'+str(archive)+'?mode=ro',uri=True)
-    bridge=sqlite3.connect('file:'+str(mapping)+'?mode=ro',uri=True)
     try:
-        expected=found=0
-        for channel in channels:
-            for (ident,raw) in source.execute('SELECT id,json FROM messages WHERE channel_id=?',(channel,)):
-                if json.loads(raw).get('type',0) in (4,5,6):
-                    continue
-                expected+=1
-                if bridge.execute('SELECT 1 FROM message WHERE dc_chan_id=? AND dcid=? LIMIT 1',
-                                  (channel,ident)).fetchone():
-                    found+=1
-        return expected,found
+        source.execute('ATTACH DATABASE ? AS bridge',('file:'+str(mapping)+'?mode=ro',))
+        marks=','.join('?' for _ in channels)
+        owner_clause=" AND b.dc_chan_receiver IN ('',?)" if receiver is not None else ''
+        query=f'''SELECT count(*),sum(EXISTS(SELECT 1 FROM bridge.message b
+          WHERE b.dc_chan_id=m.channel_id AND b.dcid=m.id {owner_clause}))
+          FROM main.messages m WHERE m.channel_id IN ({marks})'''
+        params=([receiver] if receiver is not None else [])+list(channels)
+        expected,found=source.execute(query,params).fetchone()
+        return expected,int(found or 0)
     finally:
-        source.close();bridge.close()
+        source.close()
 
 
 def commission_discord():
@@ -144,6 +147,8 @@ def commission_discord():
         destination=sqlite3.connect(temp)
         try:
             source.backup(destination,pages=1024)
+            destination.execute('CREATE INDEX IF NOT EXISTS contabo_message_order ON messages(channel_id,length(id),id)')
+            destination.commit()
             if destination.execute('PRAGMA quick_check').fetchall()!=[('ok',)]:
                 raise RuntimeError('Discord archive snapshot failed integrity check')
         finally:
@@ -154,13 +159,21 @@ def commission_discord():
     if not config.exists():
         # Keep generated legacy bridge settings in its own new directory.
         provision('mautrix-discord-native',os.environ['CONTABO_DISCORD_BINARY'],29322,directory)
-        data=yaml.safe_load(config.read_text())
-        data['bridge']['startup_private_channel_create_limit']=0
-        data['bridge']['portal_message_buffer']=8192
+    data=yaml.safe_load(config.read_text())
+    data['bridge']['startup_private_channel_create_limit']=0
+    data['bridge']['portal_message_buffer']=8192
+    limits=data['bridge'].setdefault('backfill',{}).setdefault('forward_limits',{})
+    limits['initial']={'dm':1,'channel':1,'thread':1}
+    limits['missed']={'dm':-1,'channel':-1,'thread':-1}
+    if data['bridge']['provisioning'].get('shared_secret') in ('generate','disable','',None):
         data['bridge']['provisioning']['shared_secret']=secrets.token_hex(48)
-        data['bridge']['provisioning']['prefix']='/_matrix/provision'
-        config.write_text(yaml.safe_dump(data,sort_keys=False))
-        os.chmod(config,0o640);os.chown(config,owner.pw_uid,owner.pw_gid)
+    data['bridge']['provisioning']['prefix']='/_matrix/provision'
+    temporary=config.with_suffix('.preparing')
+    with temporary.open('w') as stream:
+        yaml.safe_dump(data,stream,sort_keys=False)
+        stream.flush();os.fsync(stream.fileno())
+    os.chmod(temporary,0o640);os.chown(temporary,owner.pw_uid,owner.pw_gid)
+    temporary.replace(config)
     activate(build(None,discord=True),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
     data=yaml.safe_load(config.read_text())
     token=data['bridge']['provisioning']['shared_secret']
@@ -192,30 +205,31 @@ def commission_discord():
     discord=ping.get('Discord',ping.get('discord',{}))
     if not discord.get('logged_in') or not discord.get('connected'):
         return progress('ACTION REQUIRED: log in with @discord-nativebot:iniyanjoseph.com. Only one pilot DM will import initially.',True)
+    receiver=discord.get('id')
+    if not isinstance(receiver,str) or not receiver.isdecimal():
+        raise RuntimeError('Authenticated Discord identity is missing')
     result=api('/v1/contabo/archive','POST')
     pilot=directory/'pilot-channel'
     if not (STATE/'discord-pilot-verified.json').exists():
         if not pilot.exists():
             return progress('Discord connected; no accessible archived pilot DM could be started.',True)
-        expected,found=discord_coverage(snapshot,directory/'bridge.db',[pilot.read_text().strip()])
-        if not expected or found!=expected:
+        expected,found=discord_coverage(snapshot,directory/'bridge.db',[pilot.read_text().strip()],receiver)
+        if not expected or found!=expected or result.get('portals_ready',0)!=1:
             return progress(f'Discord pilot import running or blocked: mapped {found}/{expected}. Archive retained; full import not enabled.',True)
         (STATE/'discord-pilot-verified.json').write_text(json.dumps({'expected':expected,'mapped':found}))
         activate(build(None,discord=True,pilot=False),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
-        api('/v1/guilds/804408079940583475','POST',{'auto_create_channels':True})
-        result=api('/v1/contabo/archive','POST')
+    api('/v1/guilds/804408079940583475','POST',{'auto_create_channels':True})
+    result=api('/v1/contabo/archive','POST')
     source=sqlite3.connect('file:'+str(snapshot)+'?mode=ro',uri=True)
     try:
         channels=[r[0] for r in source.execute("SELECT id FROM channels WHERE kind IN ('dms','guild:804408079940583475')")]
     finally:
         source.close()
-    expected,found=discord_coverage(snapshot,directory/'bridge.db',channels)
+    expected,found=discord_coverage(snapshot,directory/'bridge.db',channels,receiver)
     return progress(f'Discord connected; native mappings {found}/{expected}; inaccessible source/portal attempts '
             f"{result.get('source_or_portal_failures',0)}. Active-thread 403 remains a known source gap. "
-            'Client send/receive, replies, encryption recovery and isolated restore remain unverified.',found!=expected)
-    return run(['nix', 'build', '--impure', '--expr', expression,
-                '--out-link', STATE / ('connected' if enabled else 'staging'),
-                '--print-out-paths'], capture=True).strip()
+            'Client send/receive, replies, encryption recovery and isolated restore remain unverified.',
+            found!=expected or result.get('portals_ready',0)!=result.get('portals_started',0) or result.get('source_or_portal_failures',0)>0)
 
 
 def activate(target, units):
@@ -295,8 +309,11 @@ def secret_file(path):
 def commission_mail():
     # Never replace existing MX/forwarding from this script. HTTP proxy IPs
     # cannot receive SMTP, so the mail hostname must resolve to this VPS.
-    addresses = {item[4][0] for item in socket.getaddrinfo(
-        'mail.iniyanjoseph.com', 443, family=socket.AF_INET)}
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(
+            'mail.iniyanjoseph.com', 443, family=socket.AF_INET)}
+    except socket.gaierror:
+        raise RuntimeError('Mail hostname has no usable DNS A record; set mail.iniyanjoseph.com to 213.199.55.255') from None
     if addresses != {'213.199.55.255'}:
         raise RuntimeError('Set DNS-only A mail.iniyanjoseph.com to 213.199.55.255 before mail deployment')
     admin = secret_file(Path('/var/lib/secrets/stalwart-admin-password'))

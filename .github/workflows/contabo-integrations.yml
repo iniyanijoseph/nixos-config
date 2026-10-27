@@ -11,6 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      - name: Evaluate the fully enabled integration profile
+        run: |
+          nix eval --impure --raw --expr '
+            let f=builtins.getFlake(toString ./hosts/contabo);
+            in (f.nixosConfigurations.contabo.extendModules {modules=[
+              ({lib,...}:{contabo.integrations.enable=lib.mkForce true;
+                contabo.discordNative.enable=lib.mkForce true;
+                contabo.mail.enable=lib.mkForce true;})
+            ];}).config.system.build.toplevel.drvPath'
       - run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-commission-tests ./hosts/contabo#contabo-discord-native ./hosts/contabo#contabo-finish-setup
       - name: Compile pinned Matrimail and verify its generated config
         run: |

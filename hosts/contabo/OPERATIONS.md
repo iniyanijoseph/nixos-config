@@ -1,6 +1,6 @@
 # Contabo operations and reproducibility
 
-## Integration implementation (draft; not full commissioning)
+## Messaging-first commissioning
 
 The integration commissioner now generates the Slack, Google Messages and
 Matrimail configurations and registrations from their actual CLI templates.
@@ -26,15 +26,30 @@ provision the domain and mailbox. It does not change MX, forwarding or provider
 DNS. External delivery, PTR, SPF/DKIM/DMARC and standard-client acceptance
 remain required. No email is sent automatically by commissioning.
 
-The Discord package `contabo-discord-native` is an **experimental, disabled**
-fork. It streams source messages oldest first through the pinned bridge's
-converter and mapping layer, uses stable part transaction IDs and reads the
-SQLite source in a read-only transaction. It fails closed on missing mappings.
-Crash-resume, initial-room selection, media completeness and cutover still need
-integration verification. Do not enable it for the real archive yet. The old
-Discord bridge requires legacy libolm; its insecure-package exception is scoped
-to this experimental build, not globally enabled. No production Discord
-service is started by this draft.
+The runner deploys `contabo-discord-native` into its own service, private
+registration and persistent directory. First, it makes a consistent snapshot
+of the existing archive; the original collector database stays untouched.
+Log in with `@discord-nativebot:iniyanjoseph.com`, then rerun the same launcher.
+The first import is restricted to one archived DM. Promotion to the selected
+DMs and guild requires every pilot source message to have a native bridge
+mapping and its API catch-up to finish. Rerun while importing to see progress.
+
+History uses the pinned bridge's normal converter, encryption, media upload
+and portal mappings. Source snowflakes are read oldest first; stable Matrix
+transaction IDs protect retried message parts. Expired attachment URLs are
+refreshed through the authenticated Discord API and checked against archived
+attachment IDs and sizes. Missing media stops that room's import. System events
+are retained as notices. Sending from the owner account is paused in each new
+room until its archive and API catch-up complete. No Synapse SQL is modified.
+The legacy libolm exception is scoped to this pinned bridge build.
+
+This is a controlled first deployment, not a claim that the private account
+has already been tested. CI compiles the patched bridge and tests paging,
+attachment identity checks, config generation and orchestration. Real Matrix
+history, encryption recovery, replies, media playback and live two-way delivery
+still require acceptance on Contabo. The archive's active-thread discovery 403
+remains a known coverage gap. Preserve the source archive and all bridge state
+until an isolated restore succeeds.
 
 ## Single setup entry point
 
@@ -47,10 +62,13 @@ sudo bash /etc/nixos/hosts/contabo/finish-setup.sh
 This **applies changes**, unlike `setup-phase1.fish`. It starts a pinned
 systemd worker which survives SSH disconnects. Run
 the same command again after resolving a failure; it rechecks actual state
-rather than trusting old success checkpoints. It never switches NixOS.
+rather than trusting old success checkpoints. Integration deployment builds and
+switches a NixOS generation, with rollback on service-health failure.
 
-Implemented automation checks services, disk space and idle migration jobs,
-verifies a fresh R2 snapshot, audits all photos, repairs eligible Files mtimes
+The order is backup verification, Discord, SMS/RCS and Slack/Matrimail, mail,
+Nextcloud apps, then photos. Photos remain deferred while Discord needs login
+or is importing. The runner checks services, disk space and idle migration jobs.
+Once messaging import finishes, it audits photos and repairs eligible Files mtimes
 in a journaled 20-file pilot followed by the remaining eligible files,
 rescans the scoped cache, enables/installs Calendar, Contacts and Tasks using
 the existing stateful app store, and inventories the Discord archive.
@@ -95,11 +113,11 @@ Do not invent a journal name or delete its original-media files. The old
 whole-library audit is retained for comparison; its ambiguous/missing-sidecar
 counts do not distinguish the verified per-file pairing rules above.
 
-**Every phase is not yet executable.** The native Discord importer, bridge
-provisioning/pairing, Stalwart/Matrimail commissioning, declarative app migration,
-isolated recovery and client acceptance remain listed as incomplete. The
-worker exits nonzero while these remain; a failed unit can mean an unfinished
-implementation/acceptance item. Read the summary to identify what remains.
+**Deployment does not establish acceptance.** Account pairing, external mail
+DNS/delivery checks, declarative Nextcloud app migration, isolated recovery
+and client acceptance remain incomplete until actually verified. The worker
+exits nonzero while these remain; read the summary for the specific pending
+action. Reruns preserve existing pairing, encryption keys and registrations.
 
 ```fish
 sudo bash /etc/nixos/hosts/contabo/finish-setup.sh --status

@@ -111,10 +111,32 @@
  
  	switch convertedMsg := msg.msg.(type) {
  	case *discordgo.MessageCreate:
-@@ -661,6 +675,16 @@
+@@ -617,7 +631,12 @@
+ 	return msg
+ }
+ 
+-func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Message, thread *Thread) {
++func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Message, thread *Thread, sourceType ...int) {
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" && len(sourceType)==0 {
++        sourceType=[]int{int(msg.Type)}
++        msg=contaboArchiveMessage(msg)
++    }
++
+ 	switch msg.Type {
+ 	case discordgo.MessageTypeChannelNameChange, discordgo.MessageTypeChannelIconChange, discordgo.MessageTypeChannelPinnedMessage:
+ 		// These are handled via channel updates
+@@ -661,6 +680,24 @@
  
  	ts, _ := discordgo.SnowflakeTimestamp(msg.ID)
  	parts := portal.convertDiscordMessage(ctx, puppet, intent, msg)
++    if len(sourceType)>0 {
++        for _,part:=range parts {
++            if part.Extra==nil {part.Extra=make(map[string]interface{})}
++            part.Extra["org.contabo.discord.source_type"]=sourceType[0]
++            switch sourceType[0] {case 0,3,7,19,20,23: default: part.Content.MsgType=event.MsgNotice}
++        }
++    }
++
 +    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" {
 +        for _,attachment:=range msg.Attachments {
 +            found:=false
@@ -128,7 +150,7 @@
  	dbParts := make([]database.MessagePart, 0, len(parts))
  	eventIDs := zerolog.Dict()
  	for i, part := range parts {
-@@ -683,12 +707,13 @@
+@@ -683,12 +720,13 @@
  		// Only set mentions for first event, but keep empty object for rest
  		mentions = &event.Mentions{}
  
@@ -143,7 +165,7 @@
  			continue
  		}
  		lastThreadEvent = resp.EventID
-@@ -1081,7 +1106,7 @@
+@@ -1081,7 +1119,7 @@
  	return event.EventEncrypted, nil
  }
  
@@ -152,7 +174,7 @@
  	wrappedContent := event.Content{Parsed: content, Raw: extraContent}
  	var err error
  	eventType, err = portal.encrypt(intent, &wrappedContent, eventType)
-@@ -1093,6 +1118,11 @@
+@@ -1093,6 +1131,11 @@
  	if timestamp == 0 {
  		return intent.SendMessageEvent(portal.MXID, eventType, &wrappedContent)
  	} else {

@@ -15,6 +15,14 @@ c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class Tests(unittest.TestCase):
+    def test_build_returns_the_built_generation(self):
+        with patch.object(c,'run',return_value='/nix/store/fixture-generation\n') as runner:
+            self.assertEqual(c.build(True,mail=True,discord=True,pilot=False),'/nix/store/fixture-generation')
+        args=runner.call_args.args[0]
+        self.assertEqual(args[:2],['nix','build'])
+        expression=args[args.index('--expr')+1]
+        self.assertIn('contabo.discordNative.enable = lib.mkForce true',expression)
+        self.assertIn('contabo.discordNative.pilot = lib.mkForce false',expression)
     @unittest.skipUnless(os.environ.get('CONTABO_GMESSAGES_BINARY'), 'Pinned bridge binaries required')
     def test_real_templates_and_registration_generation(self):
         networks=[('gmessages',29320),('slack',29321)]
@@ -86,11 +94,17 @@ class Tests(unittest.TestCase):
                     ('123','100',json.dumps({'type':0})),('123','101',json.dumps({'type':0})),
                     ('123','102',json.dumps({'type':6})),('other','103',json.dumps({'type':0}))])
             with sqlite3.connect(mapping) as db:
-                db.execute('CREATE TABLE message(dc_chan_id TEXT,dcid TEXT)')
-                db.executemany('INSERT INTO message VALUES(?,?)',[('123','100'),('123','100'),('other','101')])
-            self.assertEqual(c.discord_coverage(source,mapping,['123']),(2,1))
+                db.execute("CREATE TABLE message(dc_chan_id TEXT,dcid TEXT,dc_chan_receiver TEXT DEFAULT '')")
+                db.executemany('INSERT INTO message(dc_chan_id,dcid) VALUES(?,?)',[('123','100'),('123','100'),('other','101')])
+            self.assertEqual(c.discord_coverage(source,mapping,['123']),(3,1))
             with sqlite3.connect(mapping) as db:
-                db.execute("INSERT INTO message VALUES('123','101')")
-            self.assertEqual(c.discord_coverage(source,mapping,['123']),(2,2))
+                db.execute("INSERT INTO message(dc_chan_id,dcid) VALUES('123','101')")
+            self.assertEqual(c.discord_coverage(source,mapping,['123']),(3,2))
+            with sqlite3.connect(mapping) as db:
+                db.execute("INSERT INTO message(dc_chan_id,dcid) VALUES('123','102')")
+            self.assertEqual(c.discord_coverage(source,mapping,['123']),(3,3))
+            with sqlite3.connect(mapping) as db:
+                db.execute("UPDATE message SET dc_chan_receiver='different-account' WHERE dcid='102'")
+            self.assertEqual(c.discord_coverage(source,mapping,['123'],'current-account'),(3,2))
 
 if __name__=='__main__': unittest.main()
