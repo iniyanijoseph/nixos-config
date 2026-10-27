@@ -79,7 +79,7 @@ in pkgs.testers.runNixOSTest {
         # Run the real launcher in the background so we can inspect its worker
         # while active, then verify that its viewer waits for process exit.
         node.succeed("(bash ${./finish-setup.sh} > ${state}/viewer.log 2>&1; echo $? > ${state}/viewer-exit) </dev/null >/dev/null 2>&1 &")
-        node.wait_for_unit("contabo-finish-setup.service")
+        node.wait_until_succeeds("systemctl is-active --quiet contabo-finish-setup.service", timeout=30)
         assert node.succeed("systemctl show contabo-finish-setup.service -p Type --value").strip() == "exec"
         assert node.succeed("systemctl show contabo-finish-setup.service -p Job --value").strip() in ("", "0")
         node.succeed("sleep 1; test ! -e ${state}/viewer-exit")
