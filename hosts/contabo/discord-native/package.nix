@@ -9,6 +9,7 @@ in legacy.mautrix-discord.overrideAttrs (old: {
   checkFlags = [ "-run=TestContaboArchive" ];
   patches = (old.patches or []) ++ [ ./replay.patch ];
   postPatch = (old.postPatch or "") + ''
+    cp ${./example_config.go} example_config.go
     cp ${./archive_replay.go} archive_replay.go
     cp ${./archive_replay_test.go} archive_replay_test.go
   '';
