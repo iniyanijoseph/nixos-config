@@ -13,12 +13,20 @@
  	}
  
 +	if os.Getenv("CONTABO_DISCORD_ARCHIVE") != "" {
-+ if err := portal.replayContaboArchive(source, thread); err != nil { panic(err) }; return
++ portal.ensureContaboArchive(source,thread); return
 + }
  	limit := portal.bridge.Config.Bridge.Backfill.Limits.Initial.Channel
  	if portal.GuildID == "" {
  		limit = portal.bridge.Config.Bridge.Backfill.Limits.Initial.DM
-@@ -176,7 +180,7 @@
+@@ -77,6 +81,7 @@
+ 
+ 	portal.forwardBackfillLock.Lock()
+ 	defer portal.forwardBackfillLock.Unlock()
++ portal.ensureContaboArchive(source,thread)
+ 
+ 	var lastMessage *database.Message
+ 	if thread != nil {
+@@ -176,7 +181,7 @@
  	portal.sendBackfillBatch(log, source, messages, thread)
  }
  
@@ -27,7 +35,7 @@
  	protoChannelID := portal.Key.ChannelID
  	if thread != nil {
  		protoChannelID = thread.ID
-@@ -186,7 +190,7 @@
+@@ -186,7 +191,7 @@
  		messages, err := source.Session.ChannelMessages(protoChannelID, messageFetchChunkSize, "", after, "", portal.RefererOptIfUser(source.Session, protoChannelID)...)
  		if err != nil {
  			log.Err(err).Msg("Error fetching chunk of messages to forward backfill")
@@ -36,7 +44,7 @@
  		}
  		log.Debug().Int("count", len(messages)).Msg("Fetched chunk of messages to backfill")
  		sort.Sort(MessageSlice(messages))
-@@ -196,7 +200,7 @@
+@@ -196,7 +201,7 @@
  		if len(messages) < messageFetchChunkSize {
  			// Assume that was all the missing messages
  			log.Debug().Msg("Chunk had less than 50 messages, stopping backfill")
@@ -55,7 +63,23 @@
  	"reflect"
  	"regexp"
  	"slices"
-@@ -683,12 +684,13 @@
+@@ -54,6 +55,7 @@
+ var relayClient, _ = discordgo.New("")
+ 
+ type Portal struct {
++ contaboArchiveReady bool
+ 	*database.Portal
+ 
+ 	Parent *Portal
+@@ -580,6 +582,7 @@
+ 	}
+ 	portal.forwardBackfillLock.Lock()
+ 	defer portal.forwardBackfillLock.Unlock()
++ portal.ensureContaboArchive(msg.user,msg.thread)
+ 
+ 	switch convertedMsg := msg.msg.(type) {
+ 	case *discordgo.MessageCreate:
+@@ -683,12 +686,13 @@
  		// Only set mentions for first event, but keep empty object for rest
  		mentions = &event.Mentions{}
  
@@ -70,7 +94,7 @@
  			continue
  		}
  		lastThreadEvent = resp.EventID
-@@ -1081,7 +1083,7 @@
+@@ -1081,7 +1085,7 @@
  	return event.EventEncrypted, nil
  }
  
@@ -79,7 +103,7 @@
  	wrappedContent := event.Content{Parsed: content, Raw: extraContent}
  	var err error
  	eventType, err = portal.encrypt(intent, &wrappedContent, eventType)
-@@ -1093,6 +1095,11 @@
+@@ -1093,6 +1097,11 @@
  	if timestamp == 0 {
  		return intent.SendMessageEvent(portal.MXID, eventType, &wrappedContent)
  	} else {

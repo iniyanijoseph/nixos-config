@@ -9,9 +9,21 @@ import (
  "net/url"
  "os"
  "strings"
+ "sync"
 
  "github.com/bwmarrin/discordgo"
 )
+
+var contaboReplayMutex sync.Mutex
+
+// Called only while the portal's native forward-backfill lock is held. The
+// same gate covers fresh rooms, process restart and incoming live traffic.
+func (portal *Portal) ensureContaboArchive(source *User, thread *Thread) {
+ if os.Getenv("CONTABO_DISCORD_ARCHIVE")=="" || portal.contaboArchiveReady { return }
+ contaboReplayMutex.Lock(); defer contaboReplayMutex.Unlock()
+ if err:=portal.replayContaboArchive(source,thread); err!=nil { panic(err) }
+ portal.contaboArchiveReady=true
+}
 
 func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
  path := os.Getenv("CONTABO_DISCORD_ARCHIVE")
@@ -32,6 +44,7 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
  }
  if !allowed { return nil }; if complete != 1 { return fmt.Errorf("archive channel is incomplete") }
  var after string
+ firstBridgeable:=true
  for {
   rows, err := tx.Query(`SELECT id,json FROM messages WHERE channel_id=? AND
     (length(id)>length(?) OR (length(id)=length(?) AND id>?))
@@ -52,6 +65,12 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
    case discordgo.MessageTypeChannelNameChange,discordgo.MessageTypeChannelIconChange,discordgo.MessageTypeChannelPinnedMessage:
     // These source events are handled by native channel metadata, not messages.
    default:
+    if firstBridgeable {
+     firstBridgeable=false
+     if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 && portal.bridge.DB.Message.GetLast(portal.Key)!=nil {
+      return fmt.Errorf("existing nonempty room cannot accept older archive; fresh portal required")
+     }
+    }
     portal.handleDiscordMessageCreate(source,msg,thread)
     if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 { return fmt.Errorf("archived message was not mapped; cutover refused") }
    }
