@@ -33,12 +33,21 @@ sanitized read-only inspection, execute this Nix-packaged Python tool:
 ```fish
 cd /etc/nixos
 sudo nix run ./hosts/contabo#contabo-discord-audit
+
+# Optional deeper, read-only scan of existing message JSON:
+# counts references to attachments, replies, edited messages, embeds,
+# reactions and stickers without emitting private content.
+sudo nix run ./hosts/contabo#contabo-discord-audit -- --deep
 ```
 
 It uses the pinned Contabo Python, opens the SQLite database strictly in
 read-only mode (including WAL), scopes known conversations to the configured
 Discord guild and DMs, and reports aggregate completion/errors only. It
-never authenticates to Discord or imports messages into Matrix.
+never authenticates to Discord or imports messages into Matrix. Even the
+deep scan **does not download attachments** or establish their recoverability.
+The last collector reported an HTTP 403 for active-thread discovery. Do not
+try to bypass endpoint access restrictions or resume a personal-token
+self-bot: the official Discord bot API is the supported automation route.
 
 If private Matrix monitoring is no longer wanted, after verifying that only
 the old transient listener/timer are active, this single-purpose script stops
