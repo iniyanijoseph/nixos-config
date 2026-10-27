@@ -290,8 +290,8 @@ for entry in         'Photo original reconciliation|photos-reconciled.json'     
 end
 if test -d "$state/photos-duplicate-quarantine"
     emit WARN "Duplicate photo quarantine retained; deletion NOT authorized by this audit"
-    if command_exists du
-        set -l qsize (du -sh -- "$state/photos-duplicate-quarantine" 2>/dev/null | string split -m1 '\t')
+    if command_exists du; and command_exists awk
+        set -l qsize (du -sh -- "$state/photos-duplicate-quarantine" 2>/dev/null | awk '{print $1}')
         if test (count $qsize) -ge 1
             printf 'Photo quarantine approximate disk usage: %s\n' "$qsize[1]"
         end
@@ -378,7 +378,7 @@ else
 end
 
 heading "DISK / RESOURCES"
-if command_exists df
+if command_exists df; and command_exists awk
     df -hP / /var/lib 2>/dev/null | awk 'NR == 1 || !seen[$1]++ { print }'
 end
 if command_exists free
