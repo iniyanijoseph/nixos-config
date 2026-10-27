@@ -178,6 +178,7 @@ for path in [
         emailPkgs.pkg-config
         emailPkgs.olm
         emailPkgs.gcc
+        (emailPkgs.python3.withPackages (ps: [ ps.pyyaml ]))
       ];
     };
 

@@ -21,8 +21,8 @@ jobs:
                 contabo.mail.enable=lib.mkForce true;})
             ];}).config.system.build.toplevel.drvPath'
       - run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-commission-tests ./hosts/contabo#contabo-discord-native ./hosts/contabo#contabo-finish-setup
-      - name: Compile pinned Matrimail and verify its generated config
+      - name: Compile pinned Matrimail and verify configuration and registration
         run: |
           bash hosts/contabo/email-bridge/build.sh
           export CONTABO_MATRIMAIL_BINARY="$HOME/.local/share/matrimail-build/matrimail"
-          nix develop ./hosts/contabo#email-bridge --command "$CONTABO_MATRIMAIL_BINARY" -e -c /tmp/matrimail-example.yaml
+          nix develop ./hosts/contabo#email-bridge --command python3 hosts/contabo/test_commission_integrations.py

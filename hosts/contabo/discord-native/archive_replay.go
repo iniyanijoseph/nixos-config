@@ -61,8 +61,13 @@ func (p *ProvisioningAPI) contaboStartArchive(w http.ResponseWriter,r *http.Requ
   if err=portal.CreateMatrixRoom(user,meta);err!=nil {failed++;continue}
   started++
   if portal.forwardBackfillLock.TryLock() {
-   if portal.contaboArchiveReady[portal.Key.ChannelID] {ready++}
-   portal.forwardBackfillLock.Unlock()
+   if portal.contaboArchiveReady[portal.Key.ChannelID] {
+    ready++;portal.forwardBackfillLock.Unlock()
+   } else {
+    // Existing rooms also resume after process restart, including idle DMs.
+    // forwardBackfillInitial takes ownership of this already-held lock.
+    go portal.forwardBackfillInitial(user,nil)
+   }
   }
   if pilot {break}
  }

@@ -23,9 +23,12 @@ class Tests(unittest.TestCase):
         expression=args[args.index('--expr')+1]
         self.assertIn('contabo.discordNative.enable = lib.mkForce true',expression)
         self.assertIn('contabo.discordNative.pilot = lib.mkForce false',expression)
-    @unittest.skipUnless(os.environ.get('CONTABO_GMESSAGES_BINARY'), 'Pinned bridge binaries required')
+    @unittest.skipUnless(any(os.environ.get('CONTABO_'+name+'_BINARY') for name in ('GMESSAGES','SLACK','DISCORD','MATRIMAIL')), 'Pinned bridge binaries required')
     def test_real_templates_and_registration_generation(self):
-        networks=[('gmessages',29320),('slack',29321)]
+        networks=[]
+        for network,port in [('gmessages',29320),('slack',29321)]:
+            if os.environ.get('CONTABO_'+network.upper()+'_BINARY'):
+                networks.append((network,port))
         if os.environ.get('CONTABO_DISCORD_BINARY'):
             networks.append(('discord',29322))
         if os.environ.get('CONTABO_MATRIMAIL_BINARY'):
