@@ -63,16 +63,23 @@ def parse_exif_time(value):
             pass
     return None
 
+def best_date_offset(epoch, exif):
+    """Return the closest naive EXIF-clock-minus-Google-epoch offset in seconds.
+
+    Naive EXIF timestamps do not specify a time zone. This value is a
+    *diagnostic only*, not permission to rewrite EXIF or assign a TZ.
+    """
+    candidates = [parse_exif_time(exif.get(k)) for k in DATE_KEYS]
+    offsets = [int(round(x - epoch)) for x in candidates if x is not None]
+    return min(offsets, key=abs) if offsets else None
+
 def compare_date(epoch, exif):
-    """A naive EXIF clock may be local time; allow timezone displacement."""
-    dates = [parse_exif_time(exif.get(k)) for k in DATE_KEYS]
-    dates = [x for x in dates if x is not None]
-    if not dates:
+    offset = best_date_offset(epoch, exif)
+    if offset is None:
         return "missing_embedded_date"
-    best = min(abs(x - epoch) for x in dates)
-    if best <= 600:
+    if abs(offset) <= 600:
         return "embedded_date_matches_utc"
-    if best <= 14 * 3600:
+    if abs(offset) <= 14 * 3600:
         return "embedded_date_possible_timezone_offset"
     return "embedded_date_conflicts_with_takeout"
 
@@ -128,6 +135,8 @@ def main():
         return 2
 
     media, sidecar_by_dir, counts = [], defaultdict(list), Counter()
+    offset_hours = Counter()
+    mismatch_formats = Counter()
     emit("Mode", "read-only, sanitized and deterministic; no data changes")
     for folder, directories, filenames in os.walk(root, followlinks=False):
         directories[:] = [d for d in directories if not (Path(folder) / d).is_symlink()]
@@ -180,6 +189,12 @@ def main():
             if ts is not None:
                 date_state = compare_date(ts, obj)
                 counts[date_state] += 1
+                if date_state == "embedded_date_possible_timezone_offset":
+                    diff = best_date_offset(ts, obj)
+                    # Nearest hour only: never print a per-photo timestamp.
+                    offset_hours[round(diff / 3600)] += 1
+                if date_state == "missing_embedded_date":
+                    mismatch_formats[file.suffix.lower()] += 1
                 if abs(file.stat().st_mtime - ts) <= 86400:
                     counts["file_mtime_within_1_day_of_takeout"] += 1
                 else:
@@ -218,6 +233,10 @@ def main():
         "exif_batch_errors", "exif_decode_errors", "skipped_special_files",
     ):
         emit(key, counts[key])
+    emit("Naive EXIF clock minus Google capture UTC (nearest hours, not verified timezones)",
+         ", ".join(f"{h:+d}h={n}" for h, n in sorted(offset_hours.items())) or "none")
+    emit("Missing EXIF date by file extension",
+         ", ".join(f"{ext}={n}" for ext, n in sorted(mismatch_formats.items())) or "none")
     emit("Takeout JSON name matching", "exact-only: ambiguous/truncated names intentionally not guessed")
     emit("Nextcloud Files dates", "often filesystem mtime; this audit does not change it")
     emit("Memories dates/GPS", "indexed database not audited here; reindex only after source correction")
