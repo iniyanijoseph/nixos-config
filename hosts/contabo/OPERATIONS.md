@@ -23,6 +23,46 @@ Cloning the repository reproduces code, not account sessions or user data.
 The Discord archive is *not* currently Matrix history. No historic importer,
 live Discord bridge, or retirement command is deployed by this change.
 
+## Full-setup Phase 1: Google Photos and Nextcloud apps
+
+The current Google Takeout migration has completed its one-shot command,
+but a command exit checkpoint **does not certify correct dates or GPS**.
+One verified January 2026 photo had correct embedded EXIF despite an
+October 2026 upload date shown in the Nextcloud Files view. Do not rewrite
+correct embedded camera metadata to "fix" the Files mtime without measuring.
+
+The canonical read-only start is:
+
+```fish
+sudo /run/current-system/sw/bin/fish -n /etc/nixos/hosts/contabo/setup-phase1.fish
+and sudo /run/current-system/sw/bin/fish /etc/nixos/hosts/contabo/setup-phase1.fish
+```
+
+This checks core services, Nextcloud app status (Calendar, Contacts, Tasks,
+Memories, etc.), and a deterministic 500-file comparison of Google sidecar
+`photoTakenTime` vs EXIF date, EXIF GPS and filesystem mtime. It
+redacts filenames/coordinates and cannot change any photo. Re-run
+`contabo-photo-audit --sample 0` later for the full library after initial
+classification; this scans every media file and is correspondingly slower.
+
+Repair pathways are **not interchangeable**:
+
+- Correct EXIF and wrong Files timestamp: fix file mtime from the verified
+  capture time, then rescan Nextcloud's file cache for changed files.
+- Wrong/missing EXIF with good Google sidecar: import the specific capture
+  time/GPS into the appropriate image or video metadata format **after
+  verified backup**, then force a scoped Memories reindex.
+- EXIF vs sidecar shifted only by timezone: preserve the camera's original
+  local clock and offset unless an explicit provenance check proves it wrong.
+- Sidecar ambiguous or missing: inventory and resolve conservatively; never
+  guess attachments or pair unrelated files.
+- Correct source metadata but wrong Memories timeline: diagnose the Memories
+  index/database and force a scoped reindex before any file rewrite.
+
+`contabo.googleSuite.enable` is separately staged but OFF until inspecting
+the live app list to avoid Nix/store-appstore collision. Existing Memories
+remains enabled through the stateful Nextcloud app store.
+
 ## Focused Discord archive inventory and monitoring opt-out
 
 The standard `observe.fish` report relies on the optional `sqlite3`
