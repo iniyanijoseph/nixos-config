@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Resume the executable parts of commissioning; never certify missing work."""
 from datetime import datetime, timezone
+from collections import Counter
 import fcntl
 import importlib.util
 import json
@@ -60,20 +61,14 @@ def parse_counts(output):
     return result
 
 
-def photo_issues(counts):
-    keys = ('media_without_exact_sidecar', 'media_with_ambiguous_sidecars',
-            'invalid_sidecar', 'no_valid_timestamp',
-            'embedded_date_conflicts_with_takeout', 'missing_embedded_date',
-            'takeout_gps_missing_from_exif', 'takeout_gps_conflicts_with_exif',
-            'no_takeout_sidecar_and_exif_date_missing', 'skipped_special_files')
-    return {key: counts[key] for key in keys if counts.get(key, 0)}
-
-
 class Setup:
     def __init__(self):
         self.results = {}
         self.repair = load_script('mtime_repair', os.environ['CONTABO_MTIME_REPAIR_SCRIPT'])
         self.archive = load_script('archive_audit', os.environ['CONTABO_DISCORD_AUDIT_SCRIPT'])
+        self.audit = load_script('photo_audit', os.environ['CONTABO_PHOTO_AUDIT_SCRIPT'])
+        photo = load_script('photo_remediation', os.environ['CONTABO_PHOTO_REMEDIATION_SCRIPT'])
+        self.remediation = photo.Remediation(self.audit, self.repair)
 
     def save(self):
         summary = ['CONTABO SETUP — current checks, not a claim of full completion',
@@ -130,35 +125,57 @@ class Setup:
         return 'Fresh R2 snapshot verified; repository metadata check passed'
 
     def photos(self):
+        self.remediation.recover()
         output = command(['contabo-photo-audit', '--sample', '0'], capture=True)
         atomic(STATE / 'photo-audit.txt', output)
-        counts = parse_counts(output)
-        # Conflicting or missing source metadata needs a format-specific repair.
-        # Do not hide it by applying Files dates and declaring Photos fixed.
-        issues = photo_issues(counts)
-        if issues:
-            self.record('Photo metadata exceptions', 'blocked',
-                        'Full audit needs source-metadata repair: ' + json.dumps(issues, sort_keys=True))
-        else:
-            self.record('Photo metadata exceptions', 'done', 'No missing/conflicting source metadata found')
-        if counts.get('embedded_date_conflicts_with_takeout'):
-            raise RuntimeError('Conflicting embedded capture dates; repair plan requires resolution')
-        rows, totals = self.repair.inventory()
-        if totals['unsafe_files'] or totals['nonregular_or_hardlinked']:
-            raise RuntimeError('Unsafe photo files; repair refused')
+        parse_counts(output)
+        plan = self.remediation.plan()
+        atomic(STATE / 'photo-plan-before.json', json.dumps(plan, indent=2) + '\n')
+
+        def fill_dates():
+            pilot, kinds = [], set()
+            for row in plan['metadata']:
+                if row['file_type'] not in kinds:
+                    pilot.append(row)
+                    kinds.add(row['file_type'])
+            self.remediation.apply_metadata(pilot)
+            remaining = self.remediation.plan()['metadata']
+            if len(remaining) != len(plan['metadata']) - len(pilot):
+                raise RuntimeError('Missing-date pilot postcondition failed')
+            self.remediation.apply_metadata(remaining)
+            if self.remediation.plan()['metadata']:
+                raise RuntimeError('Missing embedded capture dates remain')
+            return 'Missing dates filled from verified Takeout metadata; decoded media verified; byte backups retained'
+
+        # A failed/unsupported missing-date transform does not prevent Files
+        # repairs for other independently verified photos.
+        self.step('Missing capture dates', fill_dates)
+        plan = self.remediation.plan()
+        rows = plan['mtimes']
         # Each batch obtains its own fresh snapshot and writes durable undo data.
         # Recover interrupted writes/rescans first by scanning the same scope.
         self.repair.scoped_scan()
         if rows:
+            for row in rows[:20]:
+                self.remediation.validate_sidecars(row)
             self.repair.apply(rows, 20)
-            remaining, _ = self.repair.inventory()
+            remaining = self.remediation.plan()['mtimes']
             if len(remaining) != len(rows) - min(20, len(rows)):
                 raise RuntimeError('Pilot mtime postcondition failed')
+            for row in remaining:
+                self.remediation.validate_sidecars(row)
             self.repair.apply(remaining, 0)
-        remaining, _ = self.repair.inventory()
-        if remaining:
+        final = self.remediation.plan()
+        atomic(STATE / 'photo-exceptions.json', json.dumps(final, indent=2) + '\n')
+        if final['mtimes']:
             raise RuntimeError('Eligible Files dates remain unrepaired')
-        return 'Eligible Files dates repaired and scoped cache rescanned; EXIF/GPS untouched; journals retained'
+        issues = Counter(row['reason'] for row in final['exceptions'])
+        if final['metadata']:
+            issues['missing_capture_date_pending'] += len(final['metadata'])
+        self.record('Photo metadata exceptions', 'blocked' if issues else 'done',
+                    json.dumps(dict(issues), sort_keys=True) if issues else 'No unresolved photo metadata exceptions')
+        command([OCC, 'memories:index', '--user=wug', '--path=Photos/Google Photos', '--force'])
+        return 'Eligible Files dates repaired; cache and Memories reindexed; conflicting/unresolved photos retained unchanged'
 
     def apps(self):
         # Preserve the current appstore deployment; no duplicate declarative

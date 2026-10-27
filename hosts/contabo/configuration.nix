@@ -13,6 +13,7 @@
     ./bridges-extra.nix
     ./monitoring.nix
     ./google-suite.nix
+    ./finish-setup.nix
     ./shell.nix
   ];
 

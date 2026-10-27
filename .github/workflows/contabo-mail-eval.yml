@@ -9,6 +9,7 @@ on:
       - 'hosts/contabo/bridges-extra-pkgs.nix'
       - 'hosts/contabo/evaluate-future-bridges.sh'
       - 'hosts/contabo/configuration.nix'
+      - 'hosts/contabo/finish-setup.nix'
       - 'hosts/contabo/flake.nix'
       - 'hosts/contabo/flake.lock'
       - '.github/workflows/contabo-mail-eval.yml'

@@ -9,7 +9,7 @@ sudo bash /etc/nixos/hosts/contabo/finish-setup.sh
 ```
 
 This **applies changes**, unlike `setup-phase1.fish`. It starts a pinned
-systemd worker which survives SSH disconnects and resumes on reboot. Run
+systemd worker which survives SSH disconnects. Run
 the same command again after resolving a failure; it rechecks actual state
 rather than trusting old success checkpoints. It never switches NixOS.
 
@@ -18,9 +18,46 @@ verifies a fresh R2 snapshot, audits all photos, repairs eligible Files mtimes
 in a journaled 20-file pilot followed by the remaining eligible files,
 rescans the scoped cache, enables/installs Calendar, Contacts and Tasks using
 the existing stateful app store, and inventories the Discord archive.
-Enabled apps are not upgraded. EXIF, GPS, Takeout and duplicate quarantine
-are preserved. Conflicting embedded dates block mtime repairs; other source
-metadata exceptions remain explicit blockers.
+Enabled apps are not upgraded. Existing valid dates, GPS, Takeout and duplicate
+quarantine are preserved. Photo exceptions are handled per file: conflicting
+dates and uncertain pairings are skipped without blocking unrelated repairs.
+Missing capture dates in supported formats can be filled from verified Takeout
+timestamps, with the original media retained for byte-exact rollback.
+
+The per-file planner accepts agreeing exact sidecars or a unique exact Takeout
+`title` filename match in the same directory. It does not guess truncated names
+or choose between disagreeing capture metadata. JPEG, PNG, TIFF and WebP get
+EXIF DateTimeOriginal with an explicit UTC offset; MP4/MOV/M4V get QuickTime
+CreateDate and Keys CreationDate. Valid pre-existing dates are not overwritten.
+Before replacement, the runner verifies the written date, unchanged GPS and
+identical decoded image/video and audio stream hashes using FFmpeg. It also
+checks that the source and sidecars did not change during verification.
+
+Each metadata batch obtains a fresh R2 snapshot and retains the original inode
+and bytes in `/var/lib/migration-queue/photo-metadata-journals/`. A pilot covers
+each detected format before the remaining missing dates. A failed or interrupted
+batch is rolled back before a new plan; source files changed outside the repair
+are never silently overwritten. Disk space is checked before keeping originals.
+The scoped Files cache and Memories index are refreshed after repair.
+
+Private before/after plans, including the precise files requiring review, are
+in `finish-setup/photo-plan-before.json` and `finish-setup/photo-exceptions.json`.
+These can include filenames, capture times and GPS; do not publish them. A
+read-only aggregate plan is available with `sudo nix run
+/etc/nixos/hosts/contabo#contabo-photo-remediation`.
+
+For a deliberate metadata rollback, use the exact journal directory shown in
+the private plan/log; roll back any later Files-mtime journal first if needed:
+
+```fish
+sudo nix run /etc/nixos/hosts/contabo#contabo-photo-remediation -- \
+  --rollback /var/lib/migration-queue/photo-metadata-journals/EXACT-JOURNAL \
+  --confirm ROLLBACK-PHOTO-METADATA
+```
+
+Do not invent a journal name or delete its original-media files. The old
+whole-library audit is retained for comparison; its ambiguous/missing-sidecar
+counts do not distinguish the verified per-file pairing rules above.
 
 **Every phase is not yet executable.** The native Discord importer, bridge
 provisioning/pairing, Stalwart/Matrimail commissioning, declarative app migration,
@@ -36,8 +73,18 @@ The root-only summary, JSON status, log, audit and version inventory live in
 `/var/lib/migration-queue/finish-setup/` and are covered by the next migration
 state backup. Detailed logs may contain private paths; do not publish them.
 Closing the viewer leaves the worker running. To prevent future boot runs
-after retiring setup, use `sudo systemctl disable contabo-finish-setup.service`;
-this does not interrupt a running repair.
+after retiring setup, remove only its boot-resume marker:
+`sudo rm -f /var/lib/migration-queue/finish-setup/resume-on-boot`.
+This does not interrupt a running repair or remove logs, journals or data.
+
+On NixOS, the launcher installs its runtime unit in `/run/systemd/system`.
+It does not write to the read-only `/etc/systemd/system` or call `systemctl
+enable`. Until `finish-setup.nix` has been deployed by an ordinary NixOS
+switch, a reboot clears the runtime unit: run the same launcher to resume.
+Once deployed, the declarative unit resumes a previously started run at
+boot. Before setup has ever been launched, its conditions skip the service.
+The launcher reports which mode is currently available. Do not reboot during
+a repair simply to test this; an interrupted repair may need a scoped rescan.
 
 The first run builds its pinned closure before starting the worker. Keep SSH
 connected until it prints that setup is running under systemd.

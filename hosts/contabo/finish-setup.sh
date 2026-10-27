@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One entry point; the Nix-built worker survives logout and reboot.
+# One entry point; the worker survives logout. Boot resume is declarative.
 set -euo pipefail
 export PATH="/run/current-system/sw/bin:$PATH"
 export SYSTEMD_PAGER=cat
@@ -52,13 +52,24 @@ StandardError=append:$state/run.log
 [Install]
 WantedBy=multi-user.target
 EOF
-    install -m 0644 "$state/unit.tmp" "/etc/systemd/system/$unit"
+    # NixOS owns /etc/systemd/system in the read-only Nix store. Runtime
+    # units belong under /run; never remount /nix/store or write into /etc.
+    install -d -m 0755 /run/systemd/system
+    install -m 0644 "$state/unit.tmp" "/run/systemd/system/$unit"
     rm "$state/unit.tmp"
     systemctl daemon-reload
-    systemctl enable "$unit"
+    # A future ordinary NixOS deployment installs finish-setup.nix for
+    # reboot resume. Runtime systemctl enable would write into read-only /etc.
+    touch "$state/resume-on-boot"
     systemctl start --no-block "$unit"
 fi
 echo 'Setup is running under systemd. Closing this terminal will not stop it.'
+if systemctl is-enabled --quiet "$unit"; then
+    echo 'Declarative boot resume is installed.'
+else
+    echo 'Runtime unit only: after a reboot, run this command again to resume.'
+    echo 'Automatic boot resume becomes available after deploying finish-setup.nix.'
+fi
 echo "Progress: sudo bash $repo/hosts/contabo/finish-setup.sh --status"
 echo "Private log: $state/run.log"
 tail -n 20 -F "$state/run.log" &
