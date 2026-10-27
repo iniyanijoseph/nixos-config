@@ -23,6 +23,17 @@
         config.permittedInsecurePackages = [ "olm-3.2.16" ];
       };
     in {
+    # Scoped, sanitized read-only collector/archive inspector. This may
+    # realize a pinned Python executable in /nix/store, but it does not
+    # write to any application directory, database, Matrix room, or archive.
+    packages.x86_64-linux.contabo-discord-audit =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.writeShellScriptBin "contabo-discord-audit" ''
+        export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_DISCORD_SCOPE_PATH="${./discord-archive/scope.py}"
+        exec ${pkgs.python3}/bin/python3 ${./discord-archive/audit.py}
+      '';
+
     # Syntax-only tests: they do not run audits, migrations or monitoring.
     # Nix flake check builds these checks using the pinned Nixpkgs inputs.
     checks.x86_64-linux.contabo-observe-fish-syntax =
@@ -42,6 +53,7 @@ for path in [
     "${./matrix-periodic-status.py}",
     "${./matrix-alert.py}",
     "${./discord-archive/scope.py}",
+    "${./discord-archive/audit.py}",
 ]:
     ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path)
 '
