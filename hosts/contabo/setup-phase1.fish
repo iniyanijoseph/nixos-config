@@ -48,52 +48,58 @@ for service in matrix-synapse nginx mautrix-whatsapp postgresql
     end
 end
 
-# Resolve OCC outside conditional scopes. Fish 'set -l' declared inside an
-# if block goes out of scope at 'end' and leaves an empty command expansion.
-# NixOS provides the OCC wrapper in the system profile.
+# Resolve OCC in script scope, never inside an if/for block: Fish 'set -l'
+# inside a branch goes out of scope at 'end'. This phase is only an audit,
+# so OCC trouble must not prevent an independent EXIF/Takeout comparison.
 set -l occ /run/current-system/sw/bin/nextcloud-occ
 if not test -x "$occ"
-    # A version-dependent wrapper may only be available via PATH.
     set -l found (command -s nextcloud-occ 2>/dev/null)
-    if test -n "$found"; and test -x "$found"
-        set occ "$found"
+    if test (count $found) -gt 0; and test -x "$found[1]"
+        set occ "$found[1]"
     else
-        fatal "nextcloud-occ unavailable at expected path and in PATH."
+        set occ ""
     end
 end
-if test -z "$occ"
-    fatal "OCC path resolved empty."
-end
-echo "OCC wrapper: executable found (path omitted)"
 
 echo ""
 echo "=== NEXTCLOUD STATUS ==="
-$occ status
-if test $status -ne 0
-    fatal "Nextcloud status command failed."
+set -l occ_healthy false
+if test -n "$occ"; and test -x "$occ"
+    "$occ" status
+    if test $status -eq 0
+        set occ_healthy true
+    else
+        echo "WARNING: OCC status failed. Continuing with independent read-only photo audit."
+    end
+else
+    echo "WARNING: nextcloud-occ wrapper unavailable. Continuing with read-only photo audit."
 end
 
 echo ""
 echo "=== GOOGLE REPLACEMENT APP STATUS ==="
-set -l applist ($occ app:list --output=json 2>/dev/null)
-set -l apps_rc $status
-if test $apps_rc -eq 0; and command -sq jq
-    printf '%s\n' $applist | jq -r '
-      . as $root |
-      ["memories","calendar","contacts","tasks","mail","notes","deck","news","files"][] as $app |
-      if ($root.enabled|type) == "object" and ($root.enabled|has($app)) then
-        "\($app): enabled"
-      elif ($root.disabled|type) == "object" and ($root.disabled|has($app)) then
-        "\($app): installed but disabled"
-      else
-        "\($app): not reported"
-      end'
-    if test $status -ne 0
-        echo "WARNING: JSON app listing unavailable."
+if test "$occ_healthy" = true
+    set -l applist ("$occ" app:list --output=json 2>/dev/null)
+    set -l apps_rc $status
+    if test $apps_rc -eq 0; and command -sq jq
+        printf '%s\n' $applist | jq -r '
+          . as $root |
+          ["memories","calendar","contacts","tasks","mail","notes","deck","news","files"][] as $app |
+          if ($root.enabled|type) == "object" and ($root.enabled|has($app)) then
+            "\($app): enabled"
+          elif ($root.disabled|type) == "object" and ($root.disabled|has($app)) then
+            "\($app): installed but disabled"
+          else
+            "\($app): not reported"
+          end'
+        if test $status -ne 0
+            echo "WARNING: JSON app listing could not be parsed."
+        end
+    else
+        echo "App inventory JSON unavailable; displaying filtered app listing."
+        "$occ" app:list 2>/dev/null | grep -Ei 'memories|calendar|contacts|tasks|mail|notes|deck|news' | head -35
     end
 else
-    echo "App inventory JSON unavailable; showing filtered app listing."
-    $occ app:list 2>/dev/null | grep -Ei 'memories|calendar|contacts|tasks|mail|notes|deck|news' | head -35
+    echo "SKIPPED: OCC unavailable or unhealthy. Photo metadata audit still runs."
 end
 
 echo ""
