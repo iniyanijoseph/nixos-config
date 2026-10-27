@@ -1,5 +1,7 @@
 # Contabo operations and reproducibility
 
+**One-command read-only inventory:** `sudo /run/current-system/sw/bin/fish /etc/nixos/hosts/contabo/observe.fish` (after pulling the reviewed Git commit). It prints sanitized state only; no secret values or private message bodies. See [SETUP-PLAN.md](./SETUP-PLAN.md) for the full service target and phased acceptance criteria.
+
 This is the **current** operational index for the NixOS 26.05 VPS.
 The server flake is `/etc/nixos/hosts/contabo#contabo`, distinct from the
 desktop flake. Run these commands **on the VPS** unless explicitly stated.
@@ -92,7 +94,7 @@ The Restic configuration includes Nextcloud, Synapse, WhatsApp, the active
 Discord **archive** and migration state, private secrets, TLS/SSH keys and
 a PostgreSQL logical dump. The future live Discord bridge directory is
 included conditionally **when `services.mautrix-discord.enable = true`**.
-The archive and live-bridge mapping databases serve different purposes.
+The archive and live-bridge mapping databases serve different purposes. The legacy migration queue has been changed to **never perform photo quarantine cleanup or shell-based offline service preflights automatically**.
 
 ```fish
 sudo systemctl start restic-backups-contabo.service
