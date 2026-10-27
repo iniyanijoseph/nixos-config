@@ -23,6 +23,16 @@
         config.permittedInsecurePackages = [ "olm-3.2.16" ];
       };
     in {
+    # Compare Google Takeout JSON, embedded photo EXIF, GPS and upload mtime
+    # without mutating photos, sidecars, files cache or Memories database.
+    packages.x86_64-linux.contabo-photo-audit =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.writeShellScriptBin "contabo-photo-audit" ''
+        export PYTHONDONTWRITEBYTECODE=1
+        export PATH="${pkgs.exiftool}/bin:$PATH"
+        exec ${pkgs.python3}/bin/python3 ${./photo-metadata-audit.py} "$@"
+      '';
+
     # Scoped, sanitized read-only collector/archive inspector. This may
     # realize a pinned Python executable in /nix/store, but it does not
     # write to any application directory, database, Matrix room, or archive.
@@ -55,6 +65,7 @@ for path in [
     "${./matrix-alert.py}",
     "${./discord-archive/scope.py}",
     "${./discord-archive/audit.py}",
+    "${./photo-metadata-audit.py}",
 ]:
     ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path)
 '
