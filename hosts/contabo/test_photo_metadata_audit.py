@@ -3,10 +3,11 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import os
 import unittest
 import json
 
-SOURCE = Path(__file__).resolve().parent / "photo-metadata-audit.py"
+SOURCE = Path(os.environ.get("CONTABO_PHOTO_AUDIT_SCRIPT", str(Path(__file__).resolve().parent / "photo-metadata-audit.py")) )
 spec = importlib.util.spec_from_file_location("photo_audit", SOURCE)
 photo = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(photo)
