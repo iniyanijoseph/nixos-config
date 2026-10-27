@@ -9,7 +9,7 @@ sudo bash /etc/nixos/hosts/contabo/finish-setup.sh
 ```
 
 This **applies changes**, unlike `setup-phase1.fish`. It starts a pinned
-systemd worker which survives SSH disconnects and resumes on reboot. Run
+systemd worker which survives SSH disconnects. Run
 the same command again after resolving a failure; it rechecks actual state
 rather than trusting old success checkpoints. It never switches NixOS.
 
@@ -38,6 +38,15 @@ state backup. Detailed logs may contain private paths; do not publish them.
 Closing the viewer leaves the worker running. To prevent future boot runs
 after retiring setup, use `sudo systemctl disable contabo-finish-setup.service`;
 this does not interrupt a running repair.
+
+On NixOS, the launcher installs its runtime unit in `/run/systemd/system`.
+It does not write to the read-only `/etc/systemd/system` or call `systemctl
+enable`. Until `finish-setup.nix` has been deployed by an ordinary NixOS
+switch, a reboot clears the runtime unit: run the same launcher to resume.
+Once deployed, the declarative unit resumes a previously started run at
+boot. Before setup has ever been launched, its conditions skip the service.
+The launcher reports which mode is currently available. Do not reboot during
+a repair simply to test this; an interrupted repair may need a scoped rescan.
 
 The first run builds its pinned closure before starting the worker. Keep SSH
 connected until it prints that setup is running under systemd.

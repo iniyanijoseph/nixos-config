@@ -4,6 +4,8 @@ on:
     paths:
       - 'hosts/contabo/finish-setup*'
       - 'hosts/contabo/test_finish_setup.py'
+      - 'hosts/contabo/test-finish-setup-nixos.nix'
+      - 'hosts/contabo/configuration.nix'
       - 'hosts/contabo/photo-mtime-repair.py'
       - 'hosts/contabo/flake.nix'
       - 'hosts/contabo/flake.lock'
@@ -21,3 +23,5 @@ jobs:
           ./hosts/contabo#contabo-finish-setup
           ./hosts/contabo#checks.x86_64-linux.contabo-finish-setup-tests
           ./hosts/contabo#checks.x86_64-linux.contabo-photo-mtime-repair-tests
+      - name: Verify runtime launch and reboot resume on NixOS
+        run: nix build --no-link ./hosts/contabo#checks.x86_64-linux.contabo-setup-nixos-test

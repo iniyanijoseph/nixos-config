@@ -23,6 +23,11 @@
         config.permittedInsecurePackages = [ "olm-3.2.16" ];
       };
     in {
+    checks.x86_64-linux.contabo-setup-nixos-test =
+      import ./test-finish-setup-nixos.nix {
+        pkgs = import nixpkgs { inherit system; };
+      };
+
     # Logout/reboot-safe commissioning runner. Missing implementations and
     # client checks remain explicit blockers, never fabricated success markers.
     packages.x86_64-linux.contabo-finish-setup =
