@@ -13,6 +13,29 @@ let
       hash = "sha256-+9QINXmLBClRKAKkzDTSTptv5ekokX3cFBRCkHTQ0DE=";
     };
   }.${pkgs.stdenv.hostPlatform.system};
+
+  # Mages uses Compose Desktop / Skiko and loads native libraries at runtime.
+  # Extracted AppImages do not get FHS library search paths on NixOS, so the
+  # bundled JVM otherwise fails to load libskiko-linux-*.so (libGL.so.1).
+  runtimeLibraries = with pkgs; [
+    libGL
+    libxkbcommon
+    wayland
+    fontconfig
+    freetype
+    glib
+    alsa-lib
+    libpulseaudio
+    xorg.libX11
+    xorg.libXext
+    xorg.libXi
+    xorg.libXcursor
+    xorg.libXfixes
+    xorg.libXrandr
+    xorg.libXrender
+    xorg.libXtst
+    stdenv.cc.cc.lib
+  ];
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "mages";
@@ -41,7 +64,8 @@ pkgs.stdenvNoCC.mkDerivation {
 
     mkdir -p "$out/libexec/mages"
     cp -r . "$out/libexec/mages/"
-    makeWrapper "$out/libexec/mages/AppRun" "$out/bin/mages"
+    makeWrapper "$out/libexec/mages/AppRun" "$out/bin/mages" \
+      --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibraries}"
 
     install -Dm644 io.github.mlm_games.mages.desktop \
       "$out/share/applications/io.github.mlm_games.mages.desktop"
