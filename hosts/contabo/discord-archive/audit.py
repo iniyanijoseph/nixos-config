@@ -68,7 +68,8 @@ def main():
         status("WAL bytes", wal.stat().st_size)
         status("WAL modification age (seconds)", age_seconds(wal.stat()))
     try:
-        spec = importlib.util.spec_from_file_location("discord_scope", HERE / "scope.py")
+        scope_path = Path(os.environ.get("CONTABO_DISCORD_SCOPE_PATH", str(HERE / "scope.py")))
+        spec = importlib.util.spec_from_file_location("discord_scope", scope_path)
         if spec is None or spec.loader is None:
             raise RuntimeError("Scope helper not found")
         scope = importlib.util.module_from_spec(spec)
