@@ -7,6 +7,71 @@ Current services remain as they are until each group below passes an
 independent preflight, an offsite backup, a dry build and a rollback test.
 Run `observe.fish` first and review its sanitized report.
 
+## Execution contract
+
+The requested end state is **all agreed services running**, not simply
+staged. Work is divided into guarded deployments because it requires account
+authorization, bridge registrations, email DNS and histories that cannot be
+derived from code.
+
+No future NixOS switch or bulk metadata write should silently erase state.
+Every step has a preflight, backup, application, health check and rollback.
+A service is **complete** only when both its technical health and user-facing
+data/feature checks pass.
+
+### Phase A: repair photos before anything destructive
+
+1. `nix run ./hosts/contabo#contabo-photo-audit` compares deterministic
+   samples of original Google sidecar capture times/GPS with photo EXIF
+   and filesystem mtime. It never mutates the library.
+2. Diagnose whether the discrepancy is Nextcloud Files mtime, EXIF missing
+   or wrong, Takeout sidecars not paired, timezone, or Memories index.
+3. Implement appropriate **reviewed and reversible repair** on sample
+   photos, based on output, avoiding damage to already-correct originals.
+4. Re-scan Nextcloud's filecache and force reindex the scoped Memories path
+   only after source metadata is corrected, then verify timeline and map.
+5. Preserve Takeout and 15 GB quarantine until recovery is tested and
+   user separately approves cleanup.
+
+### Phase B: activate Google replacements and ensure recovery
+
+- Audit live Nextcloud app list and DAV endpoints before enabling
+  `contabo.googleSuite.enable` (Calendar, Contacts, Tasks). An existing
+  stateful copy of these apps may need a safe migration; don't install a
+  duplicate from Nix without checking. Memories remains stateful.
+- Test Calendar event create/edit/sync, Contacts card create/edit/sync,
+  and Tasks completion/sync from a client.
+- Verify HTTPS, Redis, database, offsite snapshots, isolated restore and
+  photo upload from phone; avoid re-pairing already working WhatsApp.
+
+### Phase C: Discord historical import and live bridge
+
+- Resolve authenticated guild access and record unobservable thread scopes.
+  Preserve all 893,157 selected-scope messages already archived; don't
+  bypass unsupported personal-account automation controls.
+- Implement/test native Matrix historical import, existing-DM integration,
+  on-disk media acquisition/limitations, author/reply/portal mapping and
+  per-room gap-free live cutover. Use a separate staging environment first.
+- Only after verified recovery, delete duplicate archive by separate approval.
+
+### Phase D: Slack / Google Messages SMS-RCS / mail
+
+- One identity and registration at a time; test login/history/E2EE and
+  inbound/outbound flows before moving to the next.
+- Keep traditional email client support and existing inboxes. Matrimail
+  is experimental; decide whether to implement or use forwarding. Stalwart
+  requires deliverability, anti-abuse and DNS verification before mail ports
+  are exposed.
+- Any phone login, OAuth approval or account pairing requires user action
+  and cannot be manufactured by NixOS.
+
+### Phase E: fully declarative and recovered steady state
+
+- Pinned flake, Nix services, persistent bridge state, log retention,
+  offsite backups, isolated restore proof, concise operator runbook.
+- Remove one-time monitoring and migration jobs when they are no longer
+  needed. No redundant archive after successful cutover and recovery.
+
 ## 1. Base operating system and recovery (running)
 
 - Pinned Contabo-specific NixOS flake, distinct from desktop configuration.
