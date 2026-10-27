@@ -23,6 +23,31 @@
         config.permittedInsecurePackages = [ "olm-3.2.16" ];
       };
     in {
+    # Syntax-only tests: they do not run audits, migrations or monitoring.
+    # Nix flake check builds these checks using the pinned Nixpkgs inputs.
+    checks.x86_64-linux.contabo-observe-fish-syntax =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "contabo-observe-fish-syntax" { } ''
+        ${pkgs.fish}/bin/fish -n ${./observe.fish}
+        touch "$out"
+      '';
+
+    checks.x86_64-linux.contabo-migration-python-syntax =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "contabo-migration-python-syntax" { } ''
+        ${pkgs.python3}/bin/python3 -c 'import ast, pathlib
+for path in [
+    "${./migration-queue.py}",
+    "${./matrix-commands.py}",
+    "${./matrix-periodic-status.py}",
+    "${./matrix-alert.py}",
+    "${./discord-archive/scope.py}",
+]:
+    ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path)
+'
+        touch "$out"
+      '';
+
     devShells.x86_64-linux.email-bridge = emailPkgs.mkShell {
       packages = [
         emailPkgs.go
