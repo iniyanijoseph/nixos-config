@@ -33,6 +33,14 @@
         exec ${pkgs.python3}/bin/python3 ${./photo-metadata-audit.py} "$@"
       '';
 
+    checks.x86_64-linux.contabo-photo-audit-unit-tests =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "contabo-photo-audit-unit-tests" { } ''
+        export PYTHONDONTWRITEBYTECODE=1
+        ${pkgs.python3}/bin/python3 ${./test_photo_metadata_audit.py}
+        touch "$out"
+      '';
+
     # Scoped, sanitized read-only collector/archive inspector. This may
     # realize a pinned Python executable in /nix/store, but it does not
     # write to any application directory, database, Matrix room, or archive.
