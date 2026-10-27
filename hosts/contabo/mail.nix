@@ -98,7 +98,11 @@ in
     # Share only this ACME certificate with Stalwart and Nginx.
     # NixOS checks that every consuming service belongs to the cert group.
     users.groups.mail-tls = { };
-    security.acme.certs.${host}.group = "mail-tls";
+    security.acme.certs.${host} = {
+      group = "mail-tls";
+      # Reload after certificate renewal so Stalwart re-reads its key.
+      postRun = "systemctl try-restart stalwart.service";
+    };
     systemd.services.stalwart.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
     systemd.services.nginx.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
     systemd.services.nginx-config-reload.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
@@ -107,7 +111,6 @@ in
 
     # The ACME cert is already obtained by the nginx host. On renewal, reload
     # the mail service so Stalwart re-reads the certificate files.
-    security.acme.certs.${host}.postRun = "systemctl try-restart stalwart.service";
     systemd.services.stalwart.after = [ "acme-${host}.service" ];
   };
 }

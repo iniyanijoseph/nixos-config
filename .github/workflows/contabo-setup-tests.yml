@@ -1,0 +1,23 @@
+name: Contabo setup runner checks
+on:
+  push:
+    paths:
+      - 'hosts/contabo/finish-setup*'
+      - 'hosts/contabo/test_finish_setup.py'
+      - 'hosts/contabo/photo-mtime-repair.py'
+      - 'hosts/contabo/flake.nix'
+      - 'hosts/contabo/flake.lock'
+      - '.github/workflows/contabo-setup-tests.yml'
+  workflow_dispatch:
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Build pinned runner and offline checks; never run production setup
+        run: >-
+          nix build --no-link
+          ./hosts/contabo#contabo-finish-setup
+          ./hosts/contabo#checks.x86_64-linux.contabo-finish-setup-tests
+          ./hosts/contabo#checks.x86_64-linux.contabo-photo-mtime-repair-tests

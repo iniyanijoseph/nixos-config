@@ -1,5 +1,47 @@
 # Contabo operations and reproducibility
 
+## Single setup entry point
+
+After fetching current `main`, run:
+
+```fish
+sudo bash /etc/nixos/hosts/contabo/finish-setup.sh
+```
+
+This **applies changes**, unlike `setup-phase1.fish`. It starts a pinned
+systemd worker which survives SSH disconnects and resumes on reboot. Run
+the same command again after resolving a failure; it rechecks actual state
+rather than trusting old success checkpoints. It never switches NixOS.
+
+Implemented automation checks services, disk space and idle migration jobs,
+verifies a fresh R2 snapshot, audits all photos, repairs eligible Files mtimes
+in a journaled 20-file pilot followed by the remaining eligible files,
+rescans the scoped cache, enables/installs Calendar, Contacts and Tasks using
+the existing stateful app store, and inventories the Discord archive.
+Enabled apps are not upgraded. EXIF, GPS, Takeout and duplicate quarantine
+are preserved. Conflicting embedded dates block mtime repairs; other source
+metadata exceptions remain explicit blockers.
+
+**Every phase is not yet executable.** The native Discord importer, bridge
+provisioning/pairing, Stalwart/Matrimail commissioning, declarative app migration,
+isolated recovery and client acceptance remain listed as incomplete. The
+worker exits nonzero while these remain; a failed unit can mean an unfinished
+implementation/acceptance item. Read the summary to identify what remains.
+
+```fish
+sudo bash /etc/nixos/hosts/contabo/finish-setup.sh --status
+```
+
+The root-only summary, JSON status, log, audit and version inventory live in
+`/var/lib/migration-queue/finish-setup/` and are covered by the next migration
+state backup. Detailed logs may contain private paths; do not publish them.
+Closing the viewer leaves the worker running. To prevent future boot runs
+after retiring setup, use `sudo systemctl disable contabo-finish-setup.service`;
+this does not interrupt a running repair.
+
+The first run builds its pinned closure before starting the worker. Keep SSH
+connected until it prints that setup is running under systemd.
+
 **One-command read-only inventory:** `sudo /run/current-system/sw/bin/fish /etc/nixos/hosts/contabo/observe.fish` (after pulling the reviewed Git commit). It prints sanitized state only; no secret values or private message bodies. See [SETUP-PLAN.md](./SETUP-PLAN.md) for the full service target and phased acceptance criteria.
 
 This is the **current** operational index for the NixOS 26.05 VPS.
