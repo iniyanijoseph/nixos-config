@@ -2,6 +2,7 @@
 {
   home.packages = with pkgs; [
     slack
+    (import ./mages.nix { inherit pkgs; })
   ];
 
   # Ripcord is a single non-Electron Qt client that covers Discord and

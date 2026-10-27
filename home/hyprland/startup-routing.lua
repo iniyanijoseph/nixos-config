@@ -3,9 +3,9 @@
 -- does not affect ordinary window placement later in the session.
 
 local firefoxClass = "^(firefox|Firefox)$"
-local cinnyClass = "^(cinny|Cinny|cinny-desktop|in\\.cinny\\.app)$"
+local magesClass = "^(Mages|mages|io\\.github\\.mlm_games\\.mages|org\\.mlm\\.mages)$"
 
-local function cinnyRule(name, match)
+local function magesRule(name, match)
     hl.window_rule({
         name = name,
         match = match,
@@ -20,11 +20,10 @@ local function cinnyRule(name, match)
 end
 
 pcall(function()
-    -- cinny-desktop is included explicitly because Tauri/WebKit builds can
-    -- expose either the product name, binary name, or application identifier
-    -- as the initial Wayland class/app-id.
-    cinnyRule("cinny-workspace-fallback", { class = cinnyClass })
-    cinnyRule("cinny-title-fallback", { title = "^Cinny$" })
+    -- Compose/JVM may expose either the product name or desktop app-id.
+    -- Match the window title as a fallback if its class differs.
+    magesRule("mages-workspace-fallback", { class = magesClass })
+    magesRule("mages-title-fallback", { title = "^Mages$" })
 
     -- Static fast-path for a restored Firefox window whose initial selected
     -- tab is already YouTube Music.
@@ -69,9 +68,9 @@ pcall(hl.on, "window.title", routeYouTubeMusicWindow)
 pcall(hl.on, "hyprland.start", function()
     startupMusicRouting = true
 
-    -- Do not depend on Cinny's restored state or class matching for its initial
-    -- placement: ask Hyprland to launch the process directly on workspace 1.
-    pcall(hl.exec_cmd, "cinny", { workspace = "1 silent" })
+    -- Launch the Matrix client on workspace 1 even if the JVM window class
+    -- changes between versions.
+    pcall(hl.exec_cmd, "mages", { workspace = "1 silent" })
 
     startupMusicTimer = hl.timer(function()
         startupMusicRouting = false

@@ -90,16 +90,11 @@ pcall(function()
     })
 
     hl.window_rule({
-        name = "cinny-workspace-tiled",
-        match = { class = "^(cinny|Cinny|in\\.cinny\\.app)$" },
+        name = "mages-workspace-tiled",
+        match = { class = "^(Mages|mages|io\\.github\\.mlm_games\\.mages|org\\.mlm\\.mages)$" },
         workspace = "1",
         float = false,
         tile = true,
-
-        -- Cinny/Tauri can restore its previous maximized/fullscreen state.
-        -- Start with neither compositor nor client fullscreen state set, and
-        -- ignore those startup requests. Explicit user fullscreen/maximize
-        -- commands still work after the window has opened.
         fullscreen = false,
         maximize = false,
         fullscreen_state = "0 0",

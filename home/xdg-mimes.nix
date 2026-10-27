@@ -3,6 +3,7 @@ with lib;
 let
   defaultApps = {
     browser = [ "firefox.desktop" ];
+    matrix = [ "io.github.mlm_games.mages.desktop" ];
     text = [ "helix.desktop" ];
     image = [ "imv-dir.desktop" ];
     audio = [ "mpv.desktop" ];
@@ -15,6 +16,7 @@ let
   };
 
   mimeMap = {
+    matrix = [ "x-scheme-handler/matrix" "x-scheme-handler/mages" ];
     text = [ "text/plain" ];
     image = [
       "image/bmp"
