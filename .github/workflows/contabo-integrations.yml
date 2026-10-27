@@ -1,0 +1,14 @@
+name: Contabo integration builds
+on:
+  push:
+    paths:
+      - 'hosts/contabo/**'
+      - '.github/workflows/contabo-integrations.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-commission-tests ./hosts/contabo#contabo-discord-native ./hosts/contabo#contabo-finish-setup

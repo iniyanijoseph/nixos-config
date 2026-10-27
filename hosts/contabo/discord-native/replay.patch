@@ -1,0 +1,66 @@
+--- a/backfill.go
++++ b/backfill.go
+@@ -5,6 +5,7 @@
+ 	"crypto/sha256"
+ 	"encoding/base64"
+ 	"fmt"
++ "os"
+ 	"sort"
+ 
+ 	"github.com/bwmarrin/discordgo"
+@@ -27,6 +28,9 @@
+ 		panic("forwardBackfillInitial() called without locking forwardBackfillLock")
+ 	}
+ 
++	if os.Getenv("CONTABO_DISCORD_ARCHIVE") != "" {
++ if err := portal.replayContaboArchive(source, thread); err != nil { panic(err) }; return
++ }
+ 	limit := portal.bridge.Config.Bridge.Backfill.Limits.Initial.Channel
+ 	if portal.GuildID == "" {
+ 		limit = portal.bridge.Config.Bridge.Backfill.Limits.Initial.DM
+--- a/portal.go
++++ b/portal.go
+@@ -11,6 +11,7 @@
+ 	"fmt"
+ 	"io"
+ 	"net/http"
++ "os"
+ 	"reflect"
+ 	"regexp"
+ 	"slices"
+@@ -683,12 +684,13 @@
+ 		// Only set mentions for first event, but keep empty object for rest
+ 		mentions = &event.Mentions{}
+ 
+-		resp, err := portal.sendMatrixMessage(intent, part.Type, part.Content, part.Extra, ts.UnixMilli())
++		resp, err := portal.sendMatrixMessage(intent, part.Type, part.Content, part.Extra, ts.UnixMilli(), fmt.Sprintf("discord_%s_%d",msg.ID,i))
+ 		if err != nil {
+ 			log.Err(err).
+ 				Int("part_index", i).
+ 				Str("attachment_id", part.AttachmentID).
+ 				Msg("Failed to send part of message to Matrix")
++            if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" { panic(err) }
+ 			continue
+ 		}
+ 		lastThreadEvent = resp.EventID
+@@ -1081,7 +1083,7 @@
+ 	return event.EventEncrypted, nil
+ }
+ 
+-func (portal *Portal) sendMatrixMessage(intent *appservice.IntentAPI, eventType event.Type, content *event.MessageEventContent, extraContent map[string]interface{}, timestamp int64) (*mautrix.RespSendEvent, error) {
++func (portal *Portal) sendMatrixMessage(intent *appservice.IntentAPI, eventType event.Type, content *event.MessageEventContent, extraContent map[string]interface{}, timestamp int64, transactionID ...string) (*mautrix.RespSendEvent, error) {
+ 	wrappedContent := event.Content{Parsed: content, Raw: extraContent}
+ 	var err error
+ 	eventType, err = portal.encrypt(intent, &wrappedContent, eventType)
+@@ -1093,6 +1095,11 @@
+ 	if timestamp == 0 {
+ 		return intent.SendMessageEvent(portal.MXID, eventType, &wrappedContent)
+ 	} else {
++        if len(transactionID)>0 {
++            if err := intent.EnsureJoined(portal.MXID); err != nil { return nil,err }
++            intent.AddDoublePuppetValue(&wrappedContent)
++            return intent.Client.SendMessageEvent(portal.MXID,eventType,&wrappedContent,mautrix.ReqSendEvent{Timestamp:timestamp,TransactionID:transactionID[0]})
++        }
+ 		return intent.SendMassagedMessageEvent(portal.MXID, eventType, &wrappedContent, timestamp)
+ 	}
+ }

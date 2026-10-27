@@ -199,6 +199,12 @@ class Setup:
         command(['contabo-discord-audit'])
         return 'Read-only archive inventory finished; this is not a historical Matrix import'
 
+    def integrations(self):
+        module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        detail = module.commission()
+        self.record('Integration account pairing', 'blocked', detail)
+        return 'Slack, Google Messages and Matrimail services deployed; account acceptance separate'
+
     def run(self):
         # Reset stale RUNNING records after interruption; recheck actual state.
         self.record('Overall commissioning', 'blocked', 'Waiting for all deployment and acceptance checks')
@@ -208,6 +214,7 @@ class Setup:
         if backed_up:
             self.step('Photo Files dates', self.photos)
             self.step('Nextcloud apps', self.apps)
+            self.step('Messaging service deployment', self.integrations)
         else:
             self.record('Photo Files dates', 'blocked', 'Fresh backup prerequisite failed')
             self.record('Nextcloud apps', 'blocked', 'Fresh backup prerequisite failed')
@@ -218,8 +225,6 @@ class Setup:
         for name, detail in (
             ('Discord history and live cutover',
              'Bridge-native importer and mapping adapter are not implemented; archive preserved'),
-            ('SMS/RCS and Slack',
-             'Bridge provisioning, history checks and phone/workspace pairing remain; follows Discord cutover'),
             ('Stalwart and Matrimail',
              'Mailbox/bridge deployment, DNS, forwarding and external delivery tests remain'),
             ('Isolated recovery',

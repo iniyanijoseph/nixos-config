@@ -14,6 +14,7 @@
     ./monitoring.nix
     ./google-suite.nix
     ./finish-setup.nix
+    ./integrations.nix
     ./shell.nix
   ];
 
