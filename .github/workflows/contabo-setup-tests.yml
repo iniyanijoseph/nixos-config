@@ -24,4 +24,4 @@ jobs:
           ./hosts/contabo#checks.x86_64-linux.contabo-finish-setup-tests
           ./hosts/contabo#checks.x86_64-linux.contabo-photo-mtime-repair-tests
       - name: Verify runtime launch and reboot resume on NixOS
-        run: nix build --no-link ./hosts/contabo#checks.x86_64-linux.contabo-setup-nixos-test
+        run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-setup-nixos-test

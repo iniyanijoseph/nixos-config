@@ -13,7 +13,7 @@ let
   common = {
     networking.hostName = "contabo";
     environment.systemPackages = [ pkgs.git pkgs.bash pkgs.util-linux nixFixture ];
-    virtualisation.memorySize = 768;
+    virtualisation.memorySize = 1024;
   };
 in pkgs.testers.runNixOSTest {
   name = "contabo-setup-runtime-and-boot-resume";
