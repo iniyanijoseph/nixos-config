@@ -12,3 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
       - run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-commission-tests ./hosts/contabo#contabo-discord-native ./hosts/contabo#contabo-finish-setup
+      - name: Compile pinned Matrimail and verify its generated config
+        run: |
+          bash hosts/contabo/email-bridge/build.sh
+          export CONTABO_MATRIMAIL_BINARY="$HOME/.local/share/matrimail-build/matrimail"
+          nix develop ./hosts/contabo#email-bridge --command "$CONTABO_MATRIMAIL_BINARY" -e -c /tmp/matrimail-example.yaml

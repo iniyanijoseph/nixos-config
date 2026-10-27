@@ -92,6 +92,8 @@ def build(enabled, mail=None, discord=None, pilot=None):
     def installed(unit):
         return subprocess.run(['systemctl','is-enabled','--quiet',unit],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if enabled is None:
+        enabled = all(installed(unit) for unit in ('mautrix-gmessages','mautrix-slack','matrimail'))
     if mail is None:
         mail = installed('stalwart.service')
     if discord is None:
@@ -126,6 +128,7 @@ def discord_coverage(archive, mapping, channels):
 
 
 def commission_discord():
+    prepare_identities()
     directory=Path('/var/lib/mautrix-discord-native')
     directory.mkdir(mode=0o750,exist_ok=True)
     owner=pwd.getpwnam('mautrix-discord-native')
@@ -158,7 +161,7 @@ def commission_discord():
         data['bridge']['provisioning']['prefix']='/_matrix/provision'
         config.write_text(yaml.safe_dump(data,sort_keys=False))
         os.chmod(config,0o640);os.chown(config,owner.pw_uid,owner.pw_gid)
-    activate(build(True,discord=True),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
+    activate(build(None,discord=True),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
     data=yaml.safe_load(config.read_text())
     token=data['bridge']['provisioning']['shared_secret']
     base='http://127.0.0.1:29322'+data['bridge']['provisioning']['prefix']
@@ -178,19 +181,27 @@ def commission_discord():
                     raise
                 time.sleep(1)
     ping=api('/v1/ping')
+    def progress(message,in_progress):
+        target=STATE/'discord-progress.json'
+        temporary=target.with_suffix('.tmp')
+        with temporary.open('w') as stream:
+            json.dump({'import_in_progress':in_progress},stream)
+            stream.flush();os.fsync(stream.fileno())
+        temporary.replace(target)
+        return message
     discord=ping.get('Discord',ping.get('discord',{}))
     if not discord.get('logged_in') or not discord.get('connected'):
-        return 'ACTION REQUIRED: log in with @discord-nativebot:iniyanjoseph.com. Only one pilot DM will import initially.'
+        return progress('ACTION REQUIRED: log in with @discord-nativebot:iniyanjoseph.com. Only one pilot DM will import initially.',True)
     result=api('/v1/contabo/archive','POST')
     pilot=directory/'pilot-channel'
     if not (STATE/'discord-pilot-verified.json').exists():
         if not pilot.exists():
-            return 'Discord connected; no accessible archived pilot DM could be started.'
+            return progress('Discord connected; no accessible archived pilot DM could be started.',True)
         expected,found=discord_coverage(snapshot,directory/'bridge.db',[pilot.read_text().strip()])
         if not expected or found!=expected:
-            return f'Discord pilot import running or blocked: mapped {found}/{expected}. Archive retained; full import not enabled.'
+            return progress(f'Discord pilot import running or blocked: mapped {found}/{expected}. Archive retained; full import not enabled.',True)
         (STATE/'discord-pilot-verified.json').write_text(json.dumps({'expected':expected,'mapped':found}))
-        activate(build(True,discord=True,pilot=False),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
+        activate(build(None,discord=True,pilot=False),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
         api('/v1/guilds/804408079940583475','POST',{'auto_create_channels':True})
         result=api('/v1/contabo/archive','POST')
     source=sqlite3.connect('file:'+str(snapshot)+'?mode=ro',uri=True)
@@ -199,9 +210,9 @@ def commission_discord():
     finally:
         source.close()
     expected,found=discord_coverage(snapshot,directory/'bridge.db',channels)
-    return (f'Discord connected; native mappings {found}/{expected}; inaccessible source/portal attempts '
+    return progress(f'Discord connected; native mappings {found}/{expected}; inaccessible source/portal attempts '
             f"{result.get('source_or_portal_failures',0)}. Active-thread 403 remains a known source gap. "
-            'Client send/receive, replies, encryption recovery and isolated restore remain unverified.')
+            'Client send/receive, replies, encryption recovery and isolated restore remain unverified.',found!=expected)
     return run(['nix', 'build', '--impure', '--expr', expression,
                 '--out-link', STATE / ('connected' if enabled else 'staging'),
                 '--print-out-paths'], capture=True).strip()
@@ -227,11 +238,7 @@ def commission():
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
     # First install only disabled service identities. Existing production
     # services retain their data and the WhatsApp linked-device session.
-    try:
-        for name in ('mautrix-gmessages', 'mautrix-slack', 'matrimail', 'mautrix-discord-native'):
-            pwd.getpwnam(name)
-    except KeyError:
-        activate(build(False), ['matrix-synapse', 'nginx', 'mautrix-whatsapp', 'postgresql'])
+    prepare_identities()
     for network, port in [('gmessages', 29320), ('slack', 29321)]:
         binary = os.environ['CONTABO_' + network.upper() + '_BINARY']
         provision('mautrix-' + network, binary, port, Path('/var/lib/mautrix-' + network))
@@ -261,6 +268,15 @@ def commission():
             'authenticate each Slack workspace with @slackbot:iniyanjoseph.com, '
             'and use the Matrimail bot login flow for the existing hosted inbox. '
             'Account login, history coverage and send/receive remain unverified.')
+
+
+def prepare_identities():
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        for name in ('mautrix-gmessages','mautrix-slack','matrimail','mautrix-discord-native'):
+            pwd.getpwnam(name)
+    except KeyError:
+        activate(build(None), ['matrix-synapse','nginx','mautrix-whatsapp','postgresql'])
 
 
 def secret_file(path):

@@ -6,6 +6,8 @@ import unittest
 from unittest.mock import patch
 import yaml
 import subprocess
+import sqlite3
+import json
 
 spec = importlib.util.spec_from_file_location('commission', os.environ.get('CONTABO_COMMISSION_SCRIPT',
     str(Path(__file__).with_name('commission-integrations.py'))))
@@ -15,7 +17,12 @@ spec.loader.exec_module(c)
 class Tests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('CONTABO_GMESSAGES_BINARY'), 'Pinned bridge binaries required')
     def test_real_templates_and_registration_generation(self):
-        for network, port in [('gmessages',29320),('slack',29321)]:
+        networks=[('gmessages',29320),('slack',29321)]
+        if os.environ.get('CONTABO_DISCORD_BINARY'):
+            networks.append(('discord',29322))
+        if os.environ.get('CONTABO_MATRIMAIL_BINARY'):
+            networks.append(('matrimail',29319))
+        for network, port in networks:
             binary = os.environ['CONTABO_' + network.upper() + '_BINARY']
             with tempfile.TemporaryDirectory() as d:
                 cfg, reg = Path(d)/'config.yaml', Path(d)/'registration.yaml'
@@ -69,5 +76,21 @@ class Tests(unittest.TestCase):
             with self.assertRaises(RuntimeError): c.activate('/new-generation', ['fixture'])
         self.assertIn(['nix-env','--profile','/nix/var/nix/profiles/system','--set','/old-generation'], calls)
         self.assertEqual(calls[-1], ['/old-generation/bin/switch-to-configuration','switch'])
+
+    def test_archive_mapping_audit_detects_missing_messages(self):
+        with tempfile.TemporaryDirectory() as d:
+            source,mapping=Path(d)/'source.sqlite',Path(d)/'bridge.sqlite'
+            with sqlite3.connect(source) as db:
+                db.execute('CREATE TABLE messages(channel_id TEXT,id TEXT,json TEXT)')
+                db.executemany('INSERT INTO messages VALUES(?,?,?)',[
+                    ('123','100',json.dumps({'type':0})),('123','101',json.dumps({'type':0})),
+                    ('123','102',json.dumps({'type':6})),('other','103',json.dumps({'type':0}))])
+            with sqlite3.connect(mapping) as db:
+                db.execute('CREATE TABLE message(dc_chan_id TEXT,dcid TEXT)')
+                db.executemany('INSERT INTO message VALUES(?,?)',[('123','100'),('123','100'),('other','101')])
+            self.assertEqual(c.discord_coverage(source,mapping,['123']),(2,1))
+            with sqlite3.connect(mapping) as db:
+                db.execute("INSERT INTO message VALUES('123','101')")
+            self.assertEqual(c.discord_coverage(source,mapping,['123']),(2,2))
 
 if __name__=='__main__': unittest.main()

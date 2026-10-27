@@ -27,6 +27,7 @@
       let pkgs = import nixpkgs { inherit system; };
       in pkgs.runCommand "commission-tests" {} ''
         export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
+        export CONTABO_DISCORD_BINARY="${self.packages.${system}.contabo-discord-native}/bin/mautrix-discord"
         export PYTHONDONTWRITEBYTECODE=1
         export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
         export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"

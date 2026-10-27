@@ -67,7 +67,7 @@
  var relayClient, _ = discordgo.New("")
  
  type Portal struct {
-+ contaboArchiveReady bool
++ contaboArchiveReady map[string]bool
  	*database.Portal
  
  	Parent *Portal
@@ -80,7 +80,30 @@
  	intent := portal.MainIntent()
  	if err := intent.EnsureRegistered(); err != nil {
  		return err
-@@ -580,6 +584,7 @@
+@@ -480,6 +484,13 @@
+ 		})
+ 	}
+ 
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" {
++        initialState=append(initialState,&event.Event{Type:event.StatePowerLevels,Content:event.Content{Raw:map[string]interface{}{
++            "users":map[string]int{string(intent.UserID):100,string(portal.bridge.Bot.UserID):100,"@me:iniyanjoseph.com":-1},
++            "users_default":0,"events_default":0,"state_default":50,"invite":50,"kick":50,"ban":50,"redact":50,
++        }}})
++    }
++
+ 	req := &mautrix.ReqCreateRoom{
+ 		Visibility:      "private",
+ 		Name:            portal.Name,
+@@ -491,6 +502,8 @@
+ 		CreationContent: creationContent,
+ 		RoomVersion:     "11",
+ 	}
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" {req.Topic="Discord history is importing. Sending is paused until import and catch-up finish."}
++
+ 	if !portal.shouldSetDMRoomMetadata() && !portal.FriendNick {
+ 		req.Name = ""
+ 	}
+@@ -580,6 +593,7 @@
  	}
  	portal.forwardBackfillLock.Lock()
  	defer portal.forwardBackfillLock.Unlock()
@@ -88,7 +111,7 @@
  
  	switch convertedMsg := msg.msg.(type) {
  	case *discordgo.MessageCreate:
-@@ -661,6 +666,16 @@
+@@ -661,6 +675,16 @@
  
  	ts, _ := discordgo.SnowflakeTimestamp(msg.ID)
  	parts := portal.convertDiscordMessage(ctx, puppet, intent, msg)
@@ -105,7 +128,7 @@
  	dbParts := make([]database.MessagePart, 0, len(parts))
  	eventIDs := zerolog.Dict()
  	for i, part := range parts {
-@@ -683,12 +698,13 @@
+@@ -683,12 +707,13 @@
  		// Only set mentions for first event, but keep empty object for rest
  		mentions = &event.Mentions{}
  
@@ -120,7 +143,7 @@
  			continue
  		}
  		lastThreadEvent = resp.EventID
-@@ -1081,7 +1097,7 @@
+@@ -1081,7 +1106,7 @@
  	return event.EventEncrypted, nil
  }
  
@@ -129,7 +152,7 @@
  	wrappedContent := event.Content{Parsed: content, Raw: extraContent}
  	var err error
  	eventType, err = portal.encrypt(intent, &wrappedContent, eventType)
-@@ -1093,6 +1109,11 @@
+@@ -1093,6 +1118,11 @@
  	if timestamp == 0 {
  		return intent.SendMessageEvent(portal.MXID, eventType, &wrappedContent)
  	} else {

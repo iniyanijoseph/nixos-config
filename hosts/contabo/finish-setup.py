@@ -64,6 +64,7 @@ def parse_counts(output):
 class Setup:
     def __init__(self):
         self.results = {}
+        self.photos_deferred = True
         self.repair = load_script('mtime_repair', os.environ['CONTABO_MTIME_REPAIR_SCRIPT'])
         self.archive = load_script('archive_audit', os.environ['CONTABO_DISCORD_AUDIT_SCRIPT'])
         self.audit = load_script('photo_audit', os.environ['CONTABO_PHOTO_AUDIT_SCRIPT'])
@@ -215,6 +216,7 @@ class Setup:
     def discord_native(self):
         module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
         self.record('Discord history and live cutover', 'blocked', module.commission_discord())
+        self.photos_deferred = json.loads((module.STATE/'discord-progress.json').read_text())['import_in_progress']
         self.backup()
         return 'Discord service deployed; import/pairing/coverage state is recorded separately'
 
@@ -225,11 +227,14 @@ class Setup:
             return 2
         backed_up = self.step('Offsite backup', self.backup)
         if backed_up:
-            self.step('Photo Files dates', self.photos)
-            self.step('Nextcloud apps', self.apps)
+            self.step('Discord native deployment', self.discord_native)
             if self.step('Messaging service deployment', self.integrations):
-                self.step('Discord native deployment', self.discord_native)
                 self.step('Mail service deployment', self.mail)
+            self.step('Nextcloud apps', self.apps)
+            if self.photos_deferred:
+                self.record('Photo Files dates','deferred','Discord/messaging have priority; waiting for the archive import')
+            else:
+                self.step('Photo Files dates', self.photos)
         else:
             self.record('Photo Files dates', 'blocked', 'Fresh backup prerequisite failed')
             self.record('Nextcloud apps', 'blocked', 'Fresh backup prerequisite failed')
@@ -241,7 +246,7 @@ class Setup:
             ('Isolated recovery',
              'Repository check passed only if recorded above; isolated application restore still needed'),
             ('Client acceptance',
-             'Verify photo timeline/map, phone upload, DAV sync, WhatsApp and encryption recovery in clients'),
+             'Verify Discord send/receive and replies, Slack, SMS/RCS, mail, WhatsApp and encryption recovery; photos are lower priority'),
             ('Declarative app migration',
              'Google apps retain stateful installation; audited migration to pinned Nix apps remains'),
         ):

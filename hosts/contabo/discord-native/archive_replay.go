@@ -13,6 +13,7 @@ import (
  "net/http"
 
  "github.com/bwmarrin/discordgo"
+ "maunium.net/go/mautrix/event"
 )
 
 var contaboReplayMutex sync.Mutex
@@ -67,10 +68,24 @@ func (p *ProvisioningAPI) contaboStartArchive(w http.ResponseWriter,r *http.Requ
 // Called only while the portal's native forward-backfill lock is held. The
 // same gate covers fresh rooms, process restart and incoming live traffic.
 func (portal *Portal) ensureContaboArchive(source *User, thread *Thread) {
- if os.Getenv("CONTABO_DISCORD_ARCHIVE")=="" || portal.contaboArchiveReady { return }
+ if os.Getenv("CONTABO_DISCORD_ARCHIVE")=="" { return }
+ channel:=portal.Key.ChannelID
+ if thread!=nil {channel=thread.ID}
+ if portal.contaboArchiveReady==nil {portal.contaboArchiveReady=make(map[string]bool)}
+ if portal.contaboArchiveReady[channel] {return}
  contaboReplayMutex.Lock(); defer contaboReplayMutex.Unlock()
  if err:=portal.replayContaboArchive(source,thread); err!=nil { panic(err) }
- portal.contaboArchiveReady=true
+ if thread==nil {
+  intent:=portal.MainIntent()
+  var levels map[string]interface{}
+  if err:=intent.StateEvent(portal.MXID,event.StatePowerLevels,"",&levels);err!=nil {panic(err)}
+  if users,ok:=levels["users"].(map[string]interface{});ok && users["@me:iniyanjoseph.com"]==float64(-1) {
+   users["@me:iniyanjoseph.com"]=0
+   if _,err:=intent.SendStateEvent(portal.MXID,event.StatePowerLevels,"",levels);err!=nil {panic(err)}
+   if _,err:=intent.SendStateEvent(portal.MXID,event.StateTopic,"",map[string]string{"topic":portal.Topic});err!=nil {panic(err)}
+  }
+ }
+ portal.contaboArchiveReady[channel]=true
 }
 
 func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
@@ -108,8 +123,14 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
       return fmt.Errorf("existing nonempty room cannot accept older archive; fresh portal required")
      }
     }
+    // Takeout-time CDN signatures can expire before import. Refresh URLs via
+    // the authenticated message endpoint without replacing archived text or
+    // accepting a different attachment identity/size.
+    if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 {
+     if err:=contaboRefreshAttachments(source,msg);err!=nil {return fmt.Errorf("archived message %s: %w",msg.ID,err)}
+    }
     portal.handleDiscordMessageCreate(source,msg,thread)
-    if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 { return fmt.Errorf("archived message was not mapped; cutover refused") }
+    if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 { return fmt.Errorf("archived message %s was not mapped; cutover refused",msg.ID) }
    }
    after=msg.ID
   }
@@ -117,6 +138,23 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
  // The caller still holds the native forward-backfill lock. Fetch messages
  // since the frozen archive waterline before allowing queued live delivery.
  if after!="" { return portal.backfillUnlimitedMissed(portal.log,source,after,thread) }
+ return nil
+}
+
+func contaboRefreshAttachments(source *User,msg *discordgo.Message) error {
+ if len(msg.Attachments)==0 {return nil}
+ current,err:=source.Session.ChannelMessage(msg.ChannelID,msg.ID)
+ if err!=nil {return fmt.Errorf("archive attachment URL refresh failed: %w",err)}
+ if current.ID!=msg.ID || current.ChannelID!=msg.ChannelID {return fmt.Errorf("attachment refresh returned a different message")}
+ for _,old:=range msg.Attachments {
+  found:=false
+  for _,fresh:=range current.Attachments {
+   if fresh.ID==old.ID && fresh.Size==old.Size && fresh.URL!="" {
+    old.URL=fresh.URL;old.ProxyURL=fresh.ProxyURL;found=true;break
+   }
+  }
+  if !found {return fmt.Errorf("archived attachment no longer available; original archive retained")}
+ }
  return nil
 }
 
