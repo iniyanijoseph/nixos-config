@@ -5,6 +5,8 @@ No authentication, network calls, messages, attachments or private channel
 names are emitted. SQLite is opened mode=ro; do not use immutable=1 on a
 possibly active WAL database. This does not certify recoverable attachments.
 """
+import argparse
+from collections import Counter
 import importlib.util
 import os
 from pathlib import Path
@@ -52,7 +54,88 @@ def category(kind):
 def category_scan(name):
     return category(name) if name not in ("guilds",) else "Guild enumeration"
 
+def deep_audit(db, ids):
+    """Stream archived JSON without printing author IDs, bodies or URLs."""
+    print("DEEP AUDIT: scanning archived message metadata; no network or writes", flush=True)
+    counts = Counter()
+    message_types = Counter()
+    total_attachment_bytes = 0
+    for start in range(0, len(ids), 400):
+        batch = ids[start:start + 400]
+        if not batch:
+            continue
+        q = ",".join("?" for _ in batch)
+        cursor = db.execute(
+            f"SELECT json FROM messages WHERE channel_id IN ({q})", batch
+        )
+        for (raw,) in cursor:
+            counts["rows"] += 1
+            try:
+                obj = __import__("json").loads(raw)
+                if not isinstance(obj, dict):
+                    counts["invalid_json"] += 1
+                    continue
+            except (ValueError, TypeError):
+                counts["invalid_json"] += 1
+                continue
+            message_types[str(obj.get("type", "unspecified"))] += 1
+            if not isinstance(obj.get("author"), dict):
+                counts["missing_author"] += 1
+            if not isinstance(obj.get("content"), str) or not obj["content"]:
+                counts["empty_or_missing_content"] += 1
+            attachments = obj.get("attachments")
+            if attachments is not None and not isinstance(attachments, list):
+                counts["invalid_attachments_type"] += 1
+                attachments = []
+            if attachments:
+                counts["messages_with_attachment_metadata"] += 1
+                counts["attachment_references"] += len(attachments)
+                for a in attachments:
+                    if not isinstance(a, dict):
+                        counts["invalid_attachment_entries"] += 1
+                        continue
+                    size = a.get("size")
+                    if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+                        total_attachment_bytes += size
+                    if not a.get("url"):
+                        counts["attachment_missing_source_url"] += 1
+            for field, label in (
+                ("embeds", "messages_with_embeds"),
+                ("reactions", "messages_with_reactions"),
+                ("sticker_items", "messages_with_stickers"),
+            ):
+                value = obj.get(field)
+                if isinstance(value, list) and value:
+                    counts[label] += 1
+            if obj.get("edited_timestamp"):
+                counts["messages_with_edit_timestamp"] += 1
+            if obj.get("message_reference") or obj.get("referenced_message"):
+                counts["messages_with_reply_reference"] += 1
+            if counts["rows"] % 200000 == 0:
+                print(f"Deep scan progress: {counts['rows']} records", flush=True)
+    print("=== STORED SOURCE METADATA (NO TEXT OR MEDIA) ===")
+    for field in (
+        "rows", "invalid_json", "missing_author", "empty_or_missing_content",
+        "messages_with_attachment_metadata", "attachment_references",
+        "invalid_attachments_type", "invalid_attachment_entries",
+        "attachment_missing_source_url", "messages_with_embeds",
+        "messages_with_reactions", "messages_with_stickers",
+        "messages_with_edit_timestamp", "messages_with_reply_reference",
+    ):
+        print(f"{field}: {counts[field]}", flush=True)
+    print(f"Declared attachment bytes (not downloaded bytes): {total_attachment_bytes}", flush=True)
+    print("Source message type distribution: " +
+          ", ".join(f"{kind}={number}" for kind, number in
+                    sorted(message_types.items(), key=lambda item: item[0])), flush=True)
+    print("Attachment media present on disk: NOT VERIFIED", flush=True)
+    print("Messages converted to native Matrix events: NOT VERIFIED", flush=True)
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--deep", action="store_true",
+                        help="read every selected message JSON and report media/reply/edit aggregates")
+    args = parser.parse_args()
     status("Mode", "read-only, sanitized; no NixOS/Matrix/Discord changes")
     found = running_collectors()
     status("Collector processes", len(found))
@@ -130,6 +213,8 @@ def main():
                 status("ARCHIVE", "INCOMPLETE: do not import/cut over as complete")
             else:
                 status("ARCHIVE", "Known selected channels two-pass complete; discovery coverage still limited")
+            if args.deep:
+                deep_audit(db, ids)
             status("Matrix native historical import", "NOT VERIFIED")
             status("Media attachment parity", "NOT VERIFIED")
             return 0
