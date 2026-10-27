@@ -21,6 +21,11 @@ jobs:
                 contabo.mail.enable=lib.mkForce true;})
             ];}).config.system.build.toplevel.drvPath'
       - run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-commission-tests ./hosts/contabo#contabo-discord-native ./hosts/contabo#contabo-finish-setup
+  matrimail:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
       - name: Compile pinned Matrimail and verify configuration and registration
         run: |
           bash hosts/contabo/email-bridge/build.sh
