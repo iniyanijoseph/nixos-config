@@ -59,6 +59,7 @@
       in pkgs.runCommand "contabo-observe-fish-syntax" { } ''
         ${pkgs.fish}/bin/fish -n ${./observe.fish}
         ${pkgs.fish}/bin/fish -n ${./stop-transient-monitoring.fish}
+        ${pkgs.fish}/bin/fish -n ${./setup-phase1.fish}
         touch "$out"
       '';
 
