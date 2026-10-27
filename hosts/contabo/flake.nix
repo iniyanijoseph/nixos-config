@@ -37,6 +37,7 @@
       let pkgs = import nixpkgs { inherit system; };
       in pkgs.runCommand "contabo-photo-audit-unit-tests" { } ''
         export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_PHOTO_AUDIT_SCRIPT="${./photo-metadata-audit.py}"
         ${pkgs.python3}/bin/python3 ${./test_photo_metadata_audit.py}
         touch "$out"
       '';
