@@ -47,13 +47,23 @@ class Tests(unittest.TestCase):
             binary = os.environ['CONTABO_' + network.upper() + '_BINARY']
             with tempfile.TemporaryDirectory() as d:
                 cfg, reg = Path(d)/'config.yaml', Path(d)/'registration.yaml'
-                subprocess.run([binary,'-e','-c',str(cfg)],check=True,capture_output=True)
-                cfg.write_text(c.configure(cfg.read_text(),network,port,d))
-                subprocess.run([binary,'-g','-c',str(cfg),'-r',str(reg)],check=True,capture_output=True)
+                def cli(*args):
+                    result=subprocess.run([binary,*args],capture_output=True,text=True)
+                    self.assertEqual(result.returncode,0,f'{network} CLI failed: {result.stderr} {result.stdout}')
+                cli('-e','-c',str(cfg))
+                if network=='discord':
+                    original=cfg.read_bytes()
+                    retry=subprocess.run([binary,'-e','-c',str(cfg)],capture_output=True)
+                    self.assertNotEqual(retry.returncode,0)
+                    self.assertEqual(cfg.read_bytes(),original)
+                name='discord-native' if network=='discord' else network
+                cfg.write_text(c.configure(cfg.read_text(),name,port,d))
+                cli('-g','-c',str(cfg),'-r',str(reg))
                 registration=yaml.safe_load(reg.read_text())
                 self.assertEqual(registration['url'],f'http://127.0.0.1:{port}')
                 self.assertTrue(registration['as_token'])
                 self.assertTrue(registration['hs_token'])
+                self.assertEqual(registration['sender_localpart'],name+'bot')
 
     def test_generated_config_is_private_scoped_and_persistent(self):
         source = {'homeserver': {}, 'appservice': {'bot': {}}, 'database': {},
