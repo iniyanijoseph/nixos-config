@@ -191,6 +191,7 @@ def commission_discord():
                 raise RuntimeError('Discord archive snapshot failed integrity check')
         finally:
             source.close();destination.close()
+        validate_discord_snapshot(temp)
         os.chmod(temp,0o440);os.chown(temp,0,owner.pw_gid)
         temp.replace(snapshot)
     validate_discord_snapshot(snapshot)
