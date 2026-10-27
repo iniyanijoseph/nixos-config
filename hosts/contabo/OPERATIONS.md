@@ -1,5 +1,41 @@
 # Contabo operations and reproducibility
 
+## Integration implementation (draft; not full commissioning)
+
+The integration commissioner now generates the Slack, Google Messages and
+Matrimail configurations and registrations from their actual CLI templates.
+Private files remain under each service's `/var/lib` directory; existing
+credentials and encryption state are preserved. It builds an extended Contabo
+configuration with `contabo.integrations.enable = true`, switches the system
+profile, checks the services and rolls back the previous generation on failure.
+This phase **does switch NixOS**. The earlier photo-only runner did not.
+Keep using the commissioner for subsequent integration deployments: switching
+the baseline flake with the optional flags false disables those integrations.
+The selected generation persists across reboot.
+
+Pairing and actual send/receive checks remain separate from deployment:
+Google Messages requires phone approval, Slack requires each workspace login,
+and Matrimail requires its account login flow. The report gives bot addresses
+and marks these unverified; it does not claim account authentication from
+`systemctl is-active`. Existing WhatsApp pairing is preserved.
+
+The optional Stalwart phase requires DNS-only `mail.iniyanjoseph.com` pointing
+to this VPS. It retains or generates root-only administrator/mailbox secrets,
+activates the mail configuration and uses the version-0.15 principal API to
+provision the domain and mailbox. It does not change MX, forwarding or provider
+DNS. External delivery, PTR, SPF/DKIM/DMARC and standard-client acceptance
+remain required. No email is sent automatically by commissioning.
+
+The Discord package `contabo-discord-native` is an **experimental, disabled**
+fork. It streams source messages oldest first through the pinned bridge's
+converter and mapping layer, uses stable part transaction IDs and reads the
+SQLite source in a read-only transaction. It fails closed on missing mappings.
+Crash-resume, initial-room selection, media completeness and cutover still need
+integration verification. Do not enable it for the real archive yet. The old
+Discord bridge requires legacy libolm; its insecure-package exception is scoped
+to this experimental build, not globally enabled. No production Discord
+service is started by this draft.
+
 ## Single setup entry point
 
 After fetching current `main`, run:

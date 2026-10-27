@@ -60,6 +60,6 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
  }
  // The caller still holds the native forward-backfill lock. Fetch messages
  // since the frozen archive waterline before allowing queued live delivery.
- if after!="" { portal.backfillUnlimitedMissed(portal.log,source,after,thread) }
+ if after!="" { return portal.backfillUnlimitedMissed(portal.log,source,after,thread) }
  return nil
 }

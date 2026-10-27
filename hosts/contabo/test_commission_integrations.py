@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import yaml
+import subprocess
 
 spec = importlib.util.spec_from_file_location('commission', os.environ.get('CONTABO_COMMISSION_SCRIPT',
     str(Path(__file__).with_name('commission-integrations.py'))))
@@ -12,6 +13,20 @@ c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class Tests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('CONTABO_GMESSAGES_BINARY'), 'Pinned bridge binaries required')
+    def test_real_templates_and_registration_generation(self):
+        for network, port in [('gmessages',29320),('slack',29321)]:
+            binary = os.environ['CONTABO_' + network.upper() + '_BINARY']
+            with tempfile.TemporaryDirectory() as d:
+                cfg, reg = Path(d)/'config.yaml', Path(d)/'registration.yaml'
+                subprocess.run([binary,'-e','-c',str(cfg)],check=True,capture_output=True)
+                cfg.write_text(c.configure(cfg.read_text(),network,port,d))
+                subprocess.run([binary,'-g','-c',str(cfg),'-r',str(reg)],check=True,capture_output=True)
+                registration=yaml.safe_load(reg.read_text())
+                self.assertEqual(registration['url'],f'http://127.0.0.1:{port}')
+                self.assertTrue(registration['as_token'])
+                self.assertTrue(registration['hs_token'])
+
     def test_generated_config_is_private_scoped_and_persistent(self):
         source = {'homeserver': {}, 'appservice': {'bot': {}}, 'database': {},
                   'bridge': {}, 'encryption': {}, 'backfill': {}}

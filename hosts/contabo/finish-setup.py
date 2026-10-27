@@ -202,8 +202,15 @@ class Setup:
     def integrations(self):
         module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
         detail = module.commission()
+        self.backup()
         self.record('Integration account pairing', 'blocked', detail)
         return 'Slack, Google Messages and Matrimail services deployed; account acceptance separate'
+
+    def mail(self):
+        module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        self.record('Mail delivery acceptance', 'blocked', module.commission_mail())
+        self.backup()
+        return 'Mail service deployment and mailbox provisioning completed; delivery acceptance separate'
 
     def run(self):
         # Reset stale RUNNING records after interruption; recheck actual state.
@@ -214,7 +221,8 @@ class Setup:
         if backed_up:
             self.step('Photo Files dates', self.photos)
             self.step('Nextcloud apps', self.apps)
-            self.step('Messaging service deployment', self.integrations)
+            if self.step('Messaging service deployment', self.integrations):
+                self.step('Mail service deployment', self.mail)
         else:
             self.record('Photo Files dates', 'blocked', 'Fresh backup prerequisite failed')
             self.record('Nextcloud apps', 'blocked', 'Fresh backup prerequisite failed')
@@ -225,8 +233,6 @@ class Setup:
         for name, detail in (
             ('Discord history and live cutover',
              'Bridge-native importer and mapping adapter are not implemented; archive preserved'),
-            ('Stalwart and Matrimail',
-             'Mailbox/bridge deployment, DNS, forwarding and external delivery tests remain'),
             ('Isolated recovery',
              'Repository check passed only if recorded above; isolated application restore still needed'),
             ('Client acceptance',

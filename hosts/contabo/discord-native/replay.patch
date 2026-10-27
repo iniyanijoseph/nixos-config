@@ -18,6 +18,33 @@
  	limit := portal.bridge.Config.Bridge.Backfill.Limits.Initial.Channel
  	if portal.GuildID == "" {
  		limit = portal.bridge.Config.Bridge.Backfill.Limits.Initial.DM
+@@ -176,7 +180,7 @@
+ 	portal.sendBackfillBatch(log, source, messages, thread)
+ }
+ 
+-func (portal *Portal) backfillUnlimitedMissed(log zerolog.Logger, source *User, after string, thread *Thread) {
++func (portal *Portal) backfillUnlimitedMissed(log zerolog.Logger, source *User, after string, thread *Thread) error {
+ 	protoChannelID := portal.Key.ChannelID
+ 	if thread != nil {
+ 		protoChannelID = thread.ID
+@@ -186,7 +190,7 @@
+ 		messages, err := source.Session.ChannelMessages(protoChannelID, messageFetchChunkSize, "", after, "", portal.RefererOptIfUser(source.Session, protoChannelID)...)
+ 		if err != nil {
+ 			log.Err(err).Msg("Error fetching chunk of messages to forward backfill")
+-			return
++			return err
+ 		}
+ 		log.Debug().Int("count", len(messages)).Msg("Fetched chunk of messages to backfill")
+ 		sort.Sort(MessageSlice(messages))
+@@ -196,7 +200,7 @@
+ 		if len(messages) < messageFetchChunkSize {
+ 			// Assume that was all the missing messages
+ 			log.Debug().Msg("Chunk had less than 50 messages, stopping backfill")
+-			return
++			return nil
+ 		}
+ 		after = messages[len(messages)-1].ID
+ 	}
 --- a/portal.go
 +++ b/portal.go
 @@ -11,6 +11,7 @@

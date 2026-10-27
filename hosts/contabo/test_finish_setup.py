@@ -27,6 +27,7 @@ class Tests(unittest.TestCase):
         self.setup.archive = Mock()
         self.setup.remediation = Mock()
         self.setup.integrations = Mock(return_value='service deployment fixture')
+        self.setup.mail = Mock(return_value='mail fixture')
 
     def test_failed_backup_never_changes_apps_or_photos(self):
         self.setup.preflight = Mock(return_value='healthy')

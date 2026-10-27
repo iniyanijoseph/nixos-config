@@ -28,14 +28,14 @@
       in pkgs.runCommand "commission-tests" {} ''
         export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
         export PYTHONDONTWRITEBYTECODE=1
+        export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
+        export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"
         ${pkgs.python3.withPackages (ps: [ps.pyyaml])}/bin/python3 ${./test_commission_integrations.py}
         touch "$out"
       '';
     packages.x86_64-linux.contabo-discord-native =
       let pkgs = import nixpkgs { inherit system; };
-      in pkgs.mautrix-discord.overrideAttrs (old: {
-        buildInputs = [];
-        tags = [ "goolm" ];
+      in emailPkgs.mautrix-discord.overrideAttrs (old: {
         patches = (old.patches or []) ++ [ ./discord-native/replay.patch ];
         postPatch = (old.postPatch or "") + ''
           cp ${./discord-native/archive_replay.go} archive_replay.go
@@ -60,7 +60,7 @@
         export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
         export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
         export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"
-        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils pkgs.systemd ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
+        export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils pkgs.systemd pkgs.util-linux pkgs.openssl ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
         exec ${pkgs.python3.withPackages (ps: [ ps.pyyaml ])}/bin/python3 ${./finish-setup.py}
       '';
 

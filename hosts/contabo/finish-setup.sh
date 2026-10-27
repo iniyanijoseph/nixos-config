@@ -27,7 +27,7 @@ if ! systemctl is-active --quiet "$unit" &&
    [[ $(systemctl show "$unit" --value -p ActiveState 2>/dev/null) != activating ]]; then
     [[ $(git -c safe.directory="$repo" -C "$repo" branch --show-current) == main ]]
     [[ -z $(git -c safe.directory="$repo" -C "$repo" status --porcelain --untracked-files=no) ]]
-    echo 'Building the pinned setup runner (no NixOS switch)...'
+    echo 'Building the pinned setup runner; integration deployment will build and switch NixOS with rollback checks.'
     nix build "$repo/hosts/contabo#contabo-finish-setup" --out-link "$state/runner"
     # Resolve the closure now: a later pull or rebuild cannot change a running job.
     runner=$(readlink -f "$state/runner")
