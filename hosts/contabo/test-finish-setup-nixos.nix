@@ -40,12 +40,14 @@ in pkgs.testers.runNixOSTest {
     runtime.fail("systemctl is-enabled --quiet contabo-finish-setup.service")
     declared.succeed("systemctl is-enabled --quiet contabo-finish-setup.service")
 
-    runtime.reboot()
+    runtime.shutdown()
+    runtime.start()
     runtime.wait_for_unit("multi-user.target")
     runtime.succeed("test $(wc -l < ${state}/executions) -eq 1")
     runtime.succeed("test ! -e /run/systemd/system/contabo-finish-setup.service")
 
-    declared.reboot()
+    declared.shutdown()
+    declared.start()
     declared.wait_for_unit("multi-user.target")
     declared.wait_until_succeeds("test $(wc -l < ${state}/executions) -eq 2")
   '';

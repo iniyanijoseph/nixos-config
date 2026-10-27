@@ -36,8 +36,9 @@ The root-only summary, JSON status, log, audit and version inventory live in
 `/var/lib/migration-queue/finish-setup/` and are covered by the next migration
 state backup. Detailed logs may contain private paths; do not publish them.
 Closing the viewer leaves the worker running. To prevent future boot runs
-after retiring setup, use `sudo systemctl disable contabo-finish-setup.service`;
-this does not interrupt a running repair.
+after retiring setup, remove only its boot-resume marker:
+`sudo rm -f /var/lib/migration-queue/finish-setup/resume-on-boot`.
+This does not interrupt a running repair or remove logs, journals or data.
 
 On NixOS, the launcher installs its runtime unit in `/run/systemd/system`.
 It does not write to the read-only `/etc/systemd/system` or call `systemctl
