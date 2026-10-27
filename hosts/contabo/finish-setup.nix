@@ -21,7 +21,6 @@ in {
     restartIfChanged = false;
     stopIfChanged = false;
     environment = {
-      PATH = "/run/current-system/sw/bin";
       PYTHONDONTWRITEBYTECODE = "1";
       SYSTEMD_PAGER = "cat";
     };
