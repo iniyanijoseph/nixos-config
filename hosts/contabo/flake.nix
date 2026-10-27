@@ -35,12 +35,7 @@
       '';
     packages.x86_64-linux.contabo-discord-native =
       let pkgs = import nixpkgs { inherit system; };
-      in emailPkgs.mautrix-discord.overrideAttrs (old: {
-        patches = (old.patches or []) ++ [ ./discord-native/replay.patch ];
-        postPatch = (old.postPatch or "") + ''
-          cp ${./discord-native/archive_replay.go} archive_replay.go
-        '';
-      });
+      in import ./discord-native/package.nix { inherit pkgs; };
     checks.x86_64-linux.contabo-setup-nixos-test =
       import ./test-finish-setup-nixos.nix {
         pkgs = import nixpkgs { inherit system; };
@@ -57,6 +52,7 @@
         export CONTABO_DISCORD_SCOPE_PATH="${./discord-archive/scope.py}"
         export CONTABO_PHOTO_AUDIT_SCRIPT="${./photo-metadata-audit.py}"
         export CONTABO_PHOTO_REMEDIATION_SCRIPT="${./photo-remediation.py}"
+        export CONTABO_DISCORD_BINARY="${self.packages.${system}.contabo-discord-native}/bin/mautrix-discord"
         export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
         export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
         export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"

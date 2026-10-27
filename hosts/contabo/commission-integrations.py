@@ -17,6 +17,9 @@ import socket
 import base64
 import urllib.request
 import urllib.error
+import sqlite3
+import time
+from urllib.parse import quote
 
 REPO = Path('/etc/nixos')
 HOST = REPO / 'hosts/contabo'
@@ -85,12 +88,120 @@ def provision(name, binary, port, directory):
         cfg.replace(config)
 
 
-def build(enabled, mail=False):
+def build(enabled, mail=None, discord=None, pilot=None):
+    def installed(unit):
+        return subprocess.run(['systemctl','is-enabled','--quiet',unit],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if mail is None:
+        mail = installed('stalwart.service')
+    if discord is None:
+        discord = installed('mautrix-discord-native.service')
+    if pilot is None:
+        pilot = not (STATE/'discord-pilot-verified.json').exists()
     expression = '''let f = builtins.getFlake "/etc/nixos/hosts/contabo";
       in (f.nixosConfigurations.contabo.extendModules { modules = [
         ({lib,...}: {contabo.integrations.enable = lib.mkForce %s;
-          contabo.mail.enable = lib.mkForce %s;})
-      ]; }).config.system.build.toplevel''' % ('true' if enabled else 'false', 'true' if mail else 'false')
+          contabo.mail.enable = lib.mkForce %s;
+          contabo.discordNative.enable = lib.mkForce %s;
+          contabo.discordNative.pilot = lib.mkForce %s;})
+      ]; }).config.system.build.toplevel''' % ('true' if enabled else 'false', 'true' if mail else 'false', 'true' if discord else 'false', 'true' if pilot else 'false')
+
+
+def discord_coverage(archive, mapping, channels):
+    source=sqlite3.connect('file:'+str(archive)+'?mode=ro',uri=True)
+    bridge=sqlite3.connect('file:'+str(mapping)+'?mode=ro',uri=True)
+    try:
+        expected=found=0
+        for channel in channels:
+            for (ident,raw) in source.execute('SELECT id,json FROM messages WHERE channel_id=?',(channel,)):
+                if json.loads(raw).get('type',0) in (4,5,6):
+                    continue
+                expected+=1
+                if bridge.execute('SELECT 1 FROM message WHERE dc_chan_id=? AND dcid=? LIMIT 1',
+                                  (channel,ident)).fetchone():
+                    found+=1
+        return expected,found
+    finally:
+        source.close();bridge.close()
+
+
+def commission_discord():
+    directory=Path('/var/lib/mautrix-discord-native')
+    directory.mkdir(mode=0o750,exist_ok=True)
+    owner=pwd.getpwnam('mautrix-discord-native')
+    os.chown(directory,owner.pw_uid,owner.pw_gid)
+    snapshot=directory/'archive.sqlite'
+    if not snapshot.exists():
+        original=Path('/var/lib/discord-archive/archive.sqlite')
+        if shutil.disk_usage(directory).free < original.stat().st_size+5*1024**3:
+            raise RuntimeError('Insufficient space for a consistent migration snapshot')
+        source=sqlite3.connect('file:'+str(original)+'?mode=ro',uri=True)
+        temp=directory/'archive.preparing'
+        temp.unlink(missing_ok=True)
+        destination=sqlite3.connect(temp)
+        try:
+            source.backup(destination,pages=1024)
+            if destination.execute('PRAGMA quick_check').fetchall()!=[('ok',)]:
+                raise RuntimeError('Discord archive snapshot failed integrity check')
+        finally:
+            source.close();destination.close()
+        os.chmod(temp,0o440);os.chown(temp,0,owner.pw_gid)
+        temp.replace(snapshot)
+    config=directory/'config.yaml'
+    if not config.exists():
+        # Keep generated legacy bridge settings in its own new directory.
+        provision('mautrix-discord-native',os.environ['CONTABO_DISCORD_BINARY'],29322,directory)
+        data=yaml.safe_load(config.read_text())
+        data['bridge']['startup_private_channel_create_limit']=0
+        data['bridge']['portal_message_buffer']=8192
+        data['bridge']['provisioning']['shared_secret']=secrets.token_hex(48)
+        data['bridge']['provisioning']['prefix']='/_matrix/provision'
+        config.write_text(yaml.safe_dump(data,sort_keys=False))
+        os.chmod(config,0o640);os.chown(config,owner.pw_uid,owner.pw_gid)
+    activate(build(True,discord=True),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
+    data=yaml.safe_load(config.read_text())
+    token=data['bridge']['provisioning']['shared_secret']
+    base='http://127.0.0.1:29322'+data['bridge']['provisioning']['prefix']
+    query='?user_id='+quote('@me:iniyanjoseph.com',safe='')
+    def api(endpoint,method='GET',payload=None):
+        request=urllib.request.Request(base+endpoint+query,
+            data=json.dumps(payload).encode() if payload is not None else None,
+            headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method=method)
+        for attempt in range(30):
+            try:
+                with urllib.request.urlopen(request,timeout=900) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError:
+                raise
+            except urllib.error.URLError:
+                if attempt==29:
+                    raise
+                time.sleep(1)
+    ping=api('/v1/ping')
+    discord=ping.get('Discord',ping.get('discord',{}))
+    if not discord.get('logged_in') or not discord.get('connected'):
+        return 'ACTION REQUIRED: log in with @discord-nativebot:iniyanjoseph.com. Only one pilot DM will import initially.'
+    result=api('/v1/contabo/archive','POST')
+    pilot=directory/'pilot-channel'
+    if not (STATE/'discord-pilot-verified.json').exists():
+        if not pilot.exists():
+            return 'Discord connected; no accessible archived pilot DM could be started.'
+        expected,found=discord_coverage(snapshot,directory/'bridge.db',[pilot.read_text().strip()])
+        if not expected or found!=expected:
+            return f'Discord pilot import running or blocked: mapped {found}/{expected}. Archive retained; full import not enabled.'
+        (STATE/'discord-pilot-verified.json').write_text(json.dumps({'expected':expected,'mapped':found}))
+        activate(build(True,discord=True,pilot=False),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
+        api('/v1/guilds/804408079940583475','POST',{'auto_create_channels':True})
+        result=api('/v1/contabo/archive','POST')
+    source=sqlite3.connect('file:'+str(snapshot)+'?mode=ro',uri=True)
+    try:
+        channels=[r[0] for r in source.execute("SELECT id FROM channels WHERE kind IN ('dms','guild:804408079940583475')")]
+    finally:
+        source.close()
+    expected,found=discord_coverage(snapshot,directory/'bridge.db',channels)
+    return (f'Discord connected; native mappings {found}/{expected}; inaccessible source/portal attempts '
+            f"{result.get('source_or_portal_failures',0)}. Active-thread 403 remains a known source gap. "
+            'Client send/receive, replies, encryption recovery and isolated restore remain unverified.')
     return run(['nix', 'build', '--impure', '--expr', expression,
                 '--out-link', STATE / ('connected' if enabled else 'staging'),
                 '--print-out-paths'], capture=True).strip()
@@ -117,7 +228,7 @@ def commission():
     # First install only disabled service identities. Existing production
     # services retain their data and the WhatsApp linked-device session.
     try:
-        for name in ('mautrix-gmessages', 'mautrix-slack', 'matrimail'):
+        for name in ('mautrix-gmessages', 'mautrix-slack', 'matrimail', 'mautrix-discord-native'):
             pwd.getpwnam(name)
     except KeyError:
         activate(build(False), ['matrix-synapse', 'nginx', 'mautrix-whatsapp', 'postgresql'])
@@ -127,6 +238,13 @@ def commission():
     run(['runuser', '-u', 'wug', '--', 'bash', HOST / 'email-bridge/build.sh'])
     directory = Path('/var/lib/matrimail')
     (directory / 'bin').mkdir(mode=0o750, exist_ok=True)
+    # The manually compiled ELF references libolm in the Nix store. Keep its
+    # runtime closure alive across garbage collection, scoped to this bridge.
+    if not (directory / 'olm-runtime').exists():
+        expression = '''let f=builtins.getFlake "/etc/nixos/hosts/contabo";
+          p=import f.inputs.nixpkgs {system="x86_64-linux";
+            config.permittedInsecurePackages=["olm-3.2.16"];}; in p.olm'''
+        run(['nix','build','--impure','--expr',expression,'--out-link',directory/'olm-runtime'])
     binary = directory / 'bin/matrimail'
     if not binary.exists():
         shutil.copy2(Path(pwd.getpwnam('wug').pw_dir) / '.local/share/matrimail-build/matrimail', binary)
@@ -166,7 +284,6 @@ def commission_mail():
     if addresses != {'213.199.55.255'}:
         raise RuntimeError('Set DNS-only A mail.iniyanjoseph.com to 213.199.55.255 before mail deployment')
     admin = secret_file(Path('/var/lib/secrets/stalwart-admin-password'))
-    password = secret_file(Path('/var/lib/secrets/stalwart-me-password'))
     activate(build(True, mail=True), ['matrix-synapse','mautrix-whatsapp','mautrix-gmessages',
                                     'mautrix-slack','matrimail','stalwart','nginx'])
     auth = base64.b64encode(('admin:' + admin).encode()).decode()
@@ -182,6 +299,8 @@ def commission_mail():
         except urllib.error.HTTPError as err:
             if err.code != 404:
                 raise RuntimeError('Stalwart administrator API authentication/health failed') from None
+            if callable(payload):
+                payload = payload()
             request = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                              headers=headers, method='POST')
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -189,11 +308,14 @@ def commission_mail():
                     raise RuntimeError('Stalwart rejected principal creation')
     # This is the 0.15.x management API, not the later JMAP management API.
     ensure('iniyanjoseph.com', {'name':'iniyanjoseph.com','type':'domain'})
-    hashed = subprocess.run(['openssl','passwd','-6','-stdin'], input=password,
-                            capture_output=True, text=True, check=True).stdout.strip()
-    ensure('me', {'name':'me','type':'individual','secrets':[hashed],
-                  'emails':['me@iniyanjoseph.com'],'roles':['user']})
+    def new_mailbox():
+        password = secret_file(Path('/var/lib/secrets/stalwart-me-password'))
+        hashed = subprocess.run(['openssl','passwd','-6','-stdin'], input=password,
+                                capture_output=True, text=True, check=True).stdout.strip()
+        return {'name':'me','type':'individual','secrets':[hashed],
+                'emails':['me@iniyanjoseph.com'],'roles':['user']}
+    ensure('me', new_mailbox)
     return ('Stalwart is deployed and mailbox principal exists. Verify external TCP/25, '
             'PTR, DKIM/SPF/DMARC and inbound/outbound delivery before changing MX or forwarding. '
-            'Mailbox password remains only in /var/lib/secrets/stalwart-me-password. '
+            'A newly provisioned mailbox password is in /var/lib/secrets/stalwart-me-password; existing credentials are preserved. '
             'Connect Matrimail and the standard mail client to this mailbox; no delivery test has been claimed.')

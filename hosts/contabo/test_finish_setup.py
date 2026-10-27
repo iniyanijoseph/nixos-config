@@ -28,6 +28,7 @@ class Tests(unittest.TestCase):
         self.setup.remediation = Mock()
         self.setup.integrations = Mock(return_value='service deployment fixture')
         self.setup.mail = Mock(return_value='mail fixture')
+        self.setup.discord_native = Mock(return_value='discord fixture')
 
     def test_failed_backup_never_changes_apps_or_photos(self):
         self.setup.preflight = Mock(return_value='healthy')
@@ -58,7 +59,7 @@ class Tests(unittest.TestCase):
         self.setup.run()
         self.setup.run()
         self.assertEqual(self.setup.apps.call_count, 2)
-        self.assertEqual(self.setup.results['Discord history and live cutover']['status'], 'blocked')
+        self.assertEqual(self.setup.results['Overall commissioning']['status'], 'blocked')
 
     def test_audit_cannot_treat_partial_scan_as_success(self):
         text = ('Media files found: 100\nSample: 100\nExif inspected: 50\n'

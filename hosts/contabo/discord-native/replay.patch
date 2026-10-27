@@ -71,7 +71,16 @@
  	*database.Portal
  
  	Parent *Portal
-@@ -580,6 +582,7 @@
+@@ -402,6 +404,8 @@
+ 		return fmt.Errorf("didn't find channel metadata")
+ 	}
+ 
++ if !portal.contaboPilotAllowed() { return fmt.Errorf("Discord archive pilot is restricted to its first DM") }
++
+ 	intent := portal.MainIntent()
+ 	if err := intent.EnsureRegistered(); err != nil {
+ 		return err
+@@ -580,6 +584,7 @@
  	}
  	portal.forwardBackfillLock.Lock()
  	defer portal.forwardBackfillLock.Unlock()
@@ -79,7 +88,24 @@
  
  	switch convertedMsg := msg.msg.(type) {
  	case *discordgo.MessageCreate:
-@@ -683,12 +686,13 @@
+@@ -661,6 +666,16 @@
+ 
+ 	ts, _ := discordgo.SnowflakeTimestamp(msg.ID)
+ 	parts := portal.convertDiscordMessage(ctx, puppet, intent, msg)
++    if os.Getenv("CONTABO_DISCORD_ARCHIVE")!="" {
++        for _,attachment:=range msg.Attachments {
++            found:=false
++            for _,part:=range parts {
++                if part.AttachmentID==attachment.ID && (part.Content.URL!="" || (part.Content.File!=nil && part.Content.File.URL!="")) { found=true;break }
++            }
++            if !found {panic(fmt.Errorf("archive attachment could not be bridged; refusing partial message"))}
++        }
++    }
++
+ 	dbParts := make([]database.MessagePart, 0, len(parts))
+ 	eventIDs := zerolog.Dict()
+ 	for i, part := range parts {
+@@ -683,12 +698,13 @@
  		// Only set mentions for first event, but keep empty object for rest
  		mentions = &event.Mentions{}
  
@@ -94,7 +120,7 @@
  			continue
  		}
  		lastThreadEvent = resp.EventID
-@@ -1081,7 +1085,7 @@
+@@ -1081,7 +1097,7 @@
  	return event.EventEncrypted, nil
  }
  
@@ -103,7 +129,7 @@
  	wrappedContent := event.Content{Parsed: content, Raw: extraContent}
  	var err error
  	eventType, err = portal.encrypt(intent, &wrappedContent, eventType)
-@@ -1093,6 +1097,11 @@
+@@ -1093,6 +1109,11 @@
  	if timestamp == 0 {
  		return intent.SendMessageEvent(portal.MXID, eventType, &wrappedContent)
  	} else {
@@ -115,3 +141,13 @@
  		return intent.SendMassagedMessageEvent(portal.MXID, eventType, &wrappedContent, timestamp)
  	}
  }
+--- a/provisioning.go
++++ b/provisioning.go
+@@ -61,6 +61,7 @@
+ 
+ 	r.Use(p.authMiddleware)
+ 
++	r.HandleFunc("/v1/contabo/archive", p.contaboStartArchive).Methods(http.MethodPost)
+ 	r.HandleFunc("/v1/disconnect", p.disconnect).Methods(http.MethodPost)
+ 	r.HandleFunc("/v1/ping", p.ping).Methods(http.MethodGet)
+ 	r.HandleFunc("/v1/login/qr", p.qrLogin).Methods(http.MethodGet)

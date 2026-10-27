@@ -212,6 +212,12 @@ class Setup:
         self.backup()
         return 'Mail service deployment and mailbox provisioning completed; delivery acceptance separate'
 
+    def discord_native(self):
+        module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        self.record('Discord history and live cutover', 'blocked', module.commission_discord())
+        self.backup()
+        return 'Discord service deployed; import/pairing/coverage state is recorded separately'
+
     def run(self):
         # Reset stale RUNNING records after interruption; recheck actual state.
         self.record('Overall commissioning', 'blocked', 'Waiting for all deployment and acceptance checks')
@@ -222,6 +228,7 @@ class Setup:
             self.step('Photo Files dates', self.photos)
             self.step('Nextcloud apps', self.apps)
             if self.step('Messaging service deployment', self.integrations):
+                self.step('Discord native deployment', self.discord_native)
                 self.step('Mail service deployment', self.mail)
         else:
             self.record('Photo Files dates', 'blocked', 'Fresh backup prerequisite failed')
@@ -231,8 +238,6 @@ class Setup:
         # replace them with forgeable completion markers or assume that a
         # running bridge has authenticated or passed send/receive tests.
         for name, detail in (
-            ('Discord history and live cutover',
-             'Bridge-native importer and mapping adapter are not implemented; archive preserved'),
             ('Isolated recovery',
              'Repository check passed only if recorded above; isolated application restore still needed'),
             ('Client acceptance',
