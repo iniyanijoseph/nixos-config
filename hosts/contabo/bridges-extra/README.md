@@ -132,7 +132,16 @@ tokens. Install the binary specified by the NixOS package build rather
 than the manual file path; the manual build is used to prepare config.
 
 **First-run authentication** remains interactive with the Matrix bot:
-- Google Messages: use `login google` and phone approval, not QR.
+- Google Messages: DM `@gmessagesbot:iniyanjoseph.com` and send
+  `!gm login google` (the prefix also works before the DM is registered as
+  your management room). Follow the bot's browser login URL. The final
+  `messages.google.com/web/config` page displays raw Google configuration
+  data; that is expected, not an error or Go object. Open browser Developer
+  Tools → Network, reload that page, select the `config` request and copy it
+  as cURL. Submit the copied request only to the private encrypted bot DM
+  where it is waiting for login input, then approve the matching emoji on
+  the phone. The copied request contains session credentials; never post it
+  in Git, server logs or a support conversation.
 - Slack: pair each workspace separately. Use the documented mautrix
   manager where practical, rather than copying secrets into Matrix
   history. Don't paste `xoxc`/`xoxd` into this chat or Git.

@@ -10,6 +10,12 @@ import sqlite3
 import json
 import shutil
 import errno
+import http.client
+import http.server
+import socket
+import threading
+import io
+from contextlib import redirect_stdout
 
 spec = importlib.util.spec_from_file_location('commission', os.environ.get('CONTABO_COMMISSION_SCRIPT',
     str(Path(__file__).with_name('commission-integrations.py'))))
@@ -17,6 +23,64 @@ c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class Tests(unittest.TestCase):
+    def test_discord_resumes_post_after_peer_closes_connection_without_response(self):
+        requests = []
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+                requests.append((self.path, self.headers.get('Authorization'), body))
+                if len(requests) == 1:
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                    self.connection.close()
+                    return
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"portals_started":120}')
+        with http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch.object(c.time, 'sleep'), redirect_stdout(io.StringIO()):
+                    result = c.discord_api(f'http://127.0.0.1:{server.server_port}',
+                        'fixture-token', '/v1/guilds/804408079940583475', 'POST',
+                        {'auto_create_channels': True})
+            finally:
+                server.shutdown()
+                thread.join()
+        self.assertEqual(result['portals_started'], 120)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0], requests[1])
+        self.assertEqual(requests[0][1], 'Bearer fixture-token')
+
+    def test_discord_transport_retry_is_bounded_and_does_not_retry_authentication(self):
+        with patch.object(c.urllib.request, 'urlopen', side_effect=http.client.RemoteDisconnected()), \
+                patch.object(c.time, 'sleep'), redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'POST /v1/contabo/archive failed after 10 attempts'):
+                c.discord_api('http://fixture', 'fixture-token', '/v1/contabo/archive', 'POST')
+        for code in (401, 403, 409, 500):
+            failure = c.urllib.error.HTTPError('http://fixture', code, 'fixture', {}, None)
+            with patch.object(c.urllib.request, 'urlopen', side_effect=failure) as opener:
+                with self.assertRaises(c.urllib.error.HTTPError):
+                    c.discord_api('http://fixture', 'fixture-token', '/v1/contabo/archive', 'POST')
+                self.assertEqual(opener.call_count, 1)
+        with patch.object(c.urllib.request, 'urlopen', side_effect=http.client.RemoteDisconnected()) as opener:
+            with self.assertRaisesRegex(RuntimeError, 'failed after 1 attempts'):
+                c.discord_api('http://fixture', 'fixture-token', '/v1/logout', 'POST')
+            self.assertEqual(opener.call_count, 1)
+
+    def test_discord_waits_for_saved_login_to_reconnect_after_pilot_restart(self):
+        with patch.object(c.time, 'sleep'):
+            ping = unittest.mock.Mock(side_effect=[
+                {'Discord': {'logged_in': True, 'connected': False}},
+                {'Discord': {'logged_in': True, 'connected': True}}])
+            self.assertTrue(c.wait_for_discord_connection(ping))
+            self.assertEqual(ping.call_count, 2)
+            ping = unittest.mock.Mock(return_value={'Discord': {'logged_in': True, 'connected': False}})
+            self.assertFalse(c.wait_for_discord_connection(ping))
+            self.assertEqual(ping.call_count, 30)
+
     def test_matrimail_install_repairs_restrictive_umask_and_preserves_existing_binary(self):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
@@ -139,6 +203,8 @@ class Tests(unittest.TestCase):
                 self.assertTrue(registration['hs_token'])
                 self.assertTrue(registration['sender_localpart'])
                 self.assertEqual(yaml.safe_load(cfg.read_text())['appservice']['bot']['username'],name+'bot')
+                if network == 'gmessages':
+                    self.assertEqual(yaml.safe_load(cfg.read_text())['bridge']['command_prefix'], '!gm')
 
     def test_generated_config_is_private_scoped_and_persistent(self):
         source = {'homeserver': {}, 'appservice': {'bot': {}}, 'database': {},
