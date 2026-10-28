@@ -283,6 +283,27 @@ def activate(target, units):
         raise
 
 
+def install_matrimail_binary(source, directory):
+    owner = pwd.getpwnam('matrimail')
+    bindir = directory / 'bin'
+    if bindir.is_symlink():
+        raise RuntimeError('Symlinked Matrimail binary directory refused')
+    bindir.mkdir(mode=0o750, exist_ok=True)
+    # mkdir's mode is reduced by the worker's 0077 umask. Repair existing
+    # installations too: the service needs group traversal of this root-owned
+    # directory, while credentials elsewhere in the state directory stay private.
+    os.chown(bindir, 0, owner.pw_gid)
+    os.chmod(bindir, 0o750)
+    binary = bindir / 'matrimail'
+    if binary.is_symlink():
+        raise RuntimeError('Symlinked Matrimail binary refused')
+    if not binary.exists():
+        shutil.copy2(source, binary)
+    os.chown(binary, 0, owner.pw_gid)
+    os.chmod(binary, 0o750)
+    return binary
+
+
 def commission():
     if os.geteuid() != 0 or os.uname().nodename.split('.')[0] != 'contabo':
         raise RuntimeError('Commissioning requires root on Contabo')
@@ -296,7 +317,6 @@ def commission():
         provision('mautrix-' + network, binary, port, Path('/var/lib/mautrix-' + network))
     run(['runuser', '-u', 'wug', '--', 'bash', HOST / 'email-bridge/build.sh'])
     directory = Path('/var/lib/matrimail')
-    (directory / 'bin').mkdir(mode=0o750, exist_ok=True)
     # The manually compiled ELF references libolm in the Nix store. Keep its
     # runtime closure alive across garbage collection, scoped to this bridge.
     if not (directory / 'olm-runtime').exists():
@@ -304,10 +324,8 @@ def commission():
           p=import f.inputs.nixpkgs {system="x86_64-linux";
             config.permittedInsecurePackages=["olm-3.2.16"];}; in p.olm'''
         run(['nix','build','--impure','--expr',expression,'--out-link',directory/'olm-runtime'])
-    binary = directory / 'bin/matrimail'
-    if not binary.exists():
-        shutil.copy2(Path(pwd.getpwnam('wug').pw_dir) / '.local/share/matrimail-build/matrimail', binary)
-        os.chmod(binary, 0o755)
+    binary = install_matrimail_binary(
+        Path(pwd.getpwnam('wug').pw_dir) / '.local/share/matrimail-build/matrimail', directory)
     secret = Path('/var/lib/secrets/matrimail.env')
     if not secret.exists():
         with secret.open('x') as stream:

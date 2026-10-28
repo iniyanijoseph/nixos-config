@@ -8,6 +8,8 @@ import yaml
 import subprocess
 import sqlite3
 import json
+import shutil
+import errno
 
 spec = importlib.util.spec_from_file_location('commission', os.environ.get('CONTABO_COMMISSION_SCRIPT',
     str(Path(__file__).with_name('commission-integrations.py'))))
@@ -15,6 +17,62 @@ c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 class Tests(unittest.TestCase):
+    def test_matrimail_install_repairs_restrictive_umask_and_preserves_existing_binary(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            source = directory / 'built'
+            source.write_text('pinned binary')
+            owner = type('Owner', (), {'pw_gid':os.getgid()})()
+            previous = os.umask(0o077)
+            try:
+                with patch.object(c.pwd, 'getpwnam', return_value=owner), patch.object(c.os, 'chown'):
+                    binary = c.install_matrimail_binary(source, directory)
+                    self.assertEqual(binary.parent.stat().st_mode & 0o777, 0o750)
+                    self.assertEqual(binary.stat().st_mode & 0o777, 0o750)
+                    binary.parent.chmod(0o700)
+                    source.write_text('replacement must not overwrite installation')
+                    c.install_matrimail_binary(source, directory)
+                    self.assertEqual(binary.read_text(), 'pinned binary')
+                    self.assertEqual(binary.parent.stat().st_mode & 0o777, 0o750)
+            finally:
+                os.umask(previous)
+
+    @unittest.skipUnless(os.geteuid() == 0, 'Root required for actual service-identity execution')
+    def test_matrimail_executes_as_service_identity_after_repair(self):
+        owner = c.pwd.getpwnam('nobody')
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            try:
+                os.chown(directory, 0, owner.pw_gid)
+            except OSError as error:
+                if error.errno in (errno.EINVAL, errno.EPERM):
+                    self.skipTest('Runtime cannot assign a separate service identity')
+                raise
+            directory.chmod(0o750)
+            bindir = directory / 'bin'
+            bindir.mkdir(mode=0o700)
+            binary = bindir / 'matrimail'
+            binary.write_text('#!' + shutil.which('sh') + '\nexit 0\n')
+            binary.chmod(0o755)
+            def execute():
+                return subprocess.run([str(binary)], user=owner.pw_uid,
+                    group=owner.pw_gid, extra_groups=[], check=True)
+            with self.assertRaises(PermissionError):
+                execute()
+            previous = os.umask(0o077)
+            try:
+                with patch.object(c.pwd, 'getpwnam', return_value=owner):
+                    c.install_matrimail_binary(directory / 'unused-existing-binary', directory)
+                    execute()
+                    # A clean install must also work under the same private umask.
+                    source = directory / 'built'
+                    binary.rename(source)
+                    bindir.rmdir()
+                    c.install_matrimail_binary(source, directory)
+                    execute()
+            finally:
+                os.umask(previous)
+
     def test_interrupted_or_incomplete_pilot_marker_cannot_promote(self):
         with tempfile.TemporaryDirectory() as d, patch.object(c,'STATE',Path(d)):
             marker=Path(d)/'discord-pilot-verified.json'
