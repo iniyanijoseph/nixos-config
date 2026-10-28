@@ -282,7 +282,9 @@ def commission_discord():
             return progress('Discord connected; no accessible archived pilot DM could be started.',True)
         expected,found=discord_coverage(snapshot,directory/'bridge.db',[pilot.read_text().strip()],receiver)
         if not expected or found!=expected or result.get('portals_ready',0)!=1:
-            return progress(f'Discord pilot import running or blocked: mapped {found}/{expected}. Archive retained; full import not enabled.',True)
+            return progress(f'Discord pilot import running or blocked: mapped {found}/{expected}; '
+                f"blocked archive rooms {result.get('portals_blocked',0)}. "
+                'Archive retained; full import not enabled. Room errors are in the Discord bridge journal.',True)
         private_json(STATE/'discord-pilot-verified.json', {'expected':expected,'mapped':found,
                      'channel':pilot.read_text().strip(),'receiver':receiver})
         activate(build(None,discord=True,pilot=False),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
@@ -298,10 +300,13 @@ def commission_discord():
     finally:
         source.close()
     expected,found=discord_coverage(snapshot,directory/'bridge.db',channels,receiver)
-    return progress(f'Discord connected; native mappings {found}/{expected}; inaccessible source/portal attempts '
+    return progress(f'Discord connected; native mappings {found}/{expected}; '
+            f"blocked archive rooms {result.get('portals_blocked',0)}; inaccessible source/portal attempts "
             f"{result.get('source_or_portal_failures',0)}. Active-thread 403 remains a known source gap. "
+            'Room errors are in the Discord bridge journal. '
             'Client send/receive, replies, encryption recovery and isolated restore remain unverified.',
-            found!=expected or result.get('portals_ready',0)!=result.get('portals_started',0) or result.get('source_or_portal_failures',0)>0)
+            found!=expected or result.get('portals_ready',0)!=result.get('portals_started',0) or
+            result.get('portals_blocked',0)>0 or result.get('source_or_portal_failures',0)>0)
 
 
 def activate(target, units):

@@ -51,7 +51,7 @@ func (p *ProvisioningAPI) contaboStartArchive(w http.ResponseWriter,r *http.Requ
  type channel struct{id,kind string};channels:=[]channel{}
  for rows.Next(){var c channel;var n int;if rows.Scan(&c.id,&c.kind,&n)!=nil {rows.Close();jsonResponse(w,500,map[string]string{"error":"Archive inventory invalid"});return};channels=append(channels,c)}
  err=rows.Err();rows.Close();if err!=nil {jsonResponse(w,500,map[string]string{"error":"Archive inventory incomplete"});return}
- started,failed,ready:=0,0,0
+ started,failed,ready,blocked:=0,0,0,0
  pilot:=os.Getenv("CONTABO_DISCORD_PILOT_FILE")!=""
  for _,c:=range channels {
   if pilot && c.kind!="dms" {continue}
@@ -61,6 +61,7 @@ func (p *ProvisioningAPI) contaboStartArchive(w http.ResponseWriter,r *http.Requ
   if err=portal.CreateMatrixRoom(user,meta);err!=nil {failed++;continue}
   started++
   if portal.forwardBackfillLock.TryLock() {
+   if portal.contaboArchiveErrors[portal.Key.ChannelID]!="" {blocked++}
    if portal.contaboArchiveReady[portal.Key.ChannelID] {
     ready++;portal.forwardBackfillLock.Unlock()
    } else {
@@ -71,30 +72,61 @@ func (p *ProvisioningAPI) contaboStartArchive(w http.ResponseWriter,r *http.Requ
   }
   if pilot {break}
  }
- jsonResponse(w,200,map[string]int{"portals_started":started,"portals_ready":ready,"source_or_portal_failures":failed})
+ jsonResponse(w,200,map[string]int{"portals_started":started,"portals_ready":ready,"portals_blocked":blocked,"source_or_portal_failures":failed})
+}
+
+// The caller holds forwardBackfillLock. Failed media/conversion leaves the
+// room gated and its mappings intact, without terminating other room workers.
+func (portal *Portal) completeContaboArchive(channel string, replay func() error) (ready bool) {
+ defer func() {
+  if failure:=recover(); failure!=nil {
+   portal.contaboArchiveFailed(channel,fmt.Errorf("archive replay panic: %v",failure))
+   ready=false
+  }
+ }()
+ if err:=replay(); err!=nil {
+  portal.contaboArchiveFailed(channel,err)
+  return false
+ }
+ if portal.contaboArchiveReady==nil {portal.contaboArchiveReady=make(map[string]bool)}
+ portal.contaboArchiveReady[channel]=true
+ delete(portal.contaboArchiveErrors,channel)
+ return true
+}
+
+func (portal *Portal) contaboArchiveFailed(channel string,err error) {
+ if portal.contaboArchiveErrors==nil {portal.contaboArchiveErrors=make(map[string]string)}
+ portal.contaboArchiveErrors[channel]=err.Error()
+ delete(portal.contaboArchiveReady,channel)
+ portal.log.Error().Err(err).Str("archive_channel_id",channel).
+  Msg("Discord archive import blocked for this room; other rooms may continue")
 }
 
 // Called only while the portal's native forward-backfill lock is held. The
 // same gate covers fresh rooms, process restart and incoming live traffic.
-func (portal *Portal) ensureContaboArchive(source *User, thread *Thread) {
- if os.Getenv("CONTABO_DISCORD_ARCHIVE")=="" { return }
+func (portal *Portal) ensureContaboArchive(source *User, thread *Thread) bool {
+ if os.Getenv("CONTABO_DISCORD_ARCHIVE")=="" { return true }
  channel:=portal.Key.ChannelID
  if thread!=nil {channel=thread.ID}
  if portal.contaboArchiveReady==nil {portal.contaboArchiveReady=make(map[string]bool)}
- if portal.contaboArchiveReady[channel] {return}
+ if portal.contaboArchiveReady[channel] {return true}
  contaboReplayMutex.Lock(); defer contaboReplayMutex.Unlock()
- if err:=portal.replayContaboArchive(source,thread); err!=nil { panic(err) }
+ return portal.completeContaboArchive(channel,func() error {
+ if err:=portal.replayContaboArchive(source,thread); err!=nil { return err }
  if thread==nil {
   intent:=portal.MainIntent()
   var levels map[string]interface{}
-  if err:=intent.StateEvent(portal.MXID,event.StatePowerLevels,"",&levels);err!=nil {panic(err)}
+  if err:=intent.StateEvent(portal.MXID,event.StatePowerLevels,"",&levels);err!=nil {return err}
   if users,ok:=levels["users"].(map[string]interface{});ok && users["@me:iniyanjoseph.com"]==float64(-1) {
    users["@me:iniyanjoseph.com"]=0
-   if _,err:=intent.SendStateEvent(portal.MXID,event.StatePowerLevels,"",levels);err!=nil {panic(err)}
-   if _,err:=intent.SendStateEvent(portal.MXID,event.StateTopic,"",map[string]string{"topic":portal.Topic});err!=nil {panic(err)}
+   // Clear the import topic before enabling sends, so a failed state update
+   // cannot leave an incomplete room writable.
+   if _,err:=intent.SendStateEvent(portal.MXID,event.StateTopic,"",map[string]string{"topic":portal.Topic});err!=nil {return err}
+   if _,err:=intent.SendStateEvent(portal.MXID,event.StatePowerLevels,"",levels);err!=nil {return err}
   }
  }
- portal.contaboArchiveReady[channel]=true
+ return nil
+ })
 }
 
 func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
@@ -135,7 +167,7 @@ func (portal *Portal) replayContaboArchive(source *User, thread *Thread) error {
      }
     }
     // Takeout-time CDN signatures can expire before import. Refresh URLs via
-    // the authenticated message endpoint without replacing archived text or
+    // authenticated channel history without replacing archived text or
     // accepting a different attachment identity/size.
     if len(portal.bridge.DB.Message.GetByDiscordID(portal.Key,msg.ID))==0 {
      if err:=contaboRefreshAttachments(source,msg);err!=nil {return fmt.Errorf("archived message %s: %w",msg.ID,err)}
@@ -168,9 +200,16 @@ func contaboArchiveMessage(msg *discordgo.Message) *discordgo.Message {
 
 func contaboRefreshAttachments(source *User,msg *discordgo.Message) error {
  if len(msg.Attachments)==0 {return nil}
- current,err:=source.Session.ChannelMessage(msg.ChannelID,msg.ID)
+ // The single-message endpoint rejects user sessions with Discord error
+ // 20002 ("Only bots can use this endpoint"). Read the history window around
+ // the archived ID and require the exact message before accepting any URLs.
+ messages,err:=source.Session.ChannelMessages(msg.ChannelID,1,"","",msg.ID)
  if err!=nil {return fmt.Errorf("archive attachment URL refresh failed: %w",err)}
- if current.ID!=msg.ID || current.ChannelID!=msg.ChannelID {return fmt.Errorf("attachment refresh returned a different message")}
+ var current *discordgo.Message
+ for _,candidate:=range messages {
+  if candidate!=nil && candidate.ID==msg.ID && candidate.ChannelID==msg.ChannelID {current=candidate;break}
+ }
+ if current==nil {return fmt.Errorf("attachment refresh did not return the archived message; original archive retained")}
  for _,old:=range msg.Attachments {
   found:=false
   for _,fresh:=range current.Attachments {
