@@ -72,7 +72,27 @@ EOF
 install -d -m 0755 /run/systemd/system
 install -m 0644 "$state/unit.tmp" "/run/systemd/system/$unit"
 rm "$state/unit.tmp"
+# /etc unit files take precedence over /run unit files. Once boot resume has
+# been deployed, the fallback above cannot override an old declarative unit.
+# Drop-ins override the selected base unit, including a legacy Type=oneshot.
+install -d -m 0755 "/run/systemd/system/$unit.d"
+cat > "$state/launcher-drop-in.tmp" <<EOF
+[Service]
+Type=exec
+ExecStart=
+ExecStart=$runner/bin/contabo-finish-setup
+EOF
+install -m 0644 "$state/launcher-drop-in.tmp" "/run/systemd/system/$unit.d/90-contabo-launcher.conf"
+rm "$state/launcher-drop-in.tmp"
 systemctl daemon-reload
+if [[ $(systemctl show "$unit" --value -p Type) != exec ]]; then
+    echo 'Refusing to start: systemd did not load Type=exec; inspect the service drop-ins.' >&2
+    exit 2
+fi
+if [[ $(systemctl show "$unit" --value -p ExecStart) != *"$runner/bin/contabo-finish-setup"* ]]; then
+    echo 'Refusing to start: systemd did not load the pinned worker; inspect the service drop-ins.' >&2
+    exit 2
+fi
 # A future ordinary NixOS deployment installs finish-setup.nix for
 # reboot resume. Runtime systemctl enable would write into read-only /etc.
 touch "$state/resume-on-boot"
