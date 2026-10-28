@@ -31,3 +31,7 @@ jobs:
           bash hosts/contabo/email-bridge/build.sh
           export CONTABO_MATRIMAIL_BINARY="$HOME/.local/share/matrimail-build/matrimail"
           nix develop ./hosts/contabo#email-bridge --command python3 hosts/contabo/test_commission_integrations.py
+      - name: Verify restrictive-umask installation as a separate service identity
+        run: |
+          nix develop ./hosts/contabo#email-bridge --command bash -c '
+            exec sudo "$(command -v python3)" hosts/contabo/test_commission_integrations.py Tests.test_matrimail_executes_as_service_identity_after_repair'

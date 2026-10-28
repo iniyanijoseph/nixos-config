@@ -5,6 +5,7 @@ No credentials are put in Git or the Nix store. Existing configs/registrations
 are preserved. Authentication and message acceptance are reported separately.
 """
 import json
+import http.client
 import os
 from pathlib import Path
 import pwd
@@ -168,6 +169,48 @@ def validate_discord_snapshot(path):
         source.close()
 
 
+def discord_api(base, token, endpoint, method='GET', payload=None):
+    # These operations resume existing portals/mappings. Retrying a closed
+    # connection must never rotate login credentials or recreate bridge state.
+    retryable = ((method == 'GET' and endpoint == '/v1/ping') or
+                 (method == 'POST' and endpoint in (
+                     '/v1/contabo/archive', '/v1/guilds/804408079940583475')))
+    attempts = 10 if retryable else 1
+    query = '?user_id=' + quote('@me:iniyanjoseph.com', safe='')
+    for attempt in range(attempts):
+        request = urllib.request.Request(base + endpoint + query,
+            data=json.dumps(payload).encode() if payload is not None else None,
+            headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'},
+            method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=900) as response:
+                return json.load(response)
+        except urllib.error.HTTPError:
+            # Authentication, source access and application errors need review,
+            # not repeated requests that could hide a permanent failure.
+            raise
+        except (urllib.error.URLError, ConnectionError, TimeoutError,
+                http.client.RemoteDisconnected, http.client.IncompleteRead) as error:
+            if attempt == attempts - 1:
+                raise RuntimeError(f'Discord API {method} {endpoint} failed after '
+                    f'{attempts} attempts ({type(error).__name__}); '
+                    'inspect journalctl -u mautrix-discord-native') from error
+            print(f'WAITING: Discord API {method} {endpoint}: {type(error).__name__}; '
+                  f'retrying {attempt + 2}/{attempts}', flush=True)
+            time.sleep(min(attempt + 1, 5))
+
+
+def wait_for_discord_connection(api):
+    for attempt in range(30):
+        ping = api('/v1/ping')
+        connection = ping.get('Discord', ping.get('discord', {}))
+        if connection.get('logged_in') and connection.get('connected'):
+            return True
+        if attempt < 29:
+            time.sleep(1)
+    return False
+
+
 def commission_discord():
     prepare_identities()
     directory=Path('/var/lib/mautrix-discord-native')
@@ -218,21 +261,8 @@ def commission_discord():
     data=yaml.safe_load(config.read_text())
     token=data['bridge']['provisioning']['shared_secret']
     base='http://127.0.0.1:29322'+data['bridge']['provisioning']['prefix']
-    query='?user_id='+quote('@me:iniyanjoseph.com',safe='')
     def api(endpoint,method='GET',payload=None):
-        request=urllib.request.Request(base+endpoint+query,
-            data=json.dumps(payload).encode() if payload is not None else None,
-            headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method=method)
-        for attempt in range(30):
-            try:
-                with urllib.request.urlopen(request,timeout=900) as response:
-                    return json.load(response)
-            except urllib.error.HTTPError:
-                raise
-            except urllib.error.URLError:
-                if attempt==29:
-                    raise
-                time.sleep(1)
+        return discord_api(base, token, endpoint, method, payload)
     ping=api('/v1/ping')
     def progress(message,in_progress):
         private_json(STATE/'discord-progress.json', {'import_in_progress':in_progress})
@@ -256,6 +286,10 @@ def commission_discord():
         private_json(STATE/'discord-pilot-verified.json', {'expected':expected,'mapped':found,
                      'channel':pilot.read_text().strip(),'receiver':receiver})
         activate(build(None,discord=True,pilot=False),['matrix-synapse','mautrix-discord-native','mautrix-whatsapp'])
+        if not wait_for_discord_connection(api):
+            return progress('Discord pilot verified; full import enabled, but the saved '
+                'Discord connection has not recovered after restart. Inspect the bridge journal; '
+                'existing credentials and message mappings are preserved.', True)
     api('/v1/guilds/804408079940583475','POST',{'auto_create_channels':True})
     result=api('/v1/contabo/archive','POST')
     source=sqlite3.connect('file:'+str(snapshot)+'?mode=ro',uri=True)
@@ -283,6 +317,27 @@ def activate(target, units):
         raise
 
 
+def install_matrimail_binary(source, directory):
+    owner = pwd.getpwnam('matrimail')
+    bindir = directory / 'bin'
+    if bindir.is_symlink():
+        raise RuntimeError('Symlinked Matrimail binary directory refused')
+    bindir.mkdir(mode=0o750, exist_ok=True)
+    # mkdir's mode is reduced by the worker's 0077 umask. Repair existing
+    # installations too: the service needs group traversal of this root-owned
+    # directory, while credentials elsewhere in the state directory stay private.
+    os.chown(bindir, 0, owner.pw_gid)
+    os.chmod(bindir, 0o750)
+    binary = bindir / 'matrimail'
+    if binary.is_symlink():
+        raise RuntimeError('Symlinked Matrimail binary refused')
+    if not binary.exists():
+        shutil.copy2(source, binary)
+    os.chown(binary, 0, owner.pw_gid)
+    os.chmod(binary, 0o750)
+    return binary
+
+
 def commission():
     if os.geteuid() != 0 or os.uname().nodename.split('.')[0] != 'contabo':
         raise RuntimeError('Commissioning requires root on Contabo')
@@ -296,7 +351,6 @@ def commission():
         provision('mautrix-' + network, binary, port, Path('/var/lib/mautrix-' + network))
     run(['runuser', '-u', 'wug', '--', 'bash', HOST / 'email-bridge/build.sh'])
     directory = Path('/var/lib/matrimail')
-    (directory / 'bin').mkdir(mode=0o750, exist_ok=True)
     # The manually compiled ELF references libolm in the Nix store. Keep its
     # runtime closure alive across garbage collection, scoped to this bridge.
     if not (directory / 'olm-runtime').exists():
@@ -304,10 +358,8 @@ def commission():
           p=import f.inputs.nixpkgs {system="x86_64-linux";
             config.permittedInsecurePackages=["olm-3.2.16"];}; in p.olm'''
         run(['nix','build','--impure','--expr',expression,'--out-link',directory/'olm-runtime'])
-    binary = directory / 'bin/matrimail'
-    if not binary.exists():
-        shutil.copy2(Path(pwd.getpwnam('wug').pw_dir) / '.local/share/matrimail-build/matrimail', binary)
-        os.chmod(binary, 0o755)
+    binary = install_matrimail_binary(
+        Path(pwd.getpwnam('wug').pw_dir) / '.local/share/matrimail-build/matrimail', directory)
     secret = Path('/var/lib/secrets/matrimail.env')
     if not secret.exists():
         with secret.open('x') as stream:
@@ -316,7 +368,9 @@ def commission():
     provision('matrimail', binary, 29319, directory)
     activate(build(True), ['matrix-synapse', 'nginx', 'mautrix-whatsapp',
                           'mautrix-gmessages', 'mautrix-slack', 'matrimail'])
-    return ('Services deployed; pair @gmessagesbot:iniyanjoseph.com with login google, '
+    return ('Services deployed; pair @gmessagesbot:iniyanjoseph.com with !gm login google '
+            '(the raw Google web/config page is expected: copy its config request as cURL '
+            'from browser Network tools and submit only to the private bot DM, then approve on phone), '
             'authenticate each Slack workspace with @slackbot:iniyanjoseph.com, '
             'and use the Matrimail bot login flow for the existing hosted inbox. '
             'Account login, history coverage and send/receive remain unverified.')
