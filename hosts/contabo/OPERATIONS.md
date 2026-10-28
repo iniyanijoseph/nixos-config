@@ -150,22 +150,28 @@ A `Type=oneshot` start stays pending until the worker exits; starting active
 targets during that switch can then wait for the same worker, causing a deadlock.
 `active (running)` means the worker is running, not that commissioning passed.
 
+An existing `/etc/systemd/system` unit outranks a base unit in
+`/run/systemd/system`. The launcher therefore also installs a runtime drop-in
+that sets `Type=exec` and resets `ExecStart` to the pinned worker, then verifies
+both effective properties before starting. This covers upgrades from an older
+declarative oneshot unit without writing into NixOS's read-only `/etc`.
+
 For an older run stuck in `activating (start)` inside `switch-to-configuration`,
-stop it and apply this runtime-only override before restarting. The original
+apply the override **before** restarting the already-built worker. The original
 Discord archive is retained; this does not rebuild or reboot the machine:
 
 ```fish
-sudo systemctl stop contabo-finish-setup.service
-and sudo install -d /run/systemd/system/contabo-finish-setup.service.d
+sudo install -d /run/systemd/system/contabo-finish-setup.service.d
 and printf '[Service]\nType=exec\n' | sudo tee /run/systemd/system/contabo-finish-setup.service.d/activation-fix.conf >/dev/null
 and sudo systemctl daemon-reload
-and sudo bash /etc/nixos/hosts/contabo/finish-setup.sh
+and sudo systemctl restart --no-block contabo-finish-setup.service
 ```
 
 An older launcher may return immediately once the worker becomes active; use
 `--status` to inspect it. Updated launchers keep following the running worker.
-The repository fix sets `Type=exec` in both runtime and declarative units, so
-the override is unnecessary for subsequent launches of the fixed version.
+The current launcher creates its drop-in automatically; future launches do
+not require installing the manual override. The declarative unit also uses
+`Type=exec` once the new generation is deployed.
 
 **One-command read-only inventory:** `sudo /run/current-system/sw/bin/fish /etc/nixos/hosts/contabo/observe.fish` (after pulling the reviewed Git commit). It prints sanitized state only; no secret values or private message bodies. See [SETUP-PLAN.md](./SETUP-PLAN.md) for the full service target and phased acceptance criteria.
 

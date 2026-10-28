@@ -19,6 +19,9 @@ let
     fi
     echo 'Fixture worker completed' > ${state}/summary.txt
   '';
+  legacyWorker = pkgs.writeShellScriptBin "legacy-contabo-finish-setup" ''
+    echo legacy >> ${state}/legacy-executions
+  '';
   # Substitute only the external build, not any launcher/systemd code.
   nixFixture = pkgs.hiPrio (pkgs.writeShellScriptBin "nix" ''
     test "$1" = build
@@ -31,19 +34,32 @@ let
     specialisation.activation.configuration = {
       # Covers the first switch that installs the declarative resume unit too.
       imports = [ ./finish-setup.nix ];
+      systemd.services.contabo-finish-setup.serviceConfig = {
+        Type = pkgs.lib.mkForce "exec";
+        ExecStart = pkgs.lib.mkForce "${state}/runner/bin/contabo-finish-setup";
+      };
       environment.etc."contabo-activation-probe".text = "switched";
       systemd.tmpfiles.rules = [ "f /run/contabo-switched 0600 root root -" ];
     };
   };
 in pkgs.testers.runNixOSTest {
-  name = "contabo-setup-runtime-switch-and-boot-resume";
+  name = "contabo-setup-runtime-legacy-upgrade-and-boot-resume";
   nodes = {
     runtime = { ... }: { imports = [ common ]; };
     declared = { ... }: { imports = [ common ./finish-setup.nix ]; };
+    legacy = { lib, ... }: {
+      imports = [ common ./finish-setup.nix ];
+      # Reproduce the already deployed /etc unit that outranks /run's base
+      # unit. Its old worker must also be overridden by the pinned launcher.
+      systemd.services.contabo-finish-setup.serviceConfig = {
+        Type = lib.mkOverride 90 "oneshot";
+        ExecStart = lib.mkOverride 90 "${legacyWorker}/bin/legacy-contabo-finish-setup";
+      };
+    };
   };
   testScript = ''
     start_all()
-    for node in [runtime, declared]:
+    for node in [runtime, declared, legacy]:
         node.wait_for_unit("multi-user.target")
         # Exercise the actual NixOS read-only unit directory that broke the
         # first release, rather than a writable Ubuntu /etc fixture.
@@ -51,10 +67,15 @@ in pkgs.testers.runNixOSTest {
         node.succeed("mkdir -p /etc/nixos; git -C /etc/nixos init -b main")
         node.succeed("git -C /etc/nixos -c user.name=test -c user.email=test@example.com commit --allow-empty -m fixture")
         node.succeed("bash ${./finish-setup.sh}")
+        assert node.succeed("systemctl show contabo-finish-setup.service -p Type --value").strip() == "exec"
+        node.succeed("test -f /run/systemd/system/contabo-finish-setup.service.d/90-contabo-launcher.conf")
         node.wait_until_succeeds("test -f ${state}/executions")
         node.succeed("test -f /run/systemd/system/contabo-finish-setup.service")
         node.succeed("test -f ${state}/resume-on-boot")
         node.succeed("test $(wc -l < ${state}/executions) -eq 1")
+        node.succeed("test ! -e ${state}/legacy-executions")
+
+    assert legacy.succeed("systemctl show contabo-finish-setup.service -p FragmentPath --value").strip().startswith("/etc/systemd/system/")
 
     runtime.succeed("bash ${./finish-setup.sh} --status")
     runtime.fail("systemctl is-enabled --quiet contabo-finish-setup.service")
@@ -65,13 +86,23 @@ in pkgs.testers.runNixOSTest {
     runtime.wait_for_unit("multi-user.target")
     runtime.succeed("test $(wc -l < ${state}/executions) -eq 1")
     runtime.succeed("test ! -e /run/systemd/system/contabo-finish-setup.service")
+    runtime.succeed("test ! -e /run/systemd/system/contabo-finish-setup.service.d/90-contabo-launcher.conf")
 
     declared.shutdown()
     declared.start()
     declared.wait_for_unit("multi-user.target")
     declared.wait_until_succeeds("test $(wc -l < ${state}/executions) -eq 2")
 
-    for node in [runtime, declared]:
+    # A runtime override does not survive a reboot before the new generation
+    # is deployed. Relaunching must override the old /etc unit again.
+    legacy.shutdown()
+    legacy.start()
+    legacy.wait_for_unit("multi-user.target")
+    assert legacy.succeed("systemctl show contabo-finish-setup.service -p Type --value").strip() == "oneshot"
+    legacy.succeed("test $(wc -l < ${state}/legacy-executions) -eq 1")
+    legacy.succeed("test $(wc -l < ${state}/executions) -eq 1")
+
+    for node in [runtime, declared, legacy]:
         before = int(node.succeed("wc -l < ${state}/executions").strip())
         target = node.succeed("readlink -f /run/current-system").strip() + "/specialisation/activation"
         node.succeed(f"echo {target} > ${state}/switch-target")
