@@ -22,7 +22,7 @@
  
  	portal.forwardBackfillLock.Lock()
  	defer portal.forwardBackfillLock.Unlock()
-+ portal.ensureContaboArchive(source,thread)
++ if !portal.ensureContaboArchive(source,thread) {return}
  
  	var lastMessage *database.Message
  	if thread != nil {
@@ -63,11 +63,12 @@
  	"reflect"
  	"regexp"
  	"slices"
-@@ -54,6 +55,7 @@
+@@ -54,6 +55,8 @@
  var relayClient, _ = discordgo.New("")
  
  type Portal struct {
 + contaboArchiveReady map[string]bool
++ contaboArchiveErrors map[string]string
  	*database.Portal
  
  	Parent *Portal
@@ -107,7 +108,7 @@
  	}
  	portal.forwardBackfillLock.Lock()
  	defer portal.forwardBackfillLock.Unlock()
-+ portal.ensureContaboArchive(msg.user,msg.thread)
++ if !portal.ensureContaboArchive(msg.user,msg.thread) {return}
  
  	switch convertedMsg := msg.msg.(type) {
  	case *discordgo.MessageCreate:
