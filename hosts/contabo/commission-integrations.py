@@ -403,6 +403,52 @@ def secret_file(path):
     return value
 
 
+def ensure_mail_principal(url, headers, name, payload):
+    """Provision only an explicitly missing Stalwart 0.15 principal.
+
+    Management errors can arrive as HTTP 200 JSON. Match the requested name
+    before creating anything, preserve existing credentials, and verify a
+    successful POST with a fresh GET before reporting completion.
+    """
+    principal_url = url + '/' + quote(name, safe='')
+
+    def request(method, target, body=None):
+        req = urllib.request.Request(target, headers=headers, method=method,
+            data=json.dumps(body).encode() if body is not None else None)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                result = json.load(response)
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(
+                f'Stalwart principal {method} failed (HTTP {error.code})') from None
+        except (ValueError, UnicodeError):
+            raise RuntimeError('Invalid Stalwart management JSON response') from None
+        if not isinstance(result, dict):
+            raise RuntimeError('Unexpected Stalwart management response')
+        return result
+
+    def exists():
+        result = request('GET', principal_url)
+        if (result.get('error') == 'notFound' and result.get('item') == name
+                and 'data' not in result):
+            return False
+        if 'error' in result or not isinstance(result.get('data'), dict):
+            raise RuntimeError('Stalwart principal lookup rejected or unexpected response')
+        if result['data'].get('name') != name:
+            raise RuntimeError('Stalwart principal lookup returned a different name')
+        return True
+
+    if exists():
+        return
+    body = payload() if callable(payload) else payload
+    result = request('POST', url, body)
+    if ('error' in result or type(result.get('data')) is not int
+            or result['data'] < 0):
+        raise RuntimeError('Stalwart rejected principal creation')
+    if not exists():
+        raise RuntimeError('Stalwart principal missing after creation')
+
+
 def commission_mail():
     # Never replace existing MX/forwarding from this script. HTTP proxy IPs
     # cannot receive SMTP, so the mail hostname must resolve to this VPS.
@@ -420,22 +466,7 @@ def commission_mail():
     url = 'https://mail.iniyanjoseph.com/api/principal'
     headers = {'Authorization': 'Basic ' + auth, 'Content-Type':'application/json'}
     def ensure(name, payload):
-        try:
-            request = urllib.request.Request(url + '/' + name, headers=headers)
-            with urllib.request.urlopen(request, timeout=30) as response:
-                result = json.load(response)
-            if 'data' not in result:
-                raise RuntimeError('Unexpected Stalwart management response')
-        except urllib.error.HTTPError as err:
-            if err.code != 404:
-                raise RuntimeError('Stalwart administrator API authentication/health failed') from None
-            if callable(payload):
-                payload = payload()
-            request = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                             headers=headers, method='POST')
-            with urllib.request.urlopen(request, timeout=30) as response:
-                if 'data' not in json.load(response):
-                    raise RuntimeError('Stalwart rejected principal creation')
+        ensure_mail_principal(url, headers, name, payload)
     # This is the 0.15.x management API, not the later JMAP management API.
     ensure('iniyanjoseph.com', {'name':'iniyanjoseph.com','type':'domain'})
     def new_mailbox():
