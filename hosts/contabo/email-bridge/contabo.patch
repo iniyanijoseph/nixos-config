@@ -1,0 +1,113 @@
+--- a/pkg/imap/client.go
++++ b/pkg/imap/client.go
+@@ -1317,7 +1317,7 @@
+ }
+ 
+ // processMessage fetches and processes a single email message
+-func (c *Client) processMessageWith(ctx context.Context, cli *imapclient.Client, uid imap.UID, mailbox string) error {
++func (c *Client) processMessageWith(ctx context.Context, cli *imapclient.Client, uid imap.UID, mailbox string, waitForMapping ...bool) error {
+ 	c.log.Debug().Uint32("uid", uint32(uid)).Msg("Fetching message")
+ 
+ 	// Fetch message with headers and body
+@@ -1340,6 +1340,7 @@
+ 	uidSet := imap.UIDSetNum(uid)
+ 	fetchCmd := cli.Fetch(uidSet, fetchOptions)
+ 
++	hadMessage := false
+ 	// Process the fetched message
+ 	for {
+ 		msg := fetchCmd.Next()
+@@ -1347,6 +1348,7 @@
+ 			break
+ 		}
+ 
++		hadMessage = true
+ 		// Skip processing if login is nil (testing mode)
+ 		if c.login == nil {
+ 			c.log.Debug().Msg("Skipping message processing (test mode)")
+@@ -1442,6 +1444,10 @@
+ 			return err
+ 		}
+ 
++		if len(waitForMapping) > 0 && waitForMapping[0] {
++			mapped, err := c.contaboMappedMessage(ctx, emailMessage.MessageID)
++			if err != nil { return err }; if mapped { continue }
++		}
+ 		// Queue the event with the bridge framework
+ 		if !c.login.QueueRemoteEvent(matrixEvent).Success {
+ 			if c.sanitized {
+@@ -1449,7 +1455,8 @@
+ 					Str("message_id_hash", logging.HashHMAC(string(emailMessage.MessageID), c.secret, 10)).
+ 					Str("subject_hash", logging.HashHMAC(logging.BoundAndClean(emailMessage.Subject, 256), c.secret, 10)).
+ 					Msg("Failed to queue remote event")
+-			} else {
++				if len(waitForMapping) > 0 && waitForMapping[0] { return fmt.Errorf("native email event queue rejected message") }
++		} else {
+ 				c.log.Error().
+ 					Str("message_id", string(emailMessage.MessageID)).
+ 					Str("subject", logging.BoundAndClean(emailMessage.Subject, 256)).
+@@ -1468,6 +1475,9 @@
+ 					Msg("Successfully queued email message")
+ 			}
+ 		}
++		if len(waitForMapping) > 0 && waitForMapping[0] {
++			if err := c.contaboWaitForMessage(ctx, emailMessage.MessageID); err != nil { return err }
++		}
+ 	}
+ 
+ 	// Wait for fetch to complete
+@@ -1475,6 +1485,7 @@
+ 		return fmt.Errorf("fetch command failed: %w", err)
+ 	}
+ 
++	if len(waitForMapping) > 0 && waitForMapping[0] && !hadMessage { return fmt.Errorf("source email disappeared before history fetch") }
+ 	return nil
+ }
+ 
+--- a/pkg/connector/connector.go
++++ b/pkg/connector/connector.go
+@@ -306,6 +306,13 @@
+ // createCommands creates command handlers with access to this connector instance
+ func (ec *EmailConnector) createCommands() []commands.CommandHandler {
+ 	return []commands.CommandHandler{
++        &commands.FullHandler{
++            Func: func(ce *commands.Event) { fnContaboBackfill(ce, ec) },
++            Name: "backfill",
++            Help: commands.HelpMeta{Section: HelpSectionAdmin,
++                Description: "Import retained history from selected IMAP folders; repeat to resume.",
++                Args: "[days|all] [email]"},
++        },
+ 		&commands.FullHandler{
+ 			Func: fnPing,
+ 			Name: "ping",
+--- a/pkg/connector/commands.go
++++ b/pkg/connector/commands.go
+@@ -840,8 +840,10 @@
+ 		return err
+ 	}
+ 
+-	// Send success message
+-	ce.Reply(step.Instructions)
++	// Install the next step's input handler as well as showing its prompt.
++	// Otherwise a folder number is handled by the previous email prompt.
++	commands.StoreCommandState(ce.User, nil)
++	dispatchLoginStep(ce, loginProcess, step, LoginFlowIDPassword)
+ 	return nil
+ }
+ 
+--- a/pkg/connector/login.go
++++ b/pkg/connector/login.go
+@@ -234,10 +234,9 @@
+ 		}
+ 	}
+ 
+-	// Set username to email if not provided separately
+-	if elp.username == "" {
+-		elp.username = elp.email
+-	}
++	// The password flow has no separate username field. A retry may supply a
++	// corrected address, so do not retain the username from the failed try.
++	elp.username = elp.email
+ 
+ 	// Validate required fields
+ 	if elp.email == "" {

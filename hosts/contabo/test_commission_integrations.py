@@ -22,7 +22,6 @@ spec = importlib.util.spec_from_file_location('commission', os.environ.get('CONT
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
-
 @contextmanager
 def stalwart_fixture(responses):
     """Exercise the real urllib client against the pinned API wire format."""
@@ -52,6 +51,65 @@ def stalwart_fixture(responses):
 
 
 class Tests(unittest.TestCase):
+    def test_manager_api_preserves_private_credentials_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'config.yaml'
+            data = {'appservice': {'hostname': '127.0.0.1', 'port': 29321},
+                    'database': {'uri': 'private-existing-database'},
+                    'bridge': {'permissions': {'@me:iniyanjoseph.com': 'admin'}},
+                    'provisioning': {'shared_secret': 'disable'}}
+            config.write_text(yaml.safe_dump(data))
+            config.chmod(0o640)
+            before = config.stat()
+            self.assertTrue(c.enable_manager_api(config))
+            updated = yaml.safe_load(config.read_text())
+            self.assertEqual(updated['database'], data['database'])
+            self.assertEqual(updated['bridge'], data['bridge'])
+            self.assertTrue(updated['provisioning']['allow_matrix_auth'])
+            self.assertFalse(updated['provisioning']['debug_endpoints'])
+            self.assertGreaterEqual(len(updated['provisioning']['shared_secret']), 32)
+            self.assertEqual(config.stat().st_mode & 0o777, 0o640)
+            self.assertEqual((config.stat().st_uid, config.stat().st_gid), (before.st_uid, before.st_gid))
+            checkpoint = config.read_bytes()
+            self.assertFalse(c.enable_manager_api(config))
+            self.assertEqual(config.read_bytes(), checkpoint)
+
+    def test_manager_api_rejects_public_listeners_and_unsafe_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'config.yaml'
+            for hostname in ('0.0.0.0', '::', 'localhost'):
+                config.write_text(yaml.safe_dump({'appservice': {'hostname': hostname}}))
+                config.chmod(0o600)
+                before = config.read_bytes()
+                with self.assertRaisesRegex(RuntimeError, 'loopback-only'):
+                    c.enable_manager_api(config)
+                self.assertEqual(config.read_bytes(), before)
+            config.write_text(yaml.safe_dump({'appservice': {'hostname': '127.0.0.1'}}))
+            config.chmod(0o644)
+            with self.assertRaisesRegex(RuntimeError, 'world-readable'):
+                c.enable_manager_api(config)
+            link = Path(directory) / 'link'
+            link.symlink_to(config)
+            with self.assertRaisesRegex(RuntimeError, 'Unsafe'):
+                c.enable_manager_api(link)
+
+
+    def test_failed_matrimail_update_keeps_previous_executable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            bindir = directory / 'bin'
+            bindir.mkdir()
+            binary = bindir / 'matrimail'
+            binary.write_text('previous executable')
+            source = directory / 'built'
+            source.write_text('new executable')
+            owner = type('Owner', (), {'pw_gid': os.getgid()})()
+            with patch.object(c.pwd, 'getpwnam', return_value=owner), patch.object(c.os, 'chown'), \
+                    patch.object(c.shutil, 'copyfileobj', side_effect=OSError('disk full')):
+                with self.assertRaisesRegex(OSError, 'disk full'):
+                    c.install_matrimail_binary(source, directory)
+            self.assertEqual(binary.read_text(), 'previous executable')
+            self.assertEqual(list(bindir.glob('.matrimail-*')), [])
 
     def test_stalwart_http200_not_found_creates_once_and_verifies(self):
         responses = [
@@ -190,7 +248,7 @@ class Tests(unittest.TestCase):
             self.assertFalse(c.wait_for_discord_connection(ping))
             self.assertEqual(ping.call_count, 30)
 
-    def test_matrimail_install_repairs_restrictive_umask_and_preserves_existing_binary(self):
+    def test_matrimail_install_repairs_permissions_and_atomically_updates_changed_binary(self):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)
             source = directory / 'built'
@@ -198,15 +256,20 @@ class Tests(unittest.TestCase):
             owner = type('Owner', (), {'pw_gid':os.getgid()})()
             previous = os.umask(0o077)
             try:
-                with patch.object(c.pwd, 'getpwnam', return_value=owner), patch.object(c.os, 'chown'):
+                with patch.object(c.pwd, 'getpwnam', return_value=owner), patch.object(c.os, 'chown'), patch.object(c.os, 'fchown'):
                     binary = c.install_matrimail_binary(source, directory)
                     self.assertEqual(binary.parent.stat().st_mode & 0o777, 0o750)
                     self.assertEqual(binary.stat().st_mode & 0o777, 0o750)
                     binary.parent.chmod(0o700)
-                    source.write_text('replacement must not overwrite installation')
+                    previous_inode = binary.stat().st_ino
                     c.install_matrimail_binary(source, directory)
-                    self.assertEqual(binary.read_text(), 'pinned binary')
+                    self.assertEqual(binary.stat().st_ino, previous_inode)
+                    source.write_text('updated pinned binary')
+                    c.install_matrimail_binary(source, directory)
+                    self.assertEqual(binary.read_text(), 'updated pinned binary')
+                    self.assertNotEqual(binary.stat().st_ino, previous_inode)
                     self.assertEqual(binary.parent.stat().st_mode & 0o777, 0o750)
+                    self.assertEqual(list(binary.parent.glob('.matrimail-*')), [])
             finally:
                 os.umask(previous)
 

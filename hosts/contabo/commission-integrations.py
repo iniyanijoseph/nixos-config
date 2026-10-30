@@ -6,6 +6,7 @@ are preserved. Authentication and message acceptance are reported separately.
 """
 import json
 import http.client
+import hashlib
 import os
 from pathlib import Path
 import pwd
@@ -322,6 +323,49 @@ def activate(target, units):
         raise
 
 
+def enable_manager_api(config):
+    """Enable Matrix-authenticated login on an existing loopback bridge only."""
+    if config.is_symlink() or not config.is_file():
+        raise RuntimeError('Unsafe bridge configuration')
+    old = config.stat()
+    if old.st_mode & 0o007:
+        raise RuntimeError('Bridge configuration must not be world-readable')
+    data = yaml.safe_load(config.read_text())
+    if data.get('appservice', {}).get('hostname') != '127.0.0.1':
+        raise RuntimeError('Manager API requires a loopback-only bridge listener')
+    provisioning = data.setdefault('provisioning', {})
+    previous = dict(provisioning)
+    secret = provisioning.get('shared_secret')
+    if secret in (None, '', 'disable', 'generate'):
+        provisioning['shared_secret'] = secrets.token_hex(48)
+    elif not isinstance(secret, str) or len(secret) < 32:
+        raise RuntimeError('Unexpected existing provisioning secret; preserved for review')
+    provisioning['allow_matrix_auth'] = True
+    provisioning['debug_endpoints'] = False
+    if previous == provisioning:
+        return False
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', dir=config.parent,
+                                         prefix='.manager-', delete=False) as stream:
+            temporary = Path(stream.name)
+            os.fchown(stream.fileno(), old.st_uid, old.st_gid)
+            os.fchmod(stream.fileno(), old.st_mode & 0o777)
+            yaml.safe_dump(data, stream, sort_keys=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(config)
+        fd = os.open(config.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return True
+
+
 def install_matrimail_binary(source, directory):
     owner = pwd.getpwnam('matrimail')
     bindir = directory / 'bin'
@@ -336,8 +380,29 @@ def install_matrimail_binary(source, directory):
     binary = bindir / 'matrimail'
     if binary.is_symlink():
         raise RuntimeError('Symlinked Matrimail binary refused')
-    if not binary.exists():
-        shutil.copy2(source, binary)
+    def digest(path):
+        with path.open('rb') as stream:
+            return hashlib.file_digest(stream, 'sha256').digest()
+    if not binary.exists() or (source.exists() and digest(source) != digest(binary)):
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=bindir, prefix='.matrimail-', delete=False) as stream:
+                temporary = Path(stream.name)
+                with source.open('rb') as built:
+                    shutil.copyfileobj(built, stream)
+                os.fchown(stream.fileno(), 0, owner.pw_gid)
+                os.fchmod(stream.fileno(), 0o750)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(binary)
+            fd = os.open(bindir, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     os.chown(binary, 0, owner.pw_gid)
     os.chmod(binary, 0o750)
     return binary
@@ -351,9 +416,12 @@ def commission():
     # First install only disabled service identities. Existing production
     # services retain their data and the WhatsApp linked-device session.
     prepare_identities()
+    changed_manager_units = []
     for network, port in [('gmessages', 29320), ('slack', 29321)]:
         binary = os.environ['CONTABO_' + network.upper() + '_BINARY']
         provision('mautrix-' + network, binary, port, Path('/var/lib/mautrix-' + network))
+        if enable_manager_api(Path('/var/lib/mautrix-' + network) / 'config.yaml'):
+            changed_manager_units.append('mautrix-' + network)
     run(['runuser', '-u', 'wug', '--', 'bash', HOST / 'email-bridge/build.sh'])
     directory = Path('/var/lib/matrimail')
     # The manually compiled ELF references libolm in the Nix store. Keep its
@@ -363,6 +431,8 @@ def commission():
           p=import f.inputs.nixpkgs {system="x86_64-linux";
             config.permittedInsecurePackages=["olm-3.2.16"];}; in p.olm'''
         run(['nix','build','--impure','--expr',expression,'--out-link',directory/'olm-runtime'])
+    installed = directory / 'bin/matrimail'
+    previous_binary = installed.stat().st_ino if installed.exists() else None
     binary = install_matrimail_binary(
         Path(pwd.getpwnam('wug').pw_dir) / '.local/share/matrimail-build/matrimail', directory)
     secret = Path('/var/lib/secrets/matrimail.env')
@@ -373,6 +443,9 @@ def commission():
     provision('matrimail', binary, 29319, directory)
     activate(build(True), ['matrix-synapse', 'nginx', 'mautrix-whatsapp',
                           'mautrix-gmessages', 'mautrix-slack', 'matrimail'])
+    for unit in changed_manager_units + (['matrimail'] if binary.stat().st_ino != previous_binary else []):
+        run(['systemctl', 'restart', unit])
+        run(['systemctl', 'is-active', '--quiet', unit])
     return ('Services deployed; pair @gmessagesbot:iniyanjoseph.com with !gm login google '
             '(the raw Google web/config page is expected: copy its config request as cURL '
             'from browser Network tools and submit only to the private bot DM, then approve on phone), '

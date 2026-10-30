@@ -34,6 +34,8 @@
         ${pkgs.python3.withPackages (ps: [ps.pyyaml])}/bin/python3 ${./test_commission_integrations.py}
         touch "$out"
       '';
+    packages.x86_64-linux.contabo-bridge-manager =
+      import ./bridge-manager.nix { pkgs = import nixpkgs { inherit system; }; };
     packages.x86_64-linux.contabo-discord-native =
       let pkgs = import nixpkgs { inherit system; };
       in import ./discord-native/package.nix { inherit pkgs; };
@@ -175,6 +177,7 @@ for path in [
       packages = [
         emailPkgs.go
         emailPkgs.git
+        emailPkgs.patch
         emailPkgs.pkg-config
         emailPkgs.olm
         emailPkgs.gcc
