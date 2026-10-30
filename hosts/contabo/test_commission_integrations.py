@@ -15,14 +15,123 @@ import http.server
 import socket
 import threading
 import io
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, contextmanager
 
 spec = importlib.util.spec_from_file_location('commission', os.environ.get('CONTABO_COMMISSION_SCRIPT',
     str(Path(__file__).with_name('commission-integrations.py'))))
 c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
+
+@contextmanager
+def stalwart_fixture(responses):
+    """Exercise the real urllib client against the pinned API wire format."""
+    requests = []
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+        def respond(self):
+            raw = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+            requests.append((self.command, self.path, self.headers.get('Authorization'),
+                             json.loads(raw) if raw else None))
+            status, payload = responses.pop(0) if responses else (500, {})
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(payload if isinstance(payload, bytes) else json.dumps(payload).encode())
+        do_GET = respond
+        do_POST = respond
+    with http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f'http://127.0.0.1:{server.server_port}/api/principal', requests
+        finally:
+            server.shutdown()
+            thread.join()
+
+
 class Tests(unittest.TestCase):
+
+    def test_stalwart_http200_not_found_creates_once_and_verifies(self):
+        responses = [
+            (200, {'error': 'notFound', 'item': 'me'}),
+            (200, {'data': 42}),
+            (200, {'data': {'name': 'me', 'type': 'individual'}}),
+            (200, {'data': {'name': 'me', 'type': 'individual'}}),
+        ]
+        factory = unittest.mock.Mock(return_value={
+            'name': 'me', 'type': 'individual', 'secrets': ['fixture-hash']})
+        with stalwart_fixture(responses) as (url, requests):
+            c.ensure_mail_principal(url, {'Authorization': 'Basic fixture'}, 'me', factory)
+            c.ensure_mail_principal(url, {'Authorization': 'Basic fixture'}, 'me', factory)
+        self.assertEqual(factory.call_count, 1)
+        self.assertEqual([r[0] for r in requests], ['GET', 'POST', 'GET', 'GET'])
+        self.assertEqual(requests[1][1], '/api/principal')
+        self.assertEqual(requests[1][3]['secrets'], ['fixture-hash'])
+        self.assertTrue(all(r[2] == 'Basic fixture' for r in requests))
+        self.assertEqual(responses, [])
+
+    def test_stalwart_existing_principal_does_not_generate_or_rotate_credentials(self):
+        factory = unittest.mock.Mock(side_effect=AssertionError('must preserve existing password'))
+        with stalwart_fixture([(200, {'data': {'name': 'me'}})]) as (url, requests):
+            c.ensure_mail_principal(url, {}, 'me', factory)
+        factory.assert_not_called()
+        self.assertEqual(len(requests), 1)
+
+    def test_stalwart_lookup_errors_never_create_a_mailbox_or_disclose_response(self):
+        responses = [
+            {'error': 'notFound', 'item': 'someone-else'},
+            {'error': 'other', 'details': 'private-response-sentinel'},
+            {'error': 'notFound', 'item': 'someone-else', 'data': {'name': 'me'}},
+            {'error': 'notFound', 'item': 'me', 'data': {'name': 'me'}},
+            {'data': None},
+            {'data': {'name': 'someone-else'}},
+            {},
+            [],
+            b'not valid JSON',
+        ]
+        for response in responses:
+            with self.subTest(response=response):
+                factory = unittest.mock.Mock()
+                with stalwart_fixture([(200, response)]) as (url, requests):
+                    with self.assertRaises(RuntimeError) as raised:
+                        c.ensure_mail_principal(url, {}, 'me', factory)
+                self.assertNotIn('private-response-sentinel', str(raised.exception))
+                factory.assert_not_called()
+                self.assertEqual([r[0] for r in requests], ['GET'])
+
+    def test_stalwart_http_errors_are_not_treated_as_missing_principals(self):
+        for status in (401, 403, 404, 500):
+            with self.subTest(status=status):
+                factory = unittest.mock.Mock()
+                with stalwart_fixture([(status, {'error': 'notFound', 'item': 'me'})]) as (url, requests):
+                    with self.assertRaisesRegex(RuntimeError, f'HTTP {status}'):
+                        c.ensure_mail_principal(url, {}, 'me', factory)
+                factory.assert_not_called()
+                self.assertEqual(len(requests), 1)
+
+    def test_stalwart_http200_creation_errors_are_not_success(self):
+        for response in ({'error': 'fieldMissing', 'field': 'type'},
+                         {'data': None}, {'data': True}, {'data': '42'}, {'data': -1}):
+            with self.subTest(response=response):
+                with stalwart_fixture([
+                    (200, {'error': 'notFound', 'item': 'me'}), (200, response)
+                ]) as (url, requests):
+                    with self.assertRaisesRegex(RuntimeError, 'rejected principal creation'):
+                        c.ensure_mail_principal(url, {}, 'me', {'name': 'me'})
+                self.assertEqual([r[0] for r in requests], ['GET', 'POST'])
+
+    def test_stalwart_creation_must_be_visible_in_a_fresh_lookup(self):
+        with stalwart_fixture([
+            (200, {'error': 'notFound', 'item': 'me'}),
+            (200, {'data': 42}),
+            (200, {'error': 'notFound', 'item': 'me'}),
+        ]) as (url, requests):
+            with self.assertRaisesRegex(RuntimeError, 'missing after creation'):
+                c.ensure_mail_principal(url, {}, 'me', {'name': 'me'})
+        self.assertEqual([r[0] for r in requests], ['GET', 'POST', 'GET'])
+
     def test_discord_resumes_post_after_peer_closes_connection_without_response(self):
         requests = []
         class Handler(http.server.BaseHTTPRequestHandler):
