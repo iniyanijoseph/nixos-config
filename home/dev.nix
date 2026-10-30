@@ -4,6 +4,7 @@
     hugo
 
     python313
+    nodejs
 
     lua
     ruby
