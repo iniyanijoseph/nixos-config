@@ -101,7 +101,10 @@ in
     security.acme.certs.${host} = {
       group = "mail-tls";
       # Reload after certificate renewal so Stalwart re-reads its key.
-      postRun = "systemctl try-restart stalwart.service";
+      # NixOS schedules reloadServices with --no-block after renewal. A
+      # blocking restart in postRun waits for Stalwart, whose After= dependency
+      # waits for this same ACME unit to finish.
+      reloadServices = [ "stalwart.service" ];
     };
     systemd.services.stalwart.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
     systemd.services.nginx.serviceConfig.SupplementaryGroups = [ "mail-tls" ];
