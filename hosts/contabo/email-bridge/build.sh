@@ -29,8 +29,14 @@ echo "Building Matrimail $REV with Nix-pinned Go and libolm..."
 nix develop "$FLAKE_DIR#email-bridge" --command bash -c '
   set -euo pipefail
   cd "$1"
+  patch --batch --forward -p1 < "$3/contabo.patch"
+  cp "$3/imap_backfill.go" pkg/imap/contabo_backfill.go
+  cp "$3/imap_backfill_test.go" pkg/imap/contabo_backfill_test.go
+  cp "$3/connector_backfill.go" pkg/connector/contabo_backfill.go
+  gofmt -w pkg/imap/contabo_backfill*.go pkg/connector/contabo_backfill.go
+  CGO_ENABLED=1 go test ./pkg/imap ./pkg/connector -run TestContabo -count=1
   CGO_ENABLED=1 go build -trimpath -o "$2/matrimail" ./cmd/matrimail
-' bash "$SRC_DIR" "$OUT_DIR"
+' bash "$SRC_DIR" "$OUT_DIR" "$SCRIPT_DIR"
 chmod 0750 "$OUT_DIR/matrimail"
 echo "Built: $OUT_DIR/matrimail"
 echo "This binary has NOT been installed or started."
