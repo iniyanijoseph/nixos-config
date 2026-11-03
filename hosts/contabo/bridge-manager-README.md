@@ -95,6 +95,38 @@ The existing OAuth-only `backlog` command is unchanged. The patched password
 login also installs the folder-selection input handler after inline login and
 updates the IMAP username when a corrected email address is retried.
 
+## Retrospective consolidation of pre-existing email rooms
+
+On first connection with the patched Matrimail service, a checkpointed,
+low-rate background worker detects old per-subject `thread:` portals and
+automatically replays **all retained messages in the account's selected IMAP
+folders** into the newer contact-based portals. There is no need to issue the
+manual `backfill all` command to start this migration. Backfill uses its
+existing read-only IMAP connection, 2 messages/second limit, 5 GiB disk guard,
+and UIDVALIDITY validation. Restarting the service resumes the saved
+per-folder checkpoint. If an IMAP login is unavailable, the old rooms are
+preserved until you reconnect the account.
+
+When replay finishes, the bridge audits the original per-subject portals
+against the new contact-room native message mappings **including message
+parts**, within the same email account. A legacy room is marked
+`Archived email · …` and given links to the new contact rooms only if all
+its identifiable old email messages/parts have real destination mappings.
+Custom room names are left unchanged. Any unverified old rooms are retained
+unchanged; a successfully marked room is **not deleted, forgotten, or
+force-left** and keeps its original Matrix history. The bridge cannot
+literally move Matrix events between rooms or promise attachment parity
+merely from native mappings.
+
+If old rooms are not archived, check whether the account's IMAP selected
+folders include the historical mail (for Gmail, this usually requires
+the All Mail folder). Read the Matrimail journal for
+`Contact-room replay`, `Legacy email`, or `unverified_rooms`. A manual
+`!matrimail backfill all your@gmail.com` completes the same coverage audit
+and posts the result into the bot DM. Out-of-scope, deleted, or no-longer-
+available source emails require a separate recovery strategy; the worker
+does not invent their content or modify the originals.
+
 ## Contact rooms and email replies
 
 The pinned Matrimail patch enables one contact room per monitored account and
@@ -119,7 +151,7 @@ trusted to act as that Matrix account. Tokens remain in private server files.
 One Synapse restart loads that changed registration; other active bridges are
 preserved. New rooms auto-join through the normal double puppet.
 
-To populate the new layout after deploying, run a pilot in the Matrimail bot DM:
+To check the new layout manually or resume a paused import, run a pilot in the Matrimail bot DM:
 
 ```text
 !matrimail backfill 30 your@gmail.com
