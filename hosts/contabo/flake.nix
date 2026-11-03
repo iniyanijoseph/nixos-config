@@ -36,6 +36,8 @@
       '';
     packages.x86_64-linux.contabo-bridge-manager =
       import ./bridge-manager.nix { pkgs = import nixpkgs { inherit system; }; };
+    packages.x86_64-linux.contabo-matrimail =
+      import ./email-bridge/package.nix { pkgs = emailPkgs; };
     packages.x86_64-linux.contabo-discord-native =
       let pkgs = import nixpkgs { inherit system; };
       in import ./discord-native/package.nix { inherit pkgs; };
