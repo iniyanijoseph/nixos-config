@@ -6,7 +6,7 @@ pkgs.buildGoModule {
     owner = "Leicas";
     repo = "matrimail";
     rev = "6f22bb7115063241eb91d146ad1f177a56ae3ad5";
-    hash = pkgs.lib.fakeHash;
+    hash = "sha256-hWwGGPHmVQ0OWhCtc5bN0vlIbsee8D6hr/utVmma80k=";
   };
   vendorHash = pkgs.lib.fakeHash;
   patches = [ ./contabo.patch ];
