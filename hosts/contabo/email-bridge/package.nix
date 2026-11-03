@@ -8,7 +8,7 @@ pkgs.buildGoModule {
     rev = "6f22bb7115063241eb91d146ad1f177a56ae3ad5";
     hash = "sha256-hWwGGPHmVQ0OWhCtc5bN0vlIbsee8D6hr/utVmma80k=";
   };
-  vendorHash = pkgs.lib.fakeHash;
+  vendorHash = "sha256-bnJjYRfUdUiI6op2DONGM2HzCsQVU+V/6+RV1FiPLTE=";
   patches = [ ./contabo.patch ];
   postPatch = ''
     cp ${./imap_backfill.go} pkg/imap/contabo_backfill.go
