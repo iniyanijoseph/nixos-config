@@ -27,6 +27,15 @@
  		LocationMessage: event.CapLevelRejected,
  		Poll:            event.CapLevelRejected,
  	}
+@@ -337,6 +337,7 @@
+ func (ec *EmailConnector) startClientConnections(emailClient *EmailClient, login *bridgev2.UserLogin) {
+ 	// Automatically connect the client after loading
+ 	// Use client's lifecycle context for long-running connection
+ 	go emailClient.Connect(emailClient.ctx)
++	ec.startAutoConsolidation(emailClient)
+ 
+ 	// Register client with IMAP manager for status reporting
+ 	go func() {
 --- a/pkg/connector/client_compose.go
 +++ b/pkg/connector/client_compose.go
 @@ -101,6 +101,10 @@
