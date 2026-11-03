@@ -84,7 +84,7 @@ class Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / 'whatsapp.env'
             secret = 'private-' + 'a' * 48
-            env.write_text('WHATSAPP_PICKLE_KEY=unchanged\\nWHATSAPP_PROVISIONING_SECRET=' + secret + '\\n')
+            env.write_text('WHATSAPP_PICKLE_KEY=unchanged\nWHATSAPP_PROVISIONING_SECRET=' + secret + '\n')
             env.chmod(0o600)
             self.assertEqual(c.bridge_provisioning_secret(
                 'whatsapp', '$WHATSAPP_PROVISIONING_SECRET', env), secret)
@@ -96,7 +96,7 @@ class Tests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'Unsafe private file permissions'):
                 c.bridge_provisioning_secret('whatsapp', '$WHATSAPP_PROVISIONING_SECRET', env)
             env.chmod(0o600)
-            env.write_text('WHATSAPP_PICKLE_KEY=unchanged\\n')
+            env.write_text('WHATSAPP_PICKLE_KEY=unchanged\n')
             with self.assertRaisesRegex(RuntimeError, 'missing or invalid'):
                 c.bridge_provisioning_secret('whatsapp', '$WHATSAPP_PROVISIONING_SECRET', env)
 
