@@ -57,7 +57,24 @@
  	if err != nil {
  		return nil, err
  	}
-@@ -213,6 +219,9 @@
+@@ -96,12 +102,14 @@
+ 	// the next send goes to thread.LastFrom only.
+ 	dmMode := false
+ 	if ec.Main != nil {
+-		dmMode = ec.Main.consumePortalNextReplyDM(msg.Portal.ID)
++		dmMode = ec.Main.consumePortalNextReplyDM(portalReplyModeKey(msg.Portal))
+ 	}
+ 
+ 	var to []netmail.Address
+ 	var cc []netmail.Address
+-	if dmMode {
++	if wasDraft {
++		to, cc, err = resolveComposeRecipients(thread, selves)
++	} else if dmMode {
+ 		to, err = resolveDMRecipients(thread, selves)
+ 	} else {
+ 		to, cc, err = resolveReplyAllRecipients(thread, selves)
+@@ -213,6 +221,9 @@
  	// ThreadManager TTL eviction (or a bridge restart) doesn't lose the
  	// References chain. Best-effort; failure is logged but not fatal — the
  	// in-memory cache is still good for at least 24h.
@@ -67,7 +84,7 @@
  	pm := &PortalMetadata{
  		ThreadID:        thread.ThreadID,
  		Subject:         thread.Subject,
-@@ -294,6 +303,10 @@
+@@ -294,6 +305,10 @@
  // Reseeds the cache so subsequent operations on the same room avoid the
  // round trip.
  func (ec *EmailClient) resolveThreadForPortalWithMetadata(portal *bridgev2.Portal) (*email.EmailThread, error) {
@@ -78,12 +95,15 @@
  	if portal == nil {
  		return nil, errors.New("matrimail: nil portal")
  	}
-@@ -331,7 +344,7 @@
+@@ -331,7 +346,10 @@
  func computeReplyChain(thread *email.EmailThread, replyTo *database.Message) (string, []string) {
  	references := append([]string(nil), thread.References...)
  	if replyTo != nil {
 -		parentID := strings.TrimPrefix(string(replyTo.ID), "email:")
 +		parentID := email.RawEmailMessageID(string(replyTo.ID))
++        if parentID == thread.ThreadID && strings.HasPrefix(thread.ThreadID, "compose-") {
++            parentID = thread.MessageID
++        }
  		references = append(references, parentID)
  		return parentID, references
  	}
@@ -110,6 +130,15 @@
  	logins := ce.User.GetUserLogins()
  	if len(logins) == 0 {
  		ce.Reply("ℹ️ You're not connected to any email accounts. Use `!matrimail login` first.")
+@@ -1509,7 +1512,7 @@
+ 		ce.Reply("❌ `!matrimail reply-only` must be run inside an email portal room.")
+ 		return
+ 	}
+-	connector.MarkPortalNextReplyDM(ce.Portal.ID)
++	connector.MarkPortalNextReplyDM(portalReplyModeKey(ce.Portal))
+ 	target := ""
+ 	if connector.ThreadManager != nil {
+ 		threadID := strings.TrimPrefix(string(ce.Portal.ID), "thread:")
 --- a/pkg/connector/config.go
 +++ b/pkg/connector/config.go
 @@ -11,6 +11,8 @@
@@ -131,6 +160,17 @@
  	Processor     *email.Processor
  	DB            *EmailAccountQuery
  
+@@ -163,8 +164,8 @@
+ 			zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+ 		}
+ 	} else {
+-		// Default to maximum verbosity for analysis
+-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
++		// Default to bounded operational logs. Explicit environment overrides remain available.
++		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+ 	}
+ 	if san := strings.ToLower(os.Getenv("MATRIMAIL_LOG_SANITIZED")); san == "false" || san == "0" || san == "no" {
+ 		ec.Config.Logging.Sanitized = false
 @@ -217,6 +218,13 @@
  	// Initialize email processor and wire it to the IMAP manager
  	processorLogger := bridge.Log.With().Str("component", "email_processor").Logger()

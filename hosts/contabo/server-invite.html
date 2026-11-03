@@ -1,0 +1,46 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Join iniyanjoseph.com</title>
+<style>
+:root{color-scheme:dark;font:16px/1.6 system-ui;background:#131b22;color:#edf3f5}body{max-width:440px;margin:8vh auto;padding:24px}h1{line-height:1.15;font-size:2.2rem}p{color:#b9c8ce}label{display:block;margin:20px 0 5px}input,button{box-sizing:border-box;width:100%;font:inherit;padding:12px;border:1px solid #50626b;border-radius:7px;background:#1c2932;color:inherit}button{margin-top:24px;background:#b5ecce;color:#102a20;border:0;font-weight:650;cursor:pointer}button:disabled{opacity:.5}small{color:#b9c8ce}#status{white-space:pre-wrap}a{color:#b5ecce}footer{margin-top:32px;border-top:1px solid #39464e;padding-top:16px;font-size:.85rem}
+</style>
+<main><small>PRIVATE MATRIX SERVER</small><h1>Create your account.</h1><p>This invitation creates one account on <strong>iniyanjoseph.com</strong>. Choose your own username and password.</p>
+<form id="signup"><label for="username">Username</label><input id="username" name="username" autocomplete="username" pattern="[a-z0-9._=\-]+" maxlength="80" required><small>Your address will be @username:iniyanjoseph.com</small>
+<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+<label for="confirm">Confirm password</label><input id="confirm" type="password" autocomplete="new-password" minlength="12" required><button id="submit">Create account</button></form>
+<p id="status" role="status" aria-live="polite"></p><a id="login" hidden href="https://chat.iniyanjoseph.com">Open the Matrix client →</a>
+<footer>Your invitation expires and can be used once. Keep your recovery key after signing in. Account creation does not connect your external messaging accounts; those need separate pairing.</footer></main>
+<script>
+'use strict';
+let invitation=new URLSearchParams(location.hash.slice(1)).get('token');
+history.replaceState(null,'',location.pathname); // fragments never enter server access logs
+let session;
+const form=document.querySelector('#signup'),status=document.querySelector('#status'),button=document.querySelector('#submit');
+if(!invitation){status.textContent='Open the complete invitation link you received.';button.disabled=true;}
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ const password=document.querySelector('#password'),confirm=document.querySelector('#confirm');
+ if(password.value!==confirm.value){status.textContent='The passwords do not match.';return;}
+ button.disabled=true;status.textContent='Creating your account…';
+ const payload={username:document.querySelector('#username').value,password:password.value,inhibit_login:true};
+ if(session)payload.auth={session};
+ try{
+  for(let attempt=0;attempt<5;attempt++){
+   const response=await fetch('/_matrix/client/v3/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),credentials:'omit',cache:'no-store'});
+   const data=await response.json();
+   if(response.ok){
+    invitation=null;session=null;form.hidden=true;status.textContent='Account created: '+data.user_id+'\nSign in using your new username and password.';
+    document.querySelector('#login').hidden=false;return;
+   }
+   if(response.status!==401||!data.session||!Array.isArray(data.flows))throw new Error(data.error||'Registration failed. Ask for a fresh invitation if this one has expired.');
+   session=data.session;
+   const flow=data.flows.find(flow=>flow.stages.includes('m.login.registration_token')&&flow.stages.every(stage=>['m.login.registration_token','m.login.dummy'].includes(stage)));
+   if(!flow)throw new Error('The server does not offer the expected invitation registration flow.');
+   const stage=flow.stages.find(stage=>!(data.completed||[]).includes(stage));
+   if(!stage)throw new Error('Registration did not complete. Try again.');
+   payload.auth={session,type:stage};if(stage==='m.login.registration_token')payload.auth.token=invitation;
+  }
+  throw new Error('Registration did not complete. Try again.');
+ }catch(error){status.textContent=error.message;button.disabled=false;}
+ finally{password.value='';confirm.value='';payload.password='';}
+});
+</script></html>

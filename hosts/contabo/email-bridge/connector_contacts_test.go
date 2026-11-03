@@ -72,6 +72,20 @@ func TestContaboContactRoomPermissionsAndOwnership(t *testing.T){
  portal.Receiver=login.ID;portal.ID="unrelated-room";if contactRoomOwnedBy(portal,login){t.Fatal("arbitrary invite accepted")}
 }
 
+func TestContaboComposeCcAndDraftReplyHeaders(t *testing.T){
+ thread:=&email.EmailThread{ThreadID:"compose-fixture",MessageID:"actual-email@example.com",Participants:[]string{"me@gmail.com","alice@example.com","copy@example.com"},Cc:[]string{"copy@example.com"}}
+ to,cc,err:=resolveComposeRecipients(thread,[]string{"me@gmail.com"});if err!=nil{t.Fatal(err)}
+ if len(to)!=1||to[0].Address!="alice@example.com"||len(cc)!=1||cc[0].Address!="copy@example.com"{t.Fatal("compose lost To/Cc separation")}
+ parent,refs:=computeReplyChain(thread,&database.Message{ID:email.ContactMessageID("compose-fixture")})
+ if parent!="actual-email@example.com"||len(refs)!=1||refs[0]!=parent{t.Fatal("draft notice identifier leaked into email reply headers")}
+ ec:=&EmailConnector{}
+ first:=&bridgev2.Portal{Portal:&database.Portal{PortalKey:networkid.PortalKey{ID:"contact:same",Receiver:"first"}}}
+ second:=&bridgev2.Portal{Portal:&database.Portal{PortalKey:networkid.PortalKey{ID:first.ID,Receiver:"second"}}}
+ ec.MarkPortalNextReplyDM(portalReplyModeKey(first))
+ if ec.consumePortalNextReplyDM(portalReplyModeKey(second)){t.Fatal("reply-only toggle crossed accounts")}
+ if !ec.consumePortalNextReplyDM(portalReplyModeKey(first)){t.Fatal("reply-only toggle was lost")}
+}
+
 type contactMatrixFixture struct{
  bridgev2.MatrixConnector
  levels *event.PowerLevelsEventContent

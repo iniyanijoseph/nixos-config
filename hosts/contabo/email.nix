@@ -1,6 +1,6 @@
 # Experimental Matrix <-> IMAP/SMTP bridge (Matrimail).
 # The service is opt-in; see email-bridge/README.md before enabling it.
-{ config, lib, ... }:
+{ config, lib, contaboMatrimail, ... }:
 let
   cfg = config.contabo.emailBridge;
 in
@@ -43,7 +43,7 @@ in
           User = "matrimail";
           Group = "matrimail";
           WorkingDirectory = "/var/lib/matrimail";
-          ExecStart = "/var/lib/matrimail/bin/matrimail --config /var/lib/matrimail/config.yaml";
+          ExecStart = "${lib.getExe contaboMatrimail} --config /var/lib/matrimail/config.yaml";
           EnvironmentFile = "/var/lib/secrets/matrimail.env";
           Restart = "on-failure";
           RestartSec = "15s";

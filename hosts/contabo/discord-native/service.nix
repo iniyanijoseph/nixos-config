@@ -19,6 +19,7 @@ in {
       services.matrix-synapse.settings.app_service_config_files = [ "${state}/registration.yaml" ];
       systemd.services.matrix-synapse.serviceConfig.SupplementaryGroups = [ name ];
       systemd.services.${name} = {
+        restartTriggers = [ ../commission-integrations.py ];
         after = [ "matrix-synapse.service" "network-online.target" ];
         requires = [ "matrix-synapse.service" ];
         wants = [ "network-online.target" ];

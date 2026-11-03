@@ -51,6 +51,29 @@ def stalwart_fixture(responses):
 
 
 class Tests(unittest.TestCase):
+    def test_declared_private_overlay_is_idempotent_and_preserves_sessions(self):
+        with tempfile.TemporaryDirectory() as base:
+            base = Path(base)
+            directory = base / 'matrimail'; directory.mkdir()
+            token = 'existing-as-token-' * 4
+            config = {'homeserver': {'domain': 'iniyanjoseph.com'},
+                      'appservice': {'bot': {'username': 'matrimailbot'}, 'hostname': '127.0.0.1', 'as_token': token},
+                      'database': {'uri': 'existing-db'}, 'encryption': {'pickle_key': 'unchanged'},
+                      'network': {'existing': 'preserved'},
+                      'logging': {'min_level': 'trace', 'writers': [{'type': 'file', 'filename': 'logs/bridge.log'}]}}
+            registration = {'as_token': token, 'id': 'existing', 'hs_token': 'existing-hs', 'namespaces': {'users': []}}
+            for name, value in (('config.yaml', config), ('registration.yaml', registration)):
+                path = directory / name; path.write_text(yaml.safe_dump(value)); path.chmod(0o600)
+            c.configure_private_bridge_settings(base)
+            updated = yaml.safe_load((directory / 'config.yaml').read_text())
+            self.assertEqual(updated['database'], config['database'])
+            self.assertEqual(updated['encryption'], config['encryption'])
+            self.assertEqual(updated['network']['existing'], 'preserved')
+            self.assertEqual(updated['logging']['writers'], [{'type': 'stdout', 'format': 'json'}])
+            before = [(directory / name).read_bytes() for name in ('config.yaml', 'registration.yaml')]
+            c.configure_private_bridge_settings(base)
+            self.assertEqual(before, [(directory / name).read_bytes() for name in ('config.yaml', 'registration.yaml')])
+
     def test_mail_rooms_preserve_identity_and_scope_auto_join_to_owner(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)

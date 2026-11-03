@@ -17,16 +17,17 @@
     ./integrations.nix
     ./discord-native/service.nix
     ./shell.nix
+    ./server-admin.nix
   ];
 
   # Enabled only after provisioning root-only Restic keys and R2 credentials.
   contabo.backups.enable = true;
-  # Kept off until Matrimail is built, configured and Gmail integration tested.
-  contabo.emailBridge.enable = false;
-  # Stage only: no mail ports, listeners, credentials or DNS changed yet.
-  contabo.mail.enable = false;
-  contabo.messagingBridges.sms.enable = false;
-  contabo.messagingBridges.slack.enable = false;
+  # These integrations have now been provisioned. Ordinary rebuilds must keep
+  # their services enabled rather than reverting the commissioner's profile.
+  contabo.integrations.enable = true;
+  contabo.discordNative.enable = true;
+  contabo.discordNative.pilot = false;
+  contabo.mail.enable = true;
   # Opt-in only, until transient Matrix listener/timer are stopped deliberately.
   contabo.matrixMonitoring.enable = false;
   # Enable only after checking existing Calendar/Contacts/Tasks app IDs to avoid

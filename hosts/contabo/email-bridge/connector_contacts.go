@@ -3,6 +3,7 @@ package connector
 import (
  "context"
  "fmt"
+ netmail "net/mail"
  "strings"
  "time"
 
@@ -45,7 +46,7 @@ func(ec *EmailClient)contactOutboundThread(ctx context.Context,msg *bridgev2.Mat
   if target.Room!=msg.Portal.PortalKey{return nil,fmt.Errorf("reply target belongs to another email room/account")}
   chain,err:=ec.Main.Contacts.GetMessage(ctx,receiver,string(target.ID));if err!=nil{return nil,err}
   if chain==nil||chain.Thread==nil||chain.Contact!=contact{return nil,fmt.Errorf("email reply context unavailable; choose a bridged email thread")}
-  if msg.ReplyTo==nil{
+  if msg.ReplyTo==nil||chain.Thread.IsDraft{
    chain,err=ec.Main.Contacts.GetChain(ctx,receiver,chain.Thread.ThreadID);if err!=nil{return nil,err}
   }
   if chain==nil||chain.Thread==nil{return nil,fmt.Errorf("email chain unavailable")}
@@ -56,6 +57,24 @@ func(ec *EmailClient)contactOutboundThread(ctx context.Context,msg *bridgev2.Mat
  }
  return &email.EmailThread{ThreadID:"compose-"+uuid.NewString(),Subject:deriveSubjectFromBody(msg.Content.Body),
   Participants:append(strings.Split(contact,","),ec.Email),IsDraft:true},nil
+}
+
+func portalReplyModeKey(portal *bridgev2.Portal)networkid.PortalID{
+ if portal.Receiver==""{return portal.ID}
+ return networkid.PortalID(string(portal.Receiver)+"\x00"+string(portal.ID))
+}
+
+func resolveComposeRecipients(thread *email.EmailThread,selves []string)([]netmail.Address,[]netmail.Address,error){
+ own:=selvesSet(selves);seen:=map[string]bool{};ccSet:=map[string]bool{}
+ for _,value:=range thread.Cc{if addr,err:=netmail.ParseAddress(value);err==nil{ccSet[strings.ToLower(addr.Address)]=true}}
+ var to,cc []netmail.Address
+ for _,value:=range thread.Participants{
+  addr,err:=netmail.ParseAddress(value);if err!=nil||ccSet[strings.ToLower(addr.Address)]{continue}
+  if parsed,ok:=parseAddrIfAllowed(value,own,seen);ok{to=append(to,parsed)}
+ }
+ for _,value:=range thread.Cc{if parsed,ok:=parseAddrIfAllowed(value,own,seen);ok{cc=append(cc,parsed)}}
+ if len(to)+len(cc)==0{return nil,nil,fmt.Errorf("new email has no recipients")}
+ return to,cc,nil
 }
 
 func(ec *EmailClient)recordContactSend(ctx context.Context,msg *bridgev2.MatrixMessage,thread *email.EmailThread,messageID string)*bridgev2.MatrixMessageResponse{

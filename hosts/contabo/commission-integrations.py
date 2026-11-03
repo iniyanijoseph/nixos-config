@@ -466,6 +466,38 @@ def enable_matrimail_contact_rooms(directory):
     return changed, hashlib.sha256(registration.read_bytes()).hexdigest()
 
 
+def configure_private_bridge_settings(base=Path('/var/lib')):
+    """Reapply the declared non-secret overlay at boot without rotating state."""
+    for name in ('mautrix-gmessages', 'mautrix-slack', 'matrimail', 'mautrix-discord-native'):
+        directory = base / name
+        config = directory / 'config.yaml'
+        if not config.exists():
+            continue
+        if name != 'mautrix-discord-native':
+            enable_manager_api(config)
+        if name == 'matrimail':
+            enable_matrimail_contact_rooms(directory)
+        if config.is_symlink() or config.stat().st_mode & 0o007:
+            raise RuntimeError('Unsafe bridge configuration refused')
+        data = yaml.safe_load(config.read_text())
+        logging = data.setdefault('logging', {})
+        desired = dict(logging, min_level='info', writers=[{'type': 'stdout', 'format': 'json'}])
+        if desired == logging:
+            continue
+        data['logging'] = desired
+        old = config.stat()
+        with tempfile.NamedTemporaryFile(mode='w', dir=directory, prefix='.logging-', delete=False) as stream:
+            temporary = Path(stream.name)
+            os.fchown(stream.fileno(), old.st_uid, old.st_gid)
+            os.fchmod(stream.fileno(), old.st_mode & 0o777)
+            yaml.safe_dump(data, stream, sort_keys=False)
+            stream.flush(); os.fsync(stream.fileno())
+        try:
+            temporary.replace(config)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
 def commission():
     if os.geteuid() != 0 or os.uname().nodename.split('.')[0] != 'contabo':
         raise RuntimeError('Commissioning requires root on Contabo')
@@ -480,19 +512,10 @@ def commission():
         provision('mautrix-' + network, binary, port, Path('/var/lib/mautrix-' + network))
         if enable_manager_api(Path('/var/lib/mautrix-' + network) / 'config.yaml'):
             changed_manager_units.append('mautrix-' + network)
-    run(['runuser', '-u', 'wug', '--', 'bash', HOST / 'email-bridge/build.sh'])
     directory = Path('/var/lib/matrimail')
-    # The manually compiled ELF references libolm in the Nix store. Keep its
-    # runtime closure alive across garbage collection, scoped to this bridge.
-    if not (directory / 'olm-runtime').exists():
-        expression = '''let f=builtins.getFlake "/etc/nixos/hosts/contabo";
-          p=import f.inputs.nixpkgs {system="x86_64-linux";
-            config.permittedInsecurePackages=["olm-3.2.16"];}; in p.olm'''
-        run(['nix','build','--impure','--expr',expression,'--out-link',directory/'olm-runtime'])
-    installed = directory / 'bin/matrimail'
-    previous_binary = installed.stat().st_ino if installed.exists() else None
-    binary = install_matrimail_binary(
-        Path(pwd.getpwnam('wug').pw_dir) / '.local/share/matrimail-build/matrimail', directory)
+    binary = Path(os.environ['CONTABO_MATRIMAIL_BINARY'])
+    if not str(binary).startswith('/nix/store/') or not binary.is_file():
+        raise RuntimeError('Expected the pinned Nix Matrimail package')
     secret = Path('/var/lib/secrets/matrimail.env')
     if not secret.exists():
         with secret.open('x') as stream:
@@ -517,7 +540,7 @@ def commission():
         if active:
             run(['systemctl', 'start', *active])
         private_json(loaded_marker, {'sha256': registration_digest})
-    for unit in changed_manager_units + (['matrimail'] if changed_mail_rooms or binary.stat().st_ino != previous_binary else []):
+    for unit in changed_manager_units + (['matrimail'] if changed_mail_rooms else []):
         run(['systemctl', 'restart', unit])
         run(['systemctl', 'is-active', '--quiet', unit])
     return ('Services deployed; pair @gmessagesbot:iniyanjoseph.com with !gm login google '

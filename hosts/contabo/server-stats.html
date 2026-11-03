@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Room activity · Contabo</title>
+<style>
+:root{color-scheme:dark;font:15px/1.5 system-ui;background:#10191f;color:#e7edf0}body{max-width:1140px;margin:0 auto;padding:36px 28px}header{display:flex;justify-content:space-between;align-items:end;gap:20px;flex-wrap:wrap}h1{font-size:2rem;margin:5px 0 20px}small,.muted{color:#9badb6}select{font:inherit;padding:10px 12px;background:#1a2933;color:inherit;border:1px solid #495a65;border-radius:5px;max-width:100%}.stats{display:flex;gap:36px;margin:24px 0}.stats strong{display:block;font-size:1.8rem}.panel{border:1px solid #34454e;border-radius:8px;padding:22px;margin:24px 0}svg{width:100%;height:auto;display:block}h2{font-size:1.1rem;margin:0 0 12px}.legend{display:flex;gap:24px;font-size:.85rem}.dot{display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:7px}.legend .daily{background:#658eaa}.legend .average{background:#b5edcf}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px 8px;border-bottom:1px solid #2b3b44}td:first-child{overflow-wrap:anywhere;max-width:620px}td:nth-child(2),td:nth-child(3),th:nth-child(2),th:nth-child(3){text-align:right;font-variant-numeric:tabular-nums}.share{height:4px;background:#a3caba;margin-top:5px}.note{font-size:.8rem;max-width:900px}#empty{padding:60px;text-align:center;color:#a0b4bf}
+</style>
+<header><div><small>CONTABO · PRIVATE ACTIVITY REPORT</small><h1>Room activity</h1></div><label>Room <select id="room" aria-label="Room"></select></label></header>
+<p class="muted" id="scope"></p><div id="empty" hidden>No message events in this period.</div>
+<main id="report"><div class="stats"><div><small>Message events</small><strong id="total"></strong></div><div><small>Daily average</small><strong id="daily"></strong></div><div><small>Senders</small><strong id="people"></strong></div></div>
+<section class="panel"><h2>Messages per day</h2><div class="legend"><span><i class="dot daily"></i>Daily count</span><span><i class="dot average"></i>Trailing 7-day average</span></div><svg id="chart" viewBox="0 0 1040 350" role="img" aria-label="Daily message counts and trailing seven-day average"></svg></section>
+<section class="panel"><h2>Share of message events</h2><table><thead><tr><th>Matrix sender</th><th>Events</th><th>Share</th></tr></thead><tbody id="ratios"></tbody></table></section></main>
+<p class="muted note" id="definition"></p><p class="muted note">Today is a partial day. Zero-message days count as zero in the moving average. This report contains activity metadata and is available only through the private tunnel.</p>
+<script>
+'use strict';
+const data=/*CONTABO_DATA*/null;
+const $=selector=>document.querySelector(selector),ns='http://www.w3.org/2000/svg';
+function svg(kind,attrs,parent,text){const element=document.createElementNS(ns,kind);for(const [key,value]of Object.entries(attrs))element.setAttribute(key,value);if(text!==undefined)element.textContent=text;parent.append(element);return element;}
+function render(index){
+ const room=data.rooms[index];if(!room)return;
+ $('#total').textContent=room.total.toLocaleString();$('#daily').textContent=(room.total/room.days.length).toFixed(1);$('#people').textContent=room.people.length;
+ $('#scope').textContent=room.id+' · '+room.days[0].date+' – '+room.days.at(-1).date+' · '+data.timezone;
+ const chart=$('#chart');chart.replaceChildren();
+ const left=62,right=1015,top=30,bottom=295,width=right-left,height=bottom-top,max=Math.max(1,...room.days.flatMap(day=>[day.count,day.average])),step=width/room.days.length;
+ for(let i=0;i<=4;i++){const y=bottom-i*height/4;svg('line',{x1:left,x2:right,y1:y,y2:y,stroke:'#2b3e49'},chart);svg('text',{x:left-12,y:y+5,'text-anchor':'end',fill:'#9badb6','font-size':13},chart,Math.round(max*i/4).toLocaleString());}
+ let points=[];room.days.forEach((day,index)=>{const x=left+index*step,y=bottom-day.count/max*height;
+  const bar=svg('rect',{x:x+.5,y,width:Math.max(.5,step-1),height:bottom-y,fill:'#658eaa'},chart);svg('title',{},bar,`${day.date}: ${day.count} events; 7-day average ${day.average.toFixed(1)}`);
+  points.push(`${x+step/2},${bottom-day.average/max*height}`);
+  if(index===0||index===room.days.length-1||index%Math.max(1,Math.floor(room.days.length/6))===0)svg('text',{x:x+step/2,y:bottom+30,'text-anchor':index===0?'start':index===room.days.length-1?'end':'middle',fill:'#9badb6','font-size':13},chart,day.date.slice(5));
+ });svg('polyline',{points:points.join(' '),fill:'none',stroke:'#b5edcf','stroke-width':3,'stroke-linejoin':'round'},chart);
+ const rows=$('#ratios');rows.replaceChildren();for(const person of room.people){const tr=document.createElement('tr'),name=document.createElement('td'),count=document.createElement('td'),share=document.createElement('td'),bar=document.createElement('div');name.textContent=person.id;bar.className='share';bar.style.width=(person.ratio*100)+'%';name.append(bar);count.textContent=person.count.toLocaleString();share.textContent=(person.ratio*100).toFixed(1)+'%';tr.append(name,count,share);rows.append(tr);}
+}
+$('#definition').textContent=data.definition+' Generated '+data.generated;
+if(!data.rooms.length){$('#empty').hidden=false;$('#report').hidden=true;$('#room').disabled=true;}else{data.rooms.forEach((room,index)=>{const option=document.createElement('option');option.value=index;option.textContent=room.name;$('#room').append(option)});$('#room').addEventListener('change',event=>render(Number(event.target.value)));render(0);}
+</script></html>

@@ -1,0 +1,138 @@
+import csv
+from datetime import datetime, timezone
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import sqlite3
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+script = Path(os.environ.get('CONTABO_SERVER_ADMIN_SCRIPT', Path(__file__).with_name('server-admin.py')))
+spec = importlib.util.spec_from_file_location('server_admin', script)
+c = importlib.util.module_from_spec(spec); spec.loader.exec_module(c)
+
+
+class Tests(unittest.TestCase):
+    def test_invitation_is_single_use_random_and_expiring(self):
+        requests = []
+        def api(path, token, body):
+            requests.append((path, token, body)); return body
+        with patch.object(c, 'api', side_effect=api):
+            first, expiry = c.invite(72, token='private-admin', now=100)
+            second, _ = c.invite(72, token='private-admin', now=100)
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith('https://matrix.iniyanjoseph.com/invite/#token='))
+        self.assertEqual(expiry, (100 + 72*3600)*1000)
+        self.assertEqual(requests[0][2]['uses_allowed'], 1)
+        self.assertGreaterEqual(len(requests[0][2]['token']), 40)
+        self.assertNotIn('private-admin', first)
+
+    def test_invitation_rejects_unconfirmed_unlimited_registration(self):
+        with patch.object(c, 'api', return_value={'uses_allowed': None}):
+            with self.assertRaisesRegex(RuntimeError, 'single-use'):
+                c.invite(token='private', now=0)
+
+    def test_zero_days_and_warmup_are_in_seven_day_average(self):
+        rows = [dict(room_id='!one', room_name='One', day=day, sender=sender, messages=str(count))
+                for day, sender, count in [('2026-10-22', '@warmup', 7),
+                                          ('2026-10-28', '@a', 7),
+                                          ('2026-11-03', '@a', 3),
+                                          ('2026-11-03', '@b', 1)]]
+        result = c.aggregate(rows, 7, 'UTC', datetime(2026, 11, 3, 12, tzinfo=timezone.utc))
+        room = result['rooms'][0]
+        self.assertEqual([day['count'] for day in room['days']], [7,0,0,0,0,0,4])
+        self.assertEqual(room['days'][0]['average'], 2)
+        self.assertAlmostEqual(room['days'][-1]['average'], 11/7)
+        self.assertEqual(room['total'], 11)
+        self.assertEqual(room['people'][0]['count'], 10)
+        self.assertAlmostEqual(sum(person['ratio'] for person in room['people']), 1)
+        self.assertNotIn('@warmup', str(room['people']))
+
+    def test_query_escapes_room_and_never_extracts_bodies(self):
+        sql = c.stats_query(1, 2, 'America/New_York', "!room'; DROP TABLE events; --")
+        self.assertIn("e.room_id='!room''; DROP TABLE events; --'", sql)
+        self.assertIn("'m.replace'", sql)
+        self.assertNotIn("->>'body'", sql)
+        with self.assertRaises(ValueError):
+            c.make_stats(days=367)
+
+    def test_room_names_cannot_break_out_of_report_data(self):
+        html = c.render_stats({'rooms': [{'name': '</script><script>bad()</script>'}]}, '<script>const data=/*CONTABO_DATA*/null;</script>')
+        self.assertEqual(html.count('</script>'), 1)
+        self.assertIn('\\u003c/script\\u003e', html)
+
+    def test_whatsapp_secret_preserves_existing_encryption_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'whatsapp.env'
+            path.write_text('WHATSAPP_PICKLE_KEY=unchanged\n'); path.chmod(0o600)
+            self.assertTrue(c.ensure_whatsapp_secret(path))
+            after = path.read_text()
+            self.assertIn('WHATSAPP_PICKLE_KEY=unchanged\n', after)
+            self.assertFalse(c.ensure_whatsapp_secret(path))
+            self.assertEqual(path.read_text(), after)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            path.chmod(0o644)
+            with self.assertRaisesRegex(RuntimeError, 'permissions'):
+                c.ensure_whatsapp_secret(path)
+
+    def test_mapping_proof_requires_both_recent_directions(self):
+        events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
+        self.assertTrue(c.mapping_proof(events, now=1000, minutes=1)['recent_both_directions'])
+        self.assertFalse(c.mapping_proof(events[:1], now=1000, minutes=1)['recent_both_directions'])
+        self.assertFalse(c.mapping_proof(events, now=2000, minutes=1)['recent_both_directions'])
+
+    def test_native_mapping_inspection_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'bridge.db'
+            with sqlite3.connect(path) as db:
+                db.execute('CREATE TABLE message (mxid TEXT)')
+                db.executemany('INSERT INTO message VALUES (?)', [('$real',), ('~fake:bad',)])
+            before = path.read_bytes()
+            self.assertEqual(c.sqlite_mappings(path), ['$real'])
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_cleanup_plan_makes_no_changes(self):
+        with patch.object(c.subprocess, 'run') as run, patch.object(c.shutil, 'rmtree') as remove:
+            with patch('sys.stdout', new=io.StringIO()):
+                c.cleanup()
+            run.assert_not_called(); remove.assert_not_called()
+
+
+@unittest.skipUnless(shutil.which('initdb') and shutil.which('pg_ctl') and os.geteuid() != 0,
+                     'PostgreSQL fixture runs in pinned Nix CI as an unprivileged user')
+class PostgreSQLQuery(unittest.TestCase):
+    def test_real_postgres_counts_filter_edits_outliers_and_rooms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory); data = directory / 'db'
+            subprocess.run(['initdb','-D',str(data),'-A','trust','-U','postgres','--no-locale','-E','UTF8'], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(['pg_ctl','-D',str(data),'-l',str(directory/'log'),'-o',f"-k {directory} -h ''",'-w','start'], check=True, stdout=subprocess.DEVNULL)
+            try:
+                def sql(text):
+                    return subprocess.run(['psql','-X','-q','-h',str(directory),'-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1'], input=text, text=True, check=True, capture_output=True).stdout
+                sql('''CREATE TABLE events (event_id TEXT,room_id TEXT,sender TEXT,type TEXT,outlier BOOLEAN,origin_server_ts BIGINT);
+                CREATE TABLE room_stats_state (room_id TEXT,name TEXT);
+                CREATE TABLE event_json (event_id TEXT,json TEXT);
+                INSERT INTO room_stats_state VALUES ('!one','One'),('!two','Two');
+                INSERT INTO events VALUES ('$a','!one','@a','m.room.encrypted',false,1793707200000),
+                  ('$b','!one','@b','m.room.message',false,1793707200000),
+                  ('$edit','!one','@b','m.room.message',false,1793707200000),
+                  ('$outlier','!one','@a','m.room.message',true,1793707200000),
+                  ('$member','!one','@a','m.room.member',false,1793707200000),
+                  ('$other','!two','@c','m.room.message',false,1793707200000);
+                INSERT INTO event_json VALUES ('$edit','{"content":{"m.relates_to":{"rel_type":"m.replace"}}}');''')
+                query = c.stats_query(1793700000000,1793800000000,'UTC','!one')
+                rows = list(csv.DictReader(io.StringIO(sql('BEGIN READ ONLY;'+query+'COMMIT;'))))
+                self.assertEqual(sum(int(row['messages']) for row in rows), 2)
+                self.assertEqual({row['sender'] for row in rows}, {'@a','@b'})
+                self.assertEqual({row['room_id'] for row in rows}, {'!one'})
+            finally:
+                subprocess.run(['pg_ctl','-D',str(data),'-m','immediate','-w','stop'], check=True, stdout=subprocess.DEVNULL)
+
+
+if __name__ == '__main__':
+    unittest.main()
