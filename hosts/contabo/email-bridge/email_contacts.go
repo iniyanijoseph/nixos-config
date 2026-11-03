@@ -26,6 +26,7 @@ type ContactChain struct {
 }
 
 func NewContactStore(ctx context.Context, db *sql.DB, bridgeID string)(*ContactStore,error){
+ if db==nil{return nil,fmt.Errorf("contact email database is unavailable")}
  s:=&ContactStore{DB:db,BridgeID:bridgeID}
  for _,query:=range []string{
   `CREATE TABLE IF NOT EXISTS contabo_email_chain (

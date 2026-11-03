@@ -11,6 +11,7 @@ import (
 
  "github.com/Leicas/matrimail/pkg/email"
  "github.com/rs/zerolog"
+ _ "github.com/mattn/go-sqlite3"
  "maunium.net/go/mautrix"
  "maunium.net/go/mautrix/bridgev2"
  "maunium.net/go/mautrix/bridgev2/database"
@@ -25,7 +26,7 @@ func(s *contactCaptureSender)Provider()string{return "test"}
 func(s *contactCaptureSender)Close()error{return nil}
 
 func TestContaboContactRepliesUseSelectedChainAfterRestart(t *testing.T){
- ctx:=context.Background();db,_:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"mail.db"));defer db.Close()
+ ctx:=context.Background();db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"mail.db"));if err!=nil{t.Fatal(err)};defer db.Close()
  store,err:=email.NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
  receiver:=networkid.UserLoginID("email:me@gmail.com")
  for _,chain:=range []struct{id,subject,sender string}{{"first","First subject","alice@example.com"},{"second","Second subject","alice@example.com"}}{
