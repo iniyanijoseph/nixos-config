@@ -7,12 +7,12 @@ package connector
 // Keep the old room and events; an IMAP folder may omit deleted/archived mail.
 import (
  "context"
- "fmt"
+ "database/sql"
+ "errors"
  "strings"
  "sync"
  "time"
 
- "github.com/Leicas/matrimail/pkg/email"
  "maunium.net/go/mautrix/bridgev2"
  "maunium.net/go/mautrix/bridgev2/networkid"
  "maunium.net/go/mautrix/event"
@@ -33,8 +33,12 @@ func (c legacyCoverage) complete() bool {
 // This is deliberately read-only: do not conflate an imported email with a
 // complete source-Matrix-event/attachment migration.
 func(ec *EmailConnector) legacyCoverageFor(ctx context.Context, portal *bridgev2.Portal) (legacyCoverage,error){
+ return legacyCoverageForDB(ctx,ec.Bridge.DB.RawDB,string(ec.Bridge.DB.BridgeID),string(portal.ID),string(portal.Receiver))
+}
+
+func legacyCoverageForDB(ctx context.Context,db *sql.DB,bridgeID,portalID,receiver string)(legacyCoverage,error){
  result:=legacyCoverage{ContactRoomIDs:make(map[networkid.PortalID]bool)}
- rows,err:=ec.Bridge.DB.Query(ctx,`SELECT o.id,
+ rows,err:=db.QueryContext(ctx,`SELECT o.id,
      COUNT(DISTINCT o.part_id) AS old_parts,
      COUNT(DISTINCT CASE WHEN n.mxid IS NOT NULL AND n.mxid != '' AND n.mxid NOT LIKE '~fake:%'
          THEN n.part_id END) AS new_parts,
@@ -48,7 +52,7 @@ func(ec *EmailConnector) legacyCoverageFor(ctx context.Context, portal *bridgev2
    WHERE o.bridge_id=$1 AND o.room_id=$2 AND o.room_receiver=$3
      AND o.id LIKE 'email:%' AND o.mxid IS NOT NULL AND o.mxid != ''
      AND o.mxid NOT LIKE '~fake:%'
-   GROUP BY o.id`, ec.Bridge.DB.BridgeID,portal.ID,portal.Receiver)
+   GROUP BY o.id`, bridgeID,portalID,receiver)
  if err!=nil{return result,err}
  defer rows.Close()
  for rows.Next(){
@@ -94,7 +98,7 @@ func(ec *EmailConnector) finalizeLegacyConsolidation(ctx context.Context, login 
     ec.Bridge.DB.BridgeID,portal.Receiver,portal.ID).Scan(&previous)
   if err==nil{complete++;continue}
   // A missing marker is normal. Any other database error is not.
-  if err!=nil && !strings.Contains(strings.ToLower(err.Error()),"no rows"){return complete,len(portals),err}
+  if err!=nil && !errors.Is(err,sql.ErrNoRows){return complete,len(portals),err}
   coverage,err:=ec.legacyCoverageFor(ctx,portal)
   if err!=nil{return complete,len(portals),err}
   if !coverage.complete() || len(coverage.ContactRoomIDs)>8{continue}
@@ -113,7 +117,7 @@ func(ec *EmailConnector) finalizeLegacyConsolidation(ctx context.Context, login 
     &event.Content{Parsed:&event.TopicEventContent{Topic:topic}},time.Time{});err!=nil{return complete,len(portals),err}
   if !portal.NameIsCustom && !strings.HasPrefix(portal.Name,"Archived email · "){
    name:="Archived email · "+portal.Name
-   if len(name)>220{name=name[:220]}
+   if len([]rune(name))>220{name=string([]rune(name)[:220])}
    if _,err=ec.Bridge.Bot.SendState(ctx,portal.MXID,event.StateRoomName,"",
      &event.Content{Parsed:&event.RoomNameEventContent{Name:name}},time.Time{});err!=nil{return complete,len(portals),err}
   }
@@ -166,8 +170,3 @@ func(ec *EmailConnector) startAutoConsolidation(client *EmailClient){
  go ec.autoConsolidateLegacy(client)
 }
 
-// Ensure the import path uses its own IMAP credentials and does not mutate
-// source flags or live IDLE cursors. The email package's native mapping
-// namespace prevents replays from overwriting the original thread-room rows.
-var _=email.ContactMessageID
-var _=fmt.Sprintf
