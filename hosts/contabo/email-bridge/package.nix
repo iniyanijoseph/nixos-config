@@ -18,6 +18,8 @@ pkgs.buildGoModule {
     cp ${./email_contact_events.go} pkg/email/contabo_contact_events.go
     cp ${./email_contacts_test.go} pkg/email/contabo_contacts_test.go
     cp ${./connector_contacts.go} pkg/connector/contabo_contacts.go
+    cp ${./connector_migration.go} pkg/connector/contabo_migration.go
+    cp ${./connector_migration_test.go} pkg/connector/contabo_migration_test.go
     cp ${./connector_contacts_test.go} pkg/connector/contabo_contacts_test.go
   '';
   nativeBuildInputs = [ pkgs.pkg-config ];
