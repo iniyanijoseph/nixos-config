@@ -91,13 +91,18 @@ def provision(name, binary, port, directory):
 
 
 def private_json(path, data):
-    temporary = path.with_suffix('.tmp')
-    with temporary.open('w') as stream:
-        os.chmod(temporary, 0o600)
-        json.dump(data, stream)
-        stream.flush()
-        os.fsync(stream.fileno())
-    temporary.replace(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.private-', delete=False) as stream:
+            temporary = Path(stream.name)
+            os.fchmod(stream.fileno(), 0o600)
+            json.dump(data, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(descriptor)
@@ -408,6 +413,59 @@ def install_matrimail_binary(source, directory):
     return binary
 
 
+def enable_matrimail_contact_rooms(directory):
+    """Preserve credentials and delegate only the owner's exact Matrix ID.
+
+    Synapse's standard appservice double-puppet mechanism lets the bridge
+    accept its portal invites. It does not grant access to other local users.
+    Registration is written first; interruption is safe to resume.
+    """
+    config, registration = directory / 'config.yaml', directory / 'registration.yaml'
+    paths = (registration, config)
+    for path in paths:
+        if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o007:
+            raise RuntimeError('Unsafe or world-readable Matrimail configuration refused')
+    data = yaml.safe_load(config.read_text())
+    reg = yaml.safe_load(registration.read_text())
+    token = reg.get('as_token')
+    if (data.get('homeserver', {}).get('domain') != 'iniyanjoseph.com'
+            or data.get('appservice', {}).get('bot', {}).get('username') != 'matrimailbot'
+            or not isinstance(token, str) or len(token) < 32
+            or data.get('appservice', {}).get('as_token') != token):
+        raise RuntimeError('Unexpected Matrimail registration identity; preserved for review')
+    users = reg.setdefault('namespaces', {}).setdefault('users', [])
+    owner = {'regex': r'^@me:iniyanjoseph\.com$', 'exclusive': False}
+    if owner not in users:
+        users.append(owner)
+    data.setdefault('network', {}).update(contact_rooms=True, auto_join_rooms=True)
+    data.setdefault('double_puppet', {}).setdefault('secrets', {})['iniyanjoseph.com'] = 'as_token:' + token
+    data.setdefault('matrix', {}).update(message_error_notices=True, delivery_receipts=True)
+    changed = False
+    for path, value in ((registration, reg), (config, data)):
+        if yaml.safe_load(path.read_text()) == value:
+            continue
+        old = path.stat()
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', dir=directory, prefix='.mail-rooms-', delete=False) as stream:
+                temporary = Path(stream.name)
+                os.fchmod(stream.fileno(), old.st_mode & 0o777)
+                os.fchown(stream.fileno(), old.st_uid, old.st_gid)
+                yaml.safe_dump(value, stream, sort_keys=False)
+                stream.flush(); os.fsync(stream.fileno())
+            temporary.replace(path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        changed = True
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return changed, hashlib.sha256(registration.read_bytes()).hexdigest()
+
+
 def commission():
     if os.geteuid() != 0 or os.uname().nodename.split('.')[0] != 'contabo':
         raise RuntimeError('Commissioning requires root on Contabo')
@@ -441,9 +499,25 @@ def commission():
             stream.write('MATRIMAIL_PASSPHRASE=' + secrets.token_hex(48) + '\n')
         os.chmod(secret, 0o600)
     provision('matrimail', binary, 29319, directory)
+    changed_mail_rooms, registration_digest = enable_matrimail_contact_rooms(directory)
+    loaded_marker = directory / '.contact-registration-loaded.json'
+    try:
+        loaded_digest = json.loads(loaded_marker.read_text()).get('sha256')
+    except (OSError, ValueError):
+        loaded_digest = None
     activate(build(True), ['matrix-synapse', 'nginx', 'mautrix-whatsapp',
                           'mautrix-gmessages', 'mautrix-slack', 'matrimail'])
-    for unit in changed_manager_units + (['matrimail'] if binary.stat().st_ino != previous_binary else []):
+    if loaded_digest != registration_digest:
+        # Private appservice files aren't Nix restart triggers. Reload Synapse
+        # once and preserve every bridge that was active before its restart.
+        active = [unit for unit in ('mautrix-whatsapp', 'mautrix-discord-native',
+                  'mautrix-gmessages', 'mautrix-slack', 'matrimail')
+                  if subprocess.run(['systemctl', 'is-active', '--quiet', unit]).returncode == 0]
+        run(['systemctl', 'restart', 'matrix-synapse'])
+        if active:
+            run(['systemctl', 'start', *active])
+        private_json(loaded_marker, {'sha256': registration_digest})
+    for unit in changed_manager_units + (['matrimail'] if changed_mail_rooms or binary.stat().st_ino != previous_binary else []):
         run(['systemctl', 'restart', unit])
         run(['systemctl', 'is-active', '--quiet', unit])
     return ('Services deployed; pair @gmessagesbot:iniyanjoseph.com with !gm login google '

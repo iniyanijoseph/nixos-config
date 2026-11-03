@@ -108,7 +108,7 @@ func(c *Client)ContaboBackfill(ctx context.Context,mailboxes []string,days int,p
   if err!=nil{return total,fmt.Errorf("history mailbox select failed: %w",err)}
   if selected.UIDValidity==0||selected.UIDNext==0{return total,fmt.Errorf("mailbox did not supply a stable UIDVALIDITY/UIDNEXT")}
   key:=sha256.Sum256([]byte(string(c.login.UserMXID)+"\x00"+c.Email+"\x00"+c.Host+fmt.Sprintf(":%d",c.Port)+"\x00"+mailbox+fmt.Sprintf("\x00%d",days)))
-  path:=filepath.Join("contabo-backfill",fmt.Sprintf("%x.json",key))
+  path:=filepath.Join("contabo-backfill-contacts-v2",fmt.Sprintf("%x.json",key))
   processed,err:=contaboBackfillMailbox(ctx,path,selected.UIDValidity,uint32(selected.UIDNext-1),days,
    func(after,until uint32,since time.Time)([]uint32,error){
     set:=imaplib.UIDSet{};set.AddRange(imaplib.UID(after+1),imaplib.UID(until))

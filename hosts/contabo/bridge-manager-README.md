@@ -94,3 +94,41 @@ skipped drafts, not an independently audited completeness claim.
 The existing OAuth-only `backlog` command is unchanged. The patched password
 login also installs the folder-selection input handler after inline login and
 updates the IMAP username when a corrected email address is retried.
+
+## Contact rooms and email replies
+
+The pinned Matrimail patch enables one contact room per monitored account and
+external address. Separate subjects appear as native Matrix threads. Incoming
+chains stay anchored to their original contact even when participants change;
+sent-first multi-recipient conversations use a separate recipient-set room.
+
+Reply inside a thread (or explicitly reply to an email) to retain that chain's
+subject, recipients and RFC email headers. Normal replies are reply-all;
+`!matrimail reply-only` applies to the next send only. A top-level message starts
+a new email to the contact, with its first line as the subject. For an explicit
+subject/CC, use `!matrimail compose to:alice@example.com subject:"Hello"` in the
+bot DM, then reply in the draft's Matrix thread. Creating the draft sends no mail.
+
+The room repair worker fixes the old PL-101 posting restriction for both
+`m.room.message` and `m.room.encrypted`. It accepts existing pending invitations
+only in native Matrimail portals owned by the account. It respects explicit
+leaves and bans. The registration delegates exactly `@me:iniyanjoseph.com` to
+Matrimail's normal appservice double puppet; no wildcard human namespace or
+other users' accounts are delegated. As with any double puppet, Matrimail is
+trusted to act as that Matrix account. Tokens remain in private server files.
+One Synapse restart loads that changed registration; other active bridges are
+preserved. New rooms auto-join through the normal double puppet.
+
+To populate the new layout after deploying, run a pilot in the Matrimail bot DM:
+
+```text
+!matrimail backfill 30 your@gmail.com
+```
+
+Then `!matrimail backfill all your@gmail.com` covers all retained mail in the
+folders selected during login. The contact layout uses separate remote IDs and
+`contabo-backfill-contacts-v2` checkpoints, so an old completed import cannot
+silently skip the migration. Existing legacy rooms/events are preserved; Matrix
+cannot move their events into new rooms. Repeated commands resume and deduplicate
+within the contact layout. Mail outside the selected folders or absent from
+Gmail is not imported. No account logout is required for this update.

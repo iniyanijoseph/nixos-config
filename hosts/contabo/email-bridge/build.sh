@@ -33,7 +33,13 @@ nix develop "$FLAKE_DIR#email-bridge" --command bash -c '
   cp "$3/imap_backfill.go" pkg/imap/contabo_backfill.go
   cp "$3/imap_backfill_test.go" pkg/imap/contabo_backfill_test.go
   cp "$3/connector_backfill.go" pkg/connector/contabo_backfill.go
-  gofmt -w pkg/imap/contabo_backfill*.go pkg/connector/contabo_backfill.go
+  cp "$3/email_contacts.go" pkg/email/contabo_contacts.go
+  cp "$3/email_contact_events.go" pkg/email/contabo_contact_events.go
+  cp "$3/email_contacts_test.go" pkg/email/contabo_contacts_test.go
+  cp "$3/connector_contacts.go" pkg/connector/contabo_contacts.go
+  cp "$3/connector_contacts_test.go" pkg/connector/contabo_contacts_test.go
+  gofmt -w pkg/imap/contabo_*.go pkg/connector/contabo_*.go pkg/email/contabo_*.go
+  CGO_ENABLED=1 go test ./pkg/email ./pkg/matrix ./pkg/connector -count=1
   CGO_ENABLED=1 go test ./pkg/imap ./pkg/connector -run TestContabo -count=1
   CGO_ENABLED=1 go build -trimpath -o "$2/matrimail" ./cmd/matrimail
 ' bash "$SRC_DIR" "$OUT_DIR" "$SCRIPT_DIR"

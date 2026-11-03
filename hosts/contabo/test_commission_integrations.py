@@ -51,6 +51,41 @@ def stalwart_fixture(responses):
 
 
 class Tests(unittest.TestCase):
+    def test_mail_rooms_preserve_identity_and_scope_auto_join_to_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            config, registration = directory / 'config.yaml', directory / 'registration.yaml'
+            token = 'existing-private-token-' * 3
+            original = {'homeserver': {'domain': 'iniyanjoseph.com'},
+                        'appservice': {'bot': {'username': 'matrimailbot'}, 'as_token': token},
+                        'database': {'uri': 'existing-database'}, 'encryption': {'require': True}}
+            reg = {'as_token': token, 'hs_token': 'unchanged-hs', 'id': 'unchanged-id',
+                   'namespaces': {'users': [{'regex': '^@email_.*:iniyanjoseph.com$', 'exclusive': True}]}}
+            for path, data in ((config, original), (registration, reg)):
+                path.write_text(yaml.safe_dump(data)); path.chmod(0o640)
+            self.assertTrue(c.enable_matrimail_contact_rooms(directory)[0])
+            updated = yaml.safe_load(config.read_text())
+            self.assertEqual(updated['database'], original['database'])
+            self.assertEqual(updated['encryption'], original['encryption'])
+            self.assertEqual(updated['appservice'], original['appservice'])
+            self.assertTrue(updated['network']['contact_rooms'])
+            self.assertTrue(updated['network']['auto_join_rooms'])
+            result = yaml.safe_load(registration.read_text())
+            self.assertEqual(result['as_token'], token)
+            self.assertEqual(result['hs_token'], reg['hs_token'])
+            self.assertEqual(result['id'], reg['id'])
+            owner = result['namespaces']['users'][-1]
+            import re
+            self.assertIsNotNone(re.fullmatch(owner['regex'], '@me:iniyanjoseph.com'))
+            self.assertIsNone(re.fullmatch(owner['regex'], '@friend:iniyanjoseph.com'))
+            self.assertFalse(owner['exclusive'])
+            before = config.read_bytes(), registration.read_bytes()
+            self.assertFalse(c.enable_matrimail_contact_rooms(directory)[0])
+            self.assertEqual(before, (config.read_bytes(), registration.read_bytes()))
+            config.chmod(0o644)
+            with self.assertRaisesRegex(RuntimeError, 'Unsafe'):
+                c.enable_matrimail_contact_rooms(directory)
+
     def test_manager_api_preserves_private_credentials_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / 'config.yaml'
