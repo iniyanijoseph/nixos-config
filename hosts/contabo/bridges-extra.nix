@@ -21,6 +21,7 @@ let
   };
   enabled = lib.filterAttrs (_: b: b.enable) bridge;
   mkService = b: {
+    restartTriggers = [ ./commission-integrations.py ];
     description = "${b.name} Matrix bridge (manually provisioned)";
     wantedBy = [ "multi-user.target" ];
     after = [ "matrix-synapse.service" "network-online.target" ];

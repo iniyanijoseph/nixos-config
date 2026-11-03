@@ -1,0 +1,639 @@
+--- a/pkg/connector/client.go
++++ b/pkg/connector/client.go
+@@ -872,14 +872,14 @@
+ // must appear or media simply won't reach the connector.
+ //
+ // Edits, deletes, reactions, polls, and locations are all rejected — email
+-// has no equivalent semantics. Threads are unsupported because matrimail
+-// already maps each conversation to its own portal/room. Replies are fully
++// has no equivalent semantics. Contact rooms support Matrix threads for
++// individual email chains. Replies are fully
+ // supported (and produce In-Reply-To/References headers).
+ func (ec *EmailClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
+ 	const maxAttachmentBytes int64 = 25 * 1024 * 1024 // Gmail's per-message attachment ceiling
+ 
+ 	return &event.RoomFeatures{
+-		ID: "matrimail-email-v1",
++		ID: "matrimail-email-contact-threads-v2",
+ 		Formatting: event.FormattingFeatureMap{
+ 			event.FmtBold:           event.CapLevelFullySupported,
+ 			event.FmtItalic:         event.CapLevelFullySupported,
+@@ -921,7 +921,7 @@
+ 		Edit:            event.CapLevelRejected,
+ 		Delete:          event.CapLevelRejected,
+ 		Reaction:        event.CapLevelRejected,
+-		Thread:          event.CapLevelUnsupported,
++		Thread:          event.CapLevelFullySupported,
+ 		LocationMessage: event.CapLevelRejected,
+ 		Poll:            event.CapLevelRejected,
+ 	}
+--- a/pkg/connector/client_compose.go
++++ b/pkg/connector/client_compose.go
+@@ -101,6 +101,10 @@
+ 	// Mint a synthetic thread ID. UnixNano + recipient gives us global
+ 	// uniqueness without a DB round-trip; the "compose-" prefix is a hint
+ 	// at debug time but carries no semantics.
++	if ec.Main.Contacts != nil {
++		return &bridgev2.ResolveIdentifierResponse{UserID:userID,UserInfo:info,
++			Chat:&bridgev2.CreateChatResponse{PortalKey:networkid.PortalKey{ID:email.ContactPortalID(target),Receiver:ec.UserLogin.ID}}},nil
++	}
+ 	threadID := fmt.Sprintf("compose-%d-%s", time.Now().UnixNano(), target)
+ 	portalKey := networkid.PortalKey{
+ 		ID:       MakePortalID(threadID),
+--- a/pkg/connector/client_send.go
++++ b/pkg/connector/client_send.go
+@@ -59,7 +59,13 @@
+ 		}
+ 	}
+ 
+-	thread, err := ec.resolveThreadForPortalWithMetadata(msg.Portal)
++	var thread *email.EmailThread
++	var err error
++	if ec.Main.Contacts != nil && strings.HasPrefix(string(msg.Portal.ID), "contact:") {
++		thread, err = ec.contactOutboundThread(ctx, msg)
++	} else {
++		thread, err = ec.resolveThreadForPortalWithMetadata(msg.Portal)
++	}
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -96,12 +102,14 @@
+ 	// the next send goes to thread.LastFrom only.
+ 	dmMode := false
+ 	if ec.Main != nil {
+-		dmMode = ec.Main.consumePortalNextReplyDM(msg.Portal.ID)
++		dmMode = ec.Main.consumePortalNextReplyDM(portalReplyModeKey(msg.Portal))
+ 	}
+ 
+ 	var to []netmail.Address
+ 	var cc []netmail.Address
+-	if dmMode {
++	if wasDraft {
++		to, cc, err = resolveComposeRecipients(thread, selves)
++	} else if dmMode {
+ 		to, err = resolveDMRecipients(thread, selves)
+ 	} else {
+ 		to, cc, err = resolveReplyAllRecipients(thread, selves)
+@@ -213,6 +221,9 @@
+ 	// ThreadManager TTL eviction (or a bridge restart) doesn't lose the
+ 	// References chain. Best-effort; failure is logged but not fatal — the
+ 	// in-memory cache is still good for at least 24h.
++	if ec.Main.Contacts != nil && strings.HasPrefix(string(msg.Portal.ID), "contact:") {
++		return ec.recordContactSend(ctx, msg, thread, dedupKey), nil
++	}
+ 	pm := &PortalMetadata{
+ 		ThreadID:        thread.ThreadID,
+ 		Subject:         thread.Subject,
+@@ -294,6 +305,10 @@
+ // Reseeds the cache so subsequent operations on the same room avoid the
+ // round trip.
+ func (ec *EmailClient) resolveThreadForPortalWithMetadata(portal *bridgev2.Portal) (*email.EmailThread, error) {
++	if portal != nil && ec.Main.Contacts != nil {
++		chain, err := ec.Main.Contacts.GetChain(context.Background(), string(ec.UserLogin.ID), strings.TrimPrefix(string(portal.ID), "thread:"))
++		if err != nil { return nil, err }; if chain != nil { return chain.Thread, nil }
++	}
+ 	if portal == nil {
+ 		return nil, errors.New("matrimail: nil portal")
+ 	}
+@@ -331,7 +346,10 @@
+ func computeReplyChain(thread *email.EmailThread, replyTo *database.Message) (string, []string) {
+ 	references := append([]string(nil), thread.References...)
+ 	if replyTo != nil {
+-		parentID := strings.TrimPrefix(string(replyTo.ID), "email:")
++		parentID := email.RawEmailMessageID(string(replyTo.ID))
++        if parentID == thread.ThreadID && strings.HasPrefix(thread.ThreadID, "compose-") {
++            parentID = thread.MessageID
++        }
+ 		references = append(references, parentID)
+ 		return parentID, references
+ 	}
+--- a/pkg/connector/commands.go
++++ b/pkg/connector/commands.go
+@@ -840,8 +840,10 @@
+ 		return err
+ 	}
+ 
+-	// Send success message
+-	ce.Reply(step.Instructions)
++	// Install the next step's input handler as well as showing its prompt.
++	// Otherwise a folder number is handled by the previous email prompt.
++	commands.StoreCommandState(ce.User, nil)
++	dispatchLoginStep(ce, loginProcess, step, LoginFlowIDPassword)
+ 	return nil
+ }
+ 
+@@ -1032,6 +1034,7 @@
+ // Subject so HandleMatrixMessage's draft branch can use them when the user
+ // types the first message.
+ func fnCompose(ce *commands.Event, connector *EmailConnector) {
++	if connector.Contacts != nil { fnContactCompose(ce, connector); return }
+ 	logins := ce.User.GetUserLogins()
+ 	if len(logins) == 0 {
+ 		ce.Reply("ℹ️ You're not connected to any email accounts. Use `!matrimail login` first.")
+@@ -1509,7 +1512,7 @@
+ 		ce.Reply("❌ `!matrimail reply-only` must be run inside an email portal room.")
+ 		return
+ 	}
+-	connector.MarkPortalNextReplyDM(ce.Portal.ID)
++	connector.MarkPortalNextReplyDM(portalReplyModeKey(ce.Portal))
+ 	target := ""
+ 	if connector.ThreadManager != nil {
+ 		threadID := strings.TrimPrefix(string(ce.Portal.ID), "thread:")
+--- a/pkg/connector/config.go
++++ b/pkg/connector/config.go
+@@ -11,6 +11,8 @@
+ var ExampleConfig string
+ 
+ type Config struct {
++	ContactRooms bool `yaml:"contact_rooms"`
++	AutoJoinRooms bool `yaml:"auto_join_rooms"`
+ 	// Top-level blocks to match example-config.yaml structure
+ 	IMAP       IMAPConfig       `yaml:"imap"`
+ 	Logging    LoggingConfig    `yaml:"logging"`
+--- a/pkg/connector/connector.go
++++ b/pkg/connector/connector.go
+@@ -28,6 +28,7 @@
+ 	IMAPManager   *imap.Manager
+ 	RoomManager   *matrix.RoomManager
+ 	ThreadManager *email.ThreadManager
++	Contacts *email.ContactStore
+ 	Processor     *email.Processor
+ 	DB            *EmailAccountQuery
+ 
+@@ -163,8 +164,8 @@
+ 			zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+ 		}
+ 	} else {
+-		// Default to maximum verbosity for analysis
+-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
++		// Default to bounded operational logs. Explicit environment overrides remain available.
++		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+ 	}
+ 	if san := strings.ToLower(os.Getenv("MATRIMAIL_LOG_SANITIZED")); san == "false" || san == "0" || san == "no" {
+ 		ec.Config.Logging.Sanitized = false
+@@ -217,6 +218,13 @@
+ 	// Initialize email processor and wire it to the IMAP manager
+ 	processorLogger := bridge.Log.With().Str("component", "email_processor").Logger()
+ 	ec.Processor = email.NewProcessor(&processorLogger, ec.ThreadManager, ec.Config.Logging.Sanitized, ec.Config.Logging.PseudonymSecret)
++	if ec.Config.ContactRooms {
++		var err error
++		ec.Contacts, err = email.NewContactStore(ctx, bridge.DB.RawDB, string(bridge.DB.BridgeID))
++		if err != nil { panic(fmt.Errorf("contact email schema: %w", err)) }
++		ec.Processor.Contacts = ec.Contacts
++		resolver.Contacts = ec.Contacts
++	}
+ 	// Apply processing config
+ 	if ec.Config.Processing.MaxUploadBytes > 0 {
+ 		ec.Processor.MaxUploadBytes = ec.Config.Processing.MaxUploadBytes
+@@ -273,6 +281,7 @@
+ 	// backfills. Cancellation is wired through ec.initCancel (called from Stop).
+ 	cleanupCtx, cancel := context.WithCancel(context.Background())
+ 	ec.initCancel = cancel
++	if ec.Config.ContactRooms || ec.Config.AutoJoinRooms { ec.startContactRoomMaintenance(cleanupCtx) }
+ 	go func() {
+ 		// Run an initial cleanup at startup so the table doesn't bloat
+ 		// indefinitely if the bridge is restarted frequently.
+@@ -306,6 +315,13 @@
+ // createCommands creates command handlers with access to this connector instance
+ func (ec *EmailConnector) createCommands() []commands.CommandHandler {
+ 	return []commands.CommandHandler{
++        &commands.FullHandler{
++            Func: func(ce *commands.Event) { fnContaboBackfill(ce, ec) },
++            Name: "backfill",
++            Help: commands.HelpMeta{Section: HelpSectionAdmin,
++                Description: "Import retained history from selected IMAP folders; repeat to resume.",
++                Args: "[days|all] [email]"},
++        },
+ 		&commands.FullHandler{
+ 			Func: fnPing,
+ 			Name: "ping",
+@@ -549,6 +565,7 @@
+ 
+ // GetChatInfo implements the bridgev2 interface for portal/room creation
+ func (ec *EmailConnector) GetChatInfo(ctx context.Context, portal *bridgev2.Portal, userLogin *bridgev2.UserLogin, portalID networkid.PortalKey) (*bridgev2.ChatInfo, error) {
++	if ec.Contacts != nil && strings.HasPrefix(string(portalID.ID), "contact:") { return ec.contactChatInfo(portalID.ID) }
+ 	// Extract thread ID from portal ID
+ 	threadID := string(portalID.ID)
+ 	if len(threadID) > 7 && threadID[:7] == "thread:" {
+--- a/pkg/connector/login.go
++++ b/pkg/connector/login.go
+@@ -234,10 +234,9 @@
+ 		}
+ 	}
+ 
+-	// Set username to email if not provided separately
+-	if elp.username == "" {
+-		elp.username = elp.email
+-	}
++	// The password flow has no separate username field. A retry may supply a
++	// corrected address, so do not retain the username from the failed try.
++	elp.username = elp.email
+ 
+ 	// Validate required fields
+ 	if elp.email == "" {
+--- a/pkg/connector/thread_resolver_db.go
++++ b/pkg/connector/thread_resolver_db.go
+@@ -1,119 +1,33 @@
+ package connector
+ 
+ import (
+-	"context"
+-	"strings"
+-	"time"
+-
+-	"github.com/rs/zerolog"
+-	"maunium.net/go/mautrix/bridgev2"
++ "context"
++ "strings"
++ "time"
++ "github.com/Leicas/matrimail/pkg/email"
++ "github.com/rs/zerolog"
++ "maunium.net/go/mautrix/bridgev2"
++ "maunium.net/go/mautrix/bridgev2/networkid"
+ )
+ 
+-// DBThreadMetadataResolver attempts to resolve an email Message-ID to a thread/portal
+-// by looking up previously bridged messages in the bridgev2 database.
+-// It is best-effort: if the schema doesn't match, it returns no match without error.
+-//
+-// Expected idea: bridge stores remote messages keyed by network and remote ID (we use
+-// the raw Message-ID as the RemoteMessage.GetID). Those rows should contain the
+-// portal/room (thread) identifier the message was sent to.
+-//
+-// This resolver tries a few common table/column layouts used by bridgev2. If a query
+-// fails (unknown table/column), it is ignored. First successful hit wins.
+-//
+-// Returned thread IDs are normalized to strip "thread:" prefix if present.
+-//
+-// NOTE: This relies on the bridge having previously bridged a message for the given
+-// Message-ID. Fresh replies whose parent wasn't bridged won't resolve here and will
+-// fall back to the custom thread index and heuristics.
+-
++// Resolve against the exact pinned native schema, scoped to the receiving
++// account. Do not UNION guessed schemas or accept another account's mappings.
+ type DBThreadMetadataResolver struct {
+-	Bridge  *bridgev2.Bridge
+-	Log     *zerolog.Logger
+-	Network string // e.g. "email"
++ Bridge *bridgev2.Bridge
++ Log *zerolog.Logger
++ Network string
++ Contacts *email.ContactStore
+ }
+-
+-func (r *DBThreadMetadataResolver) ResolveThreadID(receiver, messageID string) (string, bool) {
+-	if r == nil || r.Bridge == nil || r.Bridge.DB == nil {
+-		return "", false
+-	}
+-	mid := strings.TrimSpace(messageID)
+-	if mid == "" {
+-		return "", false
+-	}
+-	// Use short timeout to avoid delaying email delivery - fast failure to heuristics is better UX
+-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+-	defer cancel()
+-
+-	// Use single UNION query to check all possible table/column combinations efficiently
+-	// Try both raw and namespaced remote IDs to be robust
+-	candidates := []string{mid, "email:" + mid}
+-	
+-	// Build single query that tries all combinations with UNION
+-	unionQuery := `
+-		SELECT portal_id, 'message_with_receiver' as source FROM message 
+-		WHERE network = ? AND remote_id = ? AND receiver = ?
+-		UNION ALL
+-		SELECT portal_id, 'message_no_receiver' as source FROM message 
+-		WHERE network = ? AND remote_id = ?
+-		UNION ALL  
+-		SELECT portal_id, 'messages_with_receiver' as source FROM messages 
+-		WHERE network = ? AND remote_id = ? AND receiver = ?
+-		UNION ALL
+-		SELECT portal_id, 'messages_no_receiver' as source FROM messages 
+-		WHERE network = ? AND remote_id = ?
+-		LIMIT 1`
+-		
+-	for _, rid := range candidates {
+-		if result := r.queryUnionResult(ctx, dialectQuery(r.Bridge.DB.Dialect, unionQuery), r.Network, rid, receiver, r.Network, rid, r.Network, rid, receiver, r.Network, rid); result != "" {
+-			ntid := normalizeThreadID(result)
+-			if r.Log != nil {
+-				r.Log.Debug().Str("receiver", receiver).Str("remote_id", rid).Str("thread_id", ntid).Msg("DB resolver: resolved email message to thread")
+-			}
+-			return ntid, true
+-		}
+-	}
+-
+-	if r.Log != nil {
+-		r.Log.Trace().Str("receiver", receiver).Str("message_id", mid).Msg("DB resolver: no mapping found for email Message-ID")
+-	}
+-	return "", false
++func(r *DBThreadMetadataResolver)ResolveThreadID(receiver,messageID string)(string,bool){
++ if r==nil||r.Bridge==nil||r.Bridge.DB==nil{return "",false}
++ ctx,cancel:=context.WithTimeout(context.Background(),2*time.Second);defer cancel()
++ if r.Contacts!=nil{if thread,ok:=r.Contacts.ResolveThread(ctx,receiver,messageID);ok{return thread,true}}
++ mid:=email.RawEmailMessageID(messageID)
++ for _,candidate:=range []networkid.MessageID{networkid.MessageID("email:"+mid),networkid.MessageID(mid)}{
++  message,err:=r.Bridge.DB.Message.GetFirstPartByID(ctx,networkid.UserLoginID(receiver),candidate)
++  if err!=nil||message==nil||string(message.Room.Receiver)!=receiver{continue}
++  if strings.HasPrefix(string(message.Room.ID),"thread:"){return normalizeThreadID(string(message.Room.ID)),true}
++ }
++ return "",false
+ }
+-
+-func (r *DBThreadMetadataResolver) queryUnionResult(ctx context.Context, sql string, args ...any) string {
+-	start := time.Now()
+-	rows, err := r.Bridge.DB.Query(ctx, sql, args...)
+-	if err != nil {
+-		// Only log if it's not a simple "table doesn't exist" error (expected for best-effort)
+-		if r.Log != nil && !strings.Contains(strings.ToLower(err.Error()), "no such table") {
+-			r.Log.Debug().Err(err).Dur("duration", time.Since(start)).Msg("DB resolver union query failed")
+-		}
+-		return ""
+-	}
+-	defer rows.Close()
+-	
+-	if rows.Next() {
+-		var portalID, source string
+-		if err := rows.Scan(&portalID, &source); err == nil {
+-			if r.Log != nil {
+-				duration := time.Since(start)
+-				if duration > 500*time.Millisecond {
+-					r.Log.Warn().Dur("duration", duration).Str("source", source).Msg("DB resolver union query was slow")
+-				}
+-			}
+-			return portalID
+-		}
+-		if r.Log != nil {
+-			r.Log.Debug().Err(err).Msg("DB resolver union scan failed")
+-		}
+-	}
+-	return ""
+-}
+-
+-
+-func normalizeThreadID(portalOrThreadID string) string {
+-	id := strings.TrimSpace(portalOrThreadID)
+-	if strings.HasPrefix(id, "thread:") {
+-		return strings.TrimPrefix(id, "thread:")
+-	}
+-	return id
+-}
++func normalizeThreadID(value string)string{return strings.TrimPrefix(strings.TrimSpace(value),"thread:")}
+--- a/pkg/email/processor.go
++++ b/pkg/email/processor.go
+@@ -77,6 +77,7 @@
+ 
+ // Processor handles the complete email processing pipeline
+ type Processor struct {
++	Contacts *ContactStore
+ 	log           *zerolog.Logger
+ 	threadManager *ThreadManager
+ 
+@@ -164,6 +165,7 @@
+ 
+ // EmailMessage represents a complete parsed email ready for Matrix bridging
+ type EmailMessage struct {
++	ContactRoot networkid.MessageID
+ 	*ParsedEmail
+ 	Thread      *EmailThread
+ 	PortalKey   networkid.PortalKey
+@@ -323,6 +325,7 @@
+ 			Msg("Successfully processed complete email message")
+ 	}
+ 
++	if err := p.prepareContactMessage(ctx, emailMessage, userLogin); err != nil { return nil, err }
+ 	emailMessage.Attachments = parsedEmail.Attachments
+ 	return emailMessage, nil
+ }
+@@ -994,6 +997,7 @@
+ }
+ 
+ func (e *EmailMatrixEvent) ConvertMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI) (cm *bridgev2.ConvertedMessage, err error) {
++	defer func() { if err == nil { e.applyContactRelations(cm) } }()
+ 	var parts []*bridgev2.ConvertedMessagePart
+ 	// Helper to append a part with deterministic ID for idempotency
+ 	appendPart := func(id string, content *event.MessageEventContent) {
+--- a/pkg/email/threading.go
++++ b/pkg/email/threading.go
+@@ -197,17 +197,17 @@
+ func (tm *ThreadManager) updateMessageIDIndex(receiver string, thread *EmailThread) {
+ 	// Index the thread ID itself
+ 	if thread.ThreadID != "" {
+-		tm.messageIDIndex[thread.ThreadID] = thread
++		tm.messageIDIndex[receiver+"\x00"+thread.ThreadID] = thread
+ 	}
+ 	// Index all message IDs in the references chain
+ 	for _, ref := range thread.References {
+ 		if ref != "" {
+-			tm.messageIDIndex[ref] = thread
++			tm.messageIDIndex[receiver+"\x00"+ref] = thread
+ 		}
+ 	}
+ 	// Index the current message ID if different from thread ID
+ 	if thread.MessageID != "" && thread.MessageID != thread.ThreadID {
+-		tm.messageIDIndex[thread.MessageID] = thread
++		tm.messageIDIndex[receiver+"\x00"+thread.MessageID] = thread
+ 	}
+ 	// Index by Gmail thread ID (per-receiver scoped) when known.
+ 	if thread.GmailThreadID != "" {
+@@ -313,7 +313,7 @@
+ 
+ 	// Step 1: Check if this is a reply based on In-Reply-To header (in-memory)
+ 	if email.InReplyTo != "" {
+-		if thread := tm.findThreadByMessageID(email.InReplyTo); thread != nil {
++		if thread := tm.findThreadByMessageID(receiver, email.InReplyTo); thread != nil {
+ 			return tm.addToExistingThread(thread, email)
+ 		}
+ 	}
+@@ -322,7 +322,7 @@
+ 	if len(email.References) > 0 {
+ 		// Check each reference (starting from the oldest)
+ 		for _, refID := range email.References {
+-			if thread := tm.findThreadByMessageID(refID); thread != nil {
++			if thread := tm.findThreadByMessageID(receiver, refID); thread != nil {
+ 				return tm.addToExistingThread(thread, email)
+ 			}
+ 		}
+@@ -343,12 +343,12 @@
+ }
+ 
+ // findThreadByMessageID finds an existing thread that contains a specific Message-ID
+-func (tm *ThreadManager) findThreadByMessageID(messageID string) *EmailThread {
++func (tm *ThreadManager) findThreadByMessageID(receiver, messageID string) *EmailThread {
+ 	tm.mu.RLock()
+ 	defer tm.mu.RUnlock()
+ 	
+ 	// Use O(1) index lookup instead of O(n) linear search
+-	if thread, exists := tm.messageIDIndex[messageID]; exists {
++	if thread, exists := tm.messageIDIndex[receiver+"\x00"+messageID]; exists {
+ 		return thread
+ 	}
+ 	return nil
+@@ -676,7 +676,7 @@
+ 	for _, key := range expiredKeys {
+ 		// Remove from main cache and also clean up message ID index
+ 		if thread := tm.knownThreads[key]; thread != nil {
+-			tm.removeFromMessageIDIndex(thread)
++			tm.removeFromMessageIDIndex(strings.SplitN(key, "|", 2)[0], thread)
+ 		}
+ 		delete(tm.knownThreads, key)
+ 	}
+@@ -723,7 +723,7 @@
+ 		}
+ 		// Remove from main cache and clean up message ID index
+ 		if thread := tm.knownThreads[entry.key]; thread != nil {
+-			tm.removeFromMessageIDIndex(thread)
++			tm.removeFromMessageIDIndex(strings.SplitN(entry.key, "|", 2)[0], thread)
+ 		}
+ 		delete(tm.knownThreads, entry.key)
+ 		removedCount++
+@@ -731,16 +731,16 @@
+ }
+ 
+ // removeFromMessageIDIndex removes all entries for a thread from the message ID index
+-func (tm *ThreadManager) removeFromMessageIDIndex(thread *EmailThread) {
++func (tm *ThreadManager) removeFromMessageIDIndex(receiver string, thread *EmailThread) {
+ 	if thread.ThreadID != "" {
+-		delete(tm.messageIDIndex, thread.ThreadID)
++		delete(tm.messageIDIndex, receiver+"\x00"+thread.ThreadID)
+ 	}
+ 	if thread.MessageID != "" {
+-		delete(tm.messageIDIndex, thread.MessageID)
++		delete(tm.messageIDIndex, receiver+"\x00"+thread.MessageID)
+ 	}
+ 	for _, ref := range thread.References {
+ 		if ref != "" {
+-			delete(tm.messageIDIndex, ref)
++			delete(tm.messageIDIndex, receiver+"\x00"+ref)
+ 		}
+ 	}
+ 	// Also drop any gmailThreadIDIndex entries that point at this thread.
+--- a/pkg/imap/client.go
++++ b/pkg/imap/client.go
+@@ -1317,7 +1317,7 @@
+ }
+ 
+ // processMessage fetches and processes a single email message
+-func (c *Client) processMessageWith(ctx context.Context, cli *imapclient.Client, uid imap.UID, mailbox string) error {
++func (c *Client) processMessageWith(ctx context.Context, cli *imapclient.Client, uid imap.UID, mailbox string, waitForMapping ...bool) error {
+ 	c.log.Debug().Uint32("uid", uint32(uid)).Msg("Fetching message")
+ 
+ 	// Fetch message with headers and body
+@@ -1340,6 +1340,7 @@
+ 	uidSet := imap.UIDSetNum(uid)
+ 	fetchCmd := cli.Fetch(uidSet, fetchOptions)
+ 
++	hadMessage := false
+ 	// Process the fetched message
+ 	for {
+ 		msg := fetchCmd.Next()
+@@ -1347,6 +1348,7 @@
+ 			break
+ 		}
+ 
++		hadMessage = true
+ 		// Skip processing if login is nil (testing mode)
+ 		if c.login == nil {
+ 			c.log.Debug().Msg("Skipping message processing (test mode)")
+@@ -1442,6 +1444,10 @@
+ 			return err
+ 		}
+ 
++		if len(waitForMapping) > 0 && waitForMapping[0] {
++			mapped, err := c.contaboMappedMessage(ctx, emailMessage.MessageID)
++			if err != nil { return err }; if mapped { continue }
++		}
+ 		// Queue the event with the bridge framework
+ 		if !c.login.QueueRemoteEvent(matrixEvent).Success {
+ 			if c.sanitized {
+@@ -1449,7 +1455,8 @@
+ 					Str("message_id_hash", logging.HashHMAC(string(emailMessage.MessageID), c.secret, 10)).
+ 					Str("subject_hash", logging.HashHMAC(logging.BoundAndClean(emailMessage.Subject, 256), c.secret, 10)).
+ 					Msg("Failed to queue remote event")
+-			} else {
++				if len(waitForMapping) > 0 && waitForMapping[0] { return fmt.Errorf("native email event queue rejected message") }
++		} else {
+ 				c.log.Error().
+ 					Str("message_id", string(emailMessage.MessageID)).
+ 					Str("subject", logging.BoundAndClean(emailMessage.Subject, 256)).
+@@ -1468,6 +1475,9 @@
+ 					Msg("Successfully queued email message")
+ 			}
+ 		}
++		if len(waitForMapping) > 0 && waitForMapping[0] {
++			if err := c.contaboWaitForMessage(ctx, emailMessage.MessageID); err != nil { return err }
++		}
+ 	}
+ 
+ 	// Wait for fetch to complete
+@@ -1475,6 +1485,7 @@
+ 		return fmt.Errorf("fetch command failed: %w", err)
+ 	}
+ 
++	if len(waitForMapping) > 0 && waitForMapping[0] && !hadMessage { return fmt.Errorf("source email disappeared before history fetch") }
+ 	return nil
+ }
+ 
+--- a/pkg/matrix/room_manager.go
++++ b/pkg/matrix/room_manager.go
+@@ -40,12 +40,12 @@
+ 	roomName := rm.formatRoomName(thread.Subject)
+ 	roomTopic := fmt.Sprintf("Email thread: %s", thread.ThreadID)
+ 
+-	// Create member map with read-only power levels
++	// Create members with send permissions for email replies
+ 	memberMap := make(map[networkid.UserID]bridgev2.ChatMember)
+ 
+ 	// Add the Matrix user (human user) using the special empty user ID with IsFromMe: true
+ 	// This ensures the room is auto-joined instead of inviting the user.
+-	// IMPORTANT: Do not assign elevated power level to the human user to keep the room read-only.
++	// Ordinary message sending needs no elevated state/admin permissions.
+ 	memberMap[networkid.UserID("")] = bridgev2.ChatMember{
+ 		EventSender: bridgev2.EventSender{IsFromMe: true},
+ 		Membership:  event.MembershipJoin,
+@@ -67,7 +67,7 @@
+ 		participantSet[monitored] = struct{}{}
+ 	}
+ 
+-	// Add email participants (including monitored email) as read-only ghost members
++	// Add email participants (including monitored email) as ordinary ghost members
+ 	for emailAddr := range participantSet {
+ 		ghostID := common.EmailToGhostID(emailAddr)
+ 		memberMap[ghostID] = bridgev2.ChatMember{
+@@ -77,8 +77,8 @@
+ 		}
+ 	}
+ 
+-	// Set up power levels to make room read-only for email participants
+-	powerLevels := BuildReadOnlyPowerLevels()
++	// Allow ordinary messages while keeping room administration bridge-controlled
++	powerLevels := BuildEmailPowerLevels()
+ 
+ 	// Also include an explicit member entry for the Matrix user to ensure initial membership at creation
+ 	initialMembers := []bridgev2.ChatMember{
+@@ -121,11 +121,11 @@
+ return chatInfo, nil
+ }
+ 
+-// BuildReadOnlyPowerLevels centralizes the power level configuration for email threads.
+-// - Human user at PL 0 (default) is blocked from sending messages/reactions/redactions
++// BuildEmailPowerLevels allows email replies at PL 0.
++// - Messages and encrypted messages are writable; reactions/redactions stay restricted
+ // - State changes require PL 101 (effectively bot/bridge-controlled)
+ // - The bridge bot may still be given elevated PL separately by the framework
+-func BuildReadOnlyPowerLevels() *bridgev2.PowerLevelOverrides {
++func BuildEmailPowerLevels() *bridgev2.PowerLevelOverrides {
+ 	return &bridgev2.PowerLevelOverrides{
+ 		EventsDefault: ptr.Ptr(0),
+ 		StateDefault:  ptr.Ptr(101),
+@@ -137,8 +137,9 @@
+ 			event.StateRoomName:   101,
+ 			event.StateTopic:      101,
+ 			event.StateRoomAvatar: 101,
+-			// Block all users from sending messages - bridge framework handles ghost sending
+-			event.EventMessage:    101,
++			// Humans can send replies through both plain and encrypted Matrix events.
++			event.EventMessage:    0,
++			event.EventEncrypted:  0,
+ 			// Keep reactions/redactions restricted to prevent Matrix-side edits by default
+ 			event.EventReaction:   101,
+ 			event.EventRedaction:  101,

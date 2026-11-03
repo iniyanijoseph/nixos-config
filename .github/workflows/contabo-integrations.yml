@@ -6,11 +6,20 @@ on:
       - '.github/workflows/contabo-integrations.yml'
   workflow_dispatch:
 jobs:
+  invitations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Verify single-use registration against a disposable Synapse
+        run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-admin-nixos-test
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
+      - name: Check the laptop launcher's loopback forwarding and cleanup
+        run: python3 hosts/contabo/test_bridge_manager.py
       - name: Evaluate the fully enabled integration profile
         run: |
           nix eval --impure --raw --expr '
@@ -20,7 +29,7 @@ jobs:
                 contabo.discordNative.enable=lib.mkForce true;
                 contabo.mail.enable=lib.mkForce true;})
             ];}).config.system.build.toplevel.drvPath'
-      - run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-commission-tests ./hosts/contabo#contabo-discord-native ./hosts/contabo#contabo-finish-setup
+      - run: nix build -L --no-link ./hosts/contabo#checks.x86_64-linux.contabo-commission-tests ./hosts/contabo#checks.x86_64-linux.contabo-admin-tests ./hosts/contabo#contabo-discord-native ./hosts/contabo#contabo-finish-setup ./hosts/contabo#contabo-bridge-manager ./hosts/contabo#contabo-discord-login ./hosts/contabo#contabo-admin
   matrimail:
     runs-on: ubuntu-latest
     steps:
@@ -28,8 +37,8 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - name: Compile pinned Matrimail and verify configuration and registration
         run: |
-          bash hosts/contabo/email-bridge/build.sh
-          export CONTABO_MATRIMAIL_BINARY="$HOME/.local/share/matrimail-build/matrimail"
+          nix build -L --no-link ./hosts/contabo#contabo-matrimail
+          export CONTABO_MATRIMAIL_BINARY="$(nix build --no-link --print-out-paths ./hosts/contabo#contabo-matrimail)/bin/matrimail"
           nix develop ./hosts/contabo#email-bridge --command python3 hosts/contabo/test_commission_integrations.py
       - name: Verify restrictive-umask installation as a separate service identity
         run: |

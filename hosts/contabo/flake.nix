@@ -34,6 +34,30 @@
         ${pkgs.python3.withPackages (ps: [ps.pyyaml])}/bin/python3 ${./test_commission_integrations.py}
         touch "$out"
       '';
+    packages.x86_64-linux.contabo-bridge-manager =
+      import ./bridge-manager.nix { pkgs = import nixpkgs { inherit system; }; };
+    packages.x86_64-linux.contabo-matrimail =
+      import ./email-bridge/package.nix { pkgs = emailPkgs; };
+    packages.x86_64-linux.contabo-admin =
+      import ./server-admin-package.nix { pkgs = import nixpkgs { inherit system; }; };
+    packages.x86_64-linux.contabo-discord-login =
+      import ./discord-login.nix { pkgs = import nixpkgs { inherit system; }; };
+    checks.x86_64-linux.contabo-admin-tests =
+      let pkgs = import nixpkgs { inherit system; };
+      in pkgs.runCommand "contabo-admin-tests" {
+        nativeBuildInputs = [ pkgs.postgresql_17 pkgs.nodejs ];
+      } ''
+        export CONTABO_SERVER_ADMIN_SCRIPT="${./server-admin.py}"
+        export PYTHONTZPATH="${pkgs.tzdata}/share/zoneinfo"
+        export PYTHONDONTWRITEBYTECODE=1
+        ${pkgs.python3.withPackages (ps: [ps.pyyaml])}/bin/python3 ${./test_server_admin.py}
+        cp ${./discord-login-policy.cjs} discord-login-policy.cjs
+        cp ${./test_discord_login.cjs} test_discord_login.cjs
+        node --test test_discord_login.cjs
+        export CONTABO_INVITE_PAGE="${./server-invite.html}"
+        node --test ${./test_invite_page.cjs}
+        touch "$out"
+      '';
     packages.x86_64-linux.contabo-discord-native =
       let pkgs = import nixpkgs { inherit system; };
       in import ./discord-native/package.nix { inherit pkgs; };
@@ -41,6 +65,8 @@
       import ./test-finish-setup-nixos.nix {
         pkgs = import nixpkgs { inherit system; };
       };
+    checks.x86_64-linux.contabo-admin-nixos-test =
+      import ./test-server-admin-nixos.nix { pkgs = import nixpkgs { inherit system; }; };
 
     # Logout/reboot-safe commissioning runner. Missing implementations and
     # client checks remain explicit blockers, never fabricated success markers.
@@ -57,6 +83,7 @@
         export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
         export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
         export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"
+        export CONTABO_MATRIMAIL_BINARY="${self.packages.${system}.contabo-matrimail}/bin/matrimail"
         export PATH="${pkgs.lib.makeBinPath [ pkgs.exiftool pkgs.perl pkgs.ffmpeg-headless pkgs.coreutils pkgs.systemd pkgs.util-linux pkgs.openssl ]}:${self.packages.${system}.contabo-photo-audit}/bin:${self.packages.${system}.contabo-discord-audit}/bin:/run/current-system/sw/bin"
         exec ${pkgs.python3.withPackages (ps: [ ps.pyyaml ])}/bin/python3 ${./finish-setup.py}
       '';
@@ -175,6 +202,7 @@ for path in [
       packages = [
         emailPkgs.go
         emailPkgs.git
+        emailPkgs.patch
         emailPkgs.pkg-config
         emailPkgs.olm
         emailPkgs.gcc
@@ -184,6 +212,7 @@ for path in [
 
     nixosConfigurations.contabo = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
+      specialArgs.contaboMatrimail = self.packages.${system}.contabo-matrimail;
       modules = [
         disko.nixosModules.disko
         ./configuration.nix
