@@ -80,6 +80,26 @@ class Tests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'permissions'):
                 c.ensure_whatsapp_secret(path)
 
+    def test_whatsapp_health_probe_resolves_only_protected_secret(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / 'whatsapp.env'
+            secret = 'private-' + 'a' * 48
+            env.write_text('WHATSAPP_PICKLE_KEY=unchanged\\nWHATSAPP_PROVISIONING_SECRET=' + secret + '\\n')
+            env.chmod(0o600)
+            self.assertEqual(c.bridge_provisioning_secret(
+                'whatsapp', '$WHATSAPP_PROVISIONING_SECRET', env), secret)
+            self.assertEqual(c.bridge_provisioning_secret(
+                'whatsapp', 'already-expanded', env), 'already-expanded')
+            self.assertEqual(c.bridge_provisioning_secret(
+                'slack', '$WHATSAPP_PROVISIONING_SECRET', env), '$WHATSAPP_PROVISIONING_SECRET')
+            env.chmod(0o644)
+            with self.assertRaisesRegex(RuntimeError, 'Unsafe private file permissions'):
+                c.bridge_provisioning_secret('whatsapp', '$WHATSAPP_PROVISIONING_SECRET', env)
+            env.chmod(0o600)
+            env.write_text('WHATSAPP_PICKLE_KEY=unchanged\\n')
+            with self.assertRaisesRegex(RuntimeError, 'missing or invalid'):
+                c.bridge_provisioning_secret('whatsapp', '$WHATSAPP_PROVISIONING_SECRET', env)
+
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
         self.assertTrue(c.mapping_proof(events, now=1000, minutes=1)['recent_both_directions'])
