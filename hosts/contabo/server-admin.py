@@ -220,6 +220,19 @@ def mapping_proof(events, now=None, minutes=30):
             'recent_both_directions': inbound > 0 and outbound > 0}
 
 
+def bridge_provisioning_secret(network, value, env_path=Path('/var/lib/secrets/mautrix-whatsapp.env')):
+    # The declarative WhatsApp config intentionally references a protected env
+    # variable rather than storing the credential in its YAML. Resolve only
+    # that exact placeholder for the read-only loopback health probe.
+    if network != 'whatsapp' or value != '$WHATSAPP_PROVISIONING_SECRET':
+        return value
+    entries = [line.split('=', 1)[1].strip() for line in read_private(env_path).splitlines()
+               if line.startswith('WHATSAPP_PROVISIONING_SECRET=')]
+    if len(entries) != 1 or len(entries[0]) < 32:
+        raise RuntimeError('WhatsApp provisioning credential missing or invalid')
+    return entries[0]
+
+
 def bridge_check(network, room=None, minutes=30):
     unit, port = BRIDGES[network]
     result = {'network': network, 'service_active': subprocess.run(
@@ -229,7 +242,7 @@ def bridge_check(network, room=None, minutes=30):
     if config.get('appservice', {}).get('hostname') != '127.0.0.1':
         raise RuntimeError('Expected loopback-only bridge listener')
     provisioning = config.get('bridge', {}).get('provisioning', {}) if network == 'discord' else config.get('provisioning', {})
-    secret = provisioning.get('shared_secret')
+    secret = bridge_provisioning_secret(network, provisioning.get('shared_secret'))
     if not isinstance(secret, str) or secret in ('disable', 'generate', '') or secret.startswith('$'):
         result['api'] = 'not configured'
     else:
