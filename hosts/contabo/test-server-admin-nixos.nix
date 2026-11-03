@@ -11,7 +11,7 @@ pkgs.testers.runNixOSTest {
         registration_shared_secret = "vm-fixture-only";
         report_stats = false;
         database = { name = "sqlite3"; args.database = "/var/lib/matrix-synapse/homeserver.db"; };
-        listeners = [{ port = 8008; bind_addresses = [ "127.0.0.1" ]; type = "http";
+        listeners = [{ port = 8008; bind_addresses = [ "127.0.0.1" ]; type = "http"; tls = false;
           resources = [{ names = [ "client" ]; compress = false; }]; }];
       };
     };
