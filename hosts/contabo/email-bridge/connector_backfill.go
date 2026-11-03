@@ -42,5 +42,10 @@ func fnContaboBackfill(ce *commands.Event,connector *EmailConnector){
   })
   if err!=nil{connector.Bridge.Log.Error().Err(err).Msg("Email history import paused");ce.Reply("Email history import paused after %d processed messages. Checkpoints retained. Repeat the same backfill command to resume; inspect the private Matrimail journal for the error.",count);return}
   ce.Reply("Email history scan completed: %d processed messages in the selected folders. Existing mappings and skipped drafts are included. Source mailbox unchanged; attachment parity has not been independently audited.",count)
+  if days==0 && connector.Contacts!=nil{
+   archived,legacy,err:=connector.finalizeLegacyConsolidation(ctx,account.UserLogin)
+   if err!=nil{connector.Bridge.Log.Error().Err(err).Msg("Legacy mail room audit paused");ce.Reply("Historical mail imported, but legacy-room verification paused. Original rooms are unchanged where coverage could not be confirmed.");return}
+   ce.Reply("Contact consolidation: %d/%d older rooms verified and marked archived. Other rooms remain unchanged because some messages, parts, or contact-room mappings could not be verified. No original rooms or events were removed.",archived,legacy)
+  }
  }()
 }
