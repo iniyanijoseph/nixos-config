@@ -49,6 +49,30 @@ func TestContaboContactAddressSelection(t *testing.T){
  if contact,err:=ContactForEmail(&ParsedEmail{From:"me@gmail.com",To:[]string{"me@gmail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{t.Fatal("self-only mail must have its own room rather than pausing the import")}
 }
 
+func TestContaboMultiPersonEmailRoutingIsSenderIndependent(t *testing.T){
+ selves:=[]string{"me@gmail.com","me+alias@gmail.com"}
+ samples:=[]ParsedEmail{
+  {From:"Alice <ALICE@example.com>",To:[]string{"me@gmail.com","Bob <BOB@example.com>"}},
+  {From:"Bob <bob@example.com>",To:[]string{"alice@example.com","me+alias@gmail.com"}},
+  {From:"me@gmail.com",To:[]string{"bob@example.com"},Cc:[]string{"Alice <alice@example.com>"}},
+  {From:"alice@example.com",To:[]string{"me@gmail.com"},Cc:[]string{"bob@example.com","bob@example.com"}},
+ }
+ for i:=range samples{
+  got,err:=ContactForEmail(&samples[i],selves)
+  if err!=nil||got!="alice@example.com,bob@example.com"{t.Fatalf("group %d routed %q (%v)",i,got,err)}
+ }
+ one,err:=ContactForEmail(&ParsedEmail{From:"alice@example.com",To:[]string{"me@gmail.com"}},selves)
+ if err!=nil||one!="alice@example.com"{t.Fatal("one-on-one contact split incorrectly")}
+ if ContactPortalID(one)==ContactPortalID("alice@example.com,bob@example.com"){t.Fatal("group and direct rooms collide")}
+ ctx:=context.Background();db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"group.db"));if err!=nil{t.Fatal(err)};defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ root:=&EmailThread{ThreadID:"group-thread",MessageID:"m1",LastFrom:"alice@example.com"}
+ first,err:=store.Record(ctx,"me",root,"m1","alice@example.com,bob@example.com",time.Unix(100,0));if err!=nil{t.Fatal(err)}
+ reply:=&EmailThread{ThreadID:"group-thread",MessageID:"m2",LastFrom:"bob@example.com"}
+ second,err:=store.Record(ctx,"me",reply,"m2","bob@example.com",time.Unix(101,0));if err!=nil{t.Fatal(err)}
+ if second.Contact!=first.Contact||second.RootID!=first.RootID{t.Fatal("partial participant reply moved the existing group thread")}
+}
+
 func TestContaboContactProcessorAndThreadRelations(t *testing.T){
  ctx:=context.Background();db,_:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"mail.db"));defer db.Close()
  store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
