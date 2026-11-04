@@ -105,6 +105,25 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.setup.results['Photo Files dates']['status'], 'deferred')
         self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
 
+    def test_email_audit_cannot_certify_unpopulated_contact_rooms(self):
+        # The old bridge may have lost its legacy portal mappings. Zero
+        # legacy rows is not evidence that the client's old rooms are gone.
+        report = {'contact_routing_enabled': True, 'bridge_logins': 1,
+                  'contact_rooms': 0, 'contact_message_parts': 0,
+                  'legacy_rooms': 0, 'legacy_message_parts': 0,
+                  'legacy_parts_with_contact_mappings': 0,
+                  'archived_legacy_rooms': 0}
+        module = Mock()
+        module.mail_consolidation_status.return_value = report
+        with patch.dict(os.environ, {'CONTABO_ADMIN_SCRIPT': '/offline/admin.py'}), \
+             patch.object(finish, 'load_script', return_value=module):
+            with self.assertRaisesRegex(RuntimeError, 'No populated contact'):
+                finish.Setup.email_consolidation(self.setup)
+            report['contact_rooms'] = 1
+            report['contact_message_parts'] = 1
+            self.assertIn('Contact-room audit passed', finish.Setup.email_consolidation(self.setup))
+        self.assertTrue((finish.STATE / 'mail-consolidation.json').is_file())
+
     def test_post_mail_retry_never_modifies_photos_before_verified_email(self):
         self.setup.preflight = Mock(return_value='healthy')
         self.setup.backup = Mock(return_value='backup')
