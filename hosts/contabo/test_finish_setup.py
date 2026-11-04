@@ -123,12 +123,35 @@ class Tests(unittest.TestCase):
              patch.object(finish, 'load_script', return_value=module), \
              patch.object(finish, 'command') as cmd:
             result = finish.Setup.ensure_matrimail_contact_routing(self.setup)
-        self.assertIn('Re-enabled', result)
+        self.assertIn('verified after its config upgrade', result)
         self.assertEqual(cmd.call_args_list[0].args[0],
                          ['systemctl', 'restart', 'matrimail.service'])
         self.assertEqual(cmd.call_args_list[1].args[0],
                          ['systemctl', 'is-active', '--quiet', 'matrimail.service'])
         self.assertEqual(cmd.call_count, 2)
+
+    def test_routing_repair_detects_matrimail_erasing_config_on_restart(self):
+        directory = Path(self.tmp.name) / 'matrimail'
+        directory.mkdir()
+        config = directory / 'config.yaml'
+        config.write_text('network:\\n  contact_rooms: false\\n')
+        (directory / '.contact-registration-loaded.json').write_text(
+            json.dumps({'sha256': 'original'}))
+        module = Mock()
+        def apply(home):
+            self.assertEqual(home, directory)
+            config.write_text('network:\\n  contact_rooms: true\\n  auto_join_rooms: true\\n')
+            return True, 'original'
+        module.enable_matrimail_contact_rooms.side_effect = apply
+        def invoke(args, **kw):
+            if args == ['systemctl', 'restart', 'matrimail.service']:
+                # Simulate the former binary's upgrade stripping unknown keys.
+                config.write_text('network:\\n  imap: {}\\n')
+        with patch.object(finish, 'MATRIMAIL_HOME', directory), \
+             patch.object(finish, 'load_script', return_value=module), \
+             patch.object(finish, 'command', side_effect=invoke):
+            with self.assertRaisesRegex(RuntimeError, 'discarded contact routing'):
+                finish.Setup.ensure_matrimail_contact_routing(self.setup)
 
     def test_routing_repair_is_idempotent_and_preserves_registration_guard(self):
         directory = Path(self.tmp.name) / 'matrimail'
