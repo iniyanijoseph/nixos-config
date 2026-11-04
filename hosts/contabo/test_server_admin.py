@@ -218,7 +218,7 @@ class Tests(unittest.TestCase):
             home.mkdir()
             dbpath = home / 'bridge.db'
             cfg = home / 'config.yaml'
-            cfg.write_text('network:\\n  contact_rooms: true\\ndatabase:\\n  uri: file:' + str(dbpath) + '\\n')
+            cfg.write_text('network:\n  contact_rooms: true\ndatabase:\n  uri: file:' + str(dbpath) + '\n')
             cfg.chmod(0o600)
             receiver = 'email:owner@gmail.com'
             digest = hashlib.sha256(receiver.encode()).hexdigest()
