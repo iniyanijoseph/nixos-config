@@ -300,6 +300,7 @@ Read-only status and retry checks:
 ```fish
 sudo contabo-admin mail-consolidation
 sudo contabo-admin mail-auto-rebuild
+sudo contabo-admin mail-duplicates
 sudo bash /etc/nixos/hosts/contabo/finish-setup.sh --status
 sudo journalctl -u matrimail --since '1 hour ago' --no-pager -o cat | rg -i 'v3|rebuild|history|paused'
 ```
@@ -311,3 +312,39 @@ session is cached, or Synapse returns a failed deletion, existing rooms
 remain protected and the launcher reports the exact blocker. Even a verified
 native mapping is not proof that all old Matrix content (e.g. edits/reactions)
 was reproduced. Do not claim those independent media/encryption checks passed.
+
+### Checking for duplicates during a v3 rebuild
+
+Old `thread:` and `contact:` rooms are deliberately retained until
+`contact-v3:` history passes strict parity checks, so seeing both old and
+new rooms is expected. A new group key also legitimately creates its own
+room; repeated `Portal already exists` log lines are lookups, not a room
+creation event.
+
+The native routing for any given source RFC Message-ID must nevertheless
+be stable across INBOX, All Mail, mailbox scans and bridge restarts. Use:
+
+```fish
+sudo contabo-admin mail-duplicates
+sudo find /var/lib/matrimail/contabo-backfill-contacts-v3 \
+  -maxdepth 1 -type f -name 'scope-*.json' \
+  -exec jq '{complete, folders, cursor_files}' '{}' +
+sudo find /var/lib/matrimail/contabo-backfill-contacts-v3 \
+  -maxdepth 1 -type f -name '[0-9a-f]*.json' \
+  -exec jq '{processed, after, waterline}' '{}' +
+```
+
+Use `find` rather than an unprivileged shell glob: fish tries to
+expand `scope-*.json` before `sudo`, but the checkpoint directory is
+private. UID `after` and `waterline` describe positions, not counts.
+The new `mail-duplicates` audit identifies contradictory v3 native
+mappings without printing recipients, subjects or message IDs. Positive
+`v3_conflicting_message_ids` or `v3_shared_matrix_rooms` automatically
+blocks old-room purging. It cannot prove that every historical Matrix
+event was mapped into the native database.
+
+To halt additional email-room creation while inspecting duplicate
+behavior, `sudo systemctl stop matrimail`. This interrupts only email
+bridging; do not clear the private database or checkpoints. Resume
+deliberately with `sudo systemctl start matrimail` after deploying a
+verified fix.

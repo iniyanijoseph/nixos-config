@@ -108,6 +108,23 @@ func(s *ContactStore)Record(ctx context.Context,receiver string,thread *EmailThr
  if thread==nil||thread.ThreadID==""||messageID==""{return nil,fmt.Errorf("missing email chain identity")}
  s.mu.Lock();defer s.mu.Unlock()
  tx,err:=s.DB.BeginTx(ctx,nil);if err!=nil{return nil,err};defer tx.Rollback()
+ // IMAP may expose the *same* RFC Message-ID in INBOX and All Mail, and
+ // after reconnect the upstream thread cache can assign a different thread
+ // identity. The message's previously persisted room is authoritative:
+ // never create a second chain/room for one already-routed source email.
+ var existing string
+ err=tx.QueryRowContext(ctx,`SELECT data FROM contabo_email_message_v3
+  WHERE bridge_id=$1 AND receiver=$2 AND message_id=$3`,
+  s.BridgeID,receiver,RawEmailMessageID(messageID)).Scan(&existing)
+ if err==nil{
+  var saved ContactChain
+  if err=json.Unmarshal([]byte(existing),&saved);err!=nil{return nil,fmt.Errorf("decode existing email mapping: %w",err)}
+  if saved.Contact==""||saved.RootID==""||saved.Thread==nil{
+   return nil,fmt.Errorf("incomplete existing email contact mapping")
+  }
+  return &saved,nil
+ }
+ if !errors.Is(err,sql.ErrNoRows){return nil,err}
  chain:=ContactChain{Contact:contact,RootID:ContactMessageID(messageID),Thread:thread}
  var oldContact,oldRoot string
  err=tx.QueryRowContext(ctx,`SELECT contact,root_id FROM contabo_email_chain_v3 WHERE bridge_id=$1 AND receiver=$2 AND thread_id=$3`,s.BridgeID,receiver,thread.ThreadID).Scan(&oldContact,&oldRoot)

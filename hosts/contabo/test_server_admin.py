@@ -307,6 +307,46 @@ class Tests(unittest.TestCase):
             self.assertFalse(ambiguous['ready'])
             self.assertEqual(ambiguous['blocked_rooms'], 1)
 
+    def test_v3_duplicate_audit_only_flags_conflicts_within_new_rooms(self):
+        import base64
+        def portal(addresses):
+            key = base64.urlsafe_b64encode(addresses.encode()).decode().rstrip('=')
+            return 'contact-v3:' + key
+        with sqlite3.connect(':memory:') as db:
+            db.execute('CREATE TABLE portal (bridge_id TEXT, receiver TEXT, id TEXT, mxid TEXT)')
+            db.execute('CREATE TABLE message (bridge_id TEXT, room_receiver TEXT, id TEXT, part_id TEXT, room_id TEXT, mxid TEXT)')
+            db.execute('CREATE TABLE user_login (bridge_id TEXT, id TEXT, user_mxid TEXT)')
+            db.executemany('INSERT INTO user_login VALUES (?,?,?)', [
+                ('mail','email:me@gmail.com',c.OWNER),
+                ('mail','email:friend@gmail.com','@friend:iniyanjoseph.com')])
+            direct,group = portal('alice@example.com'), portal('alice@example.com,bob@example.com')
+            db.executemany('INSERT INTO portal VALUES (?,?,?,?)', [
+                ('mail','email:me@gmail.com',direct,'!direct:iniyanjoseph.com'),
+                ('mail','email:me@gmail.com',group,'!group:iniyanjoseph.com'),
+                ('mail','email:friend@gmail.com',direct,'!friend:iniyanjoseph.com'),
+                ('mail','email:me@gmail.com','contact:old','!old:iniyanjoseph.com')])
+            db.executemany('INSERT INTO message VALUES (?,?,?,?,?,?)', [
+                ('mail','email:me@gmail.com','contact-v3-email:one','text',direct,'$v3a'),
+                ('mail','email:me@gmail.com','email:one','text','contact:old','$legacy'),
+                ('mail','email:friend@gmail.com','contact-v3-email:one','text',direct,'$friend'),
+                ('mail','email:me@gmail.com','contact-v3-email:two','text',group,'$v3b')])
+            counts=c.matrimail_v3_duplicate_counts(db)
+            self.assertEqual(counts['v3_rooms'],2)
+            self.assertEqual(counts['v3_group_rooms'],1)
+            self.assertEqual(counts['v3_native_parts'],2)
+            self.assertEqual(counts['v3_conflicting_message_ids'],0)
+            self.assertEqual(counts['v3_shared_matrix_rooms'],0)
+            # Old-v3 migration overlap is expected; duplicating an email in
+            # two different *v3* portals must be flagged.
+            db.execute('INSERT INTO message VALUES (?,?,?,?,?,?)', (
+                'mail','email:me@gmail.com','contact-v3-email:one',
+                'text',group,'$v3-duplicate'))
+            counts=c.matrimail_v3_duplicate_counts(db)
+            self.assertEqual(counts['v3_conflicting_message_ids'],1)
+            db.execute('UPDATE portal SET mxid=? WHERE id=? AND receiver=?', (
+                '!direct:iniyanjoseph.com',group,'email:me@gmail.com'))
+            self.assertEqual(c.matrimail_v3_duplicate_counts(db)['v3_shared_matrix_rooms'],1)
+
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
         self.assertTrue(c.mapping_proof(events, now=1000, minutes=1)['recent_both_directions'])
