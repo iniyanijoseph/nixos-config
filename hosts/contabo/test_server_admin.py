@@ -315,7 +315,7 @@ class Tests(unittest.TestCase):
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM user_login").fetchone()[0], 2)
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM portal").fetchone()[0], 1)
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM message").fetchone()[0], 1)
-                self.assertEqual(db.execute("SELECT id FROM portal").fetchone()[0][0], 'thread:friend')
+                self.assertEqual(db.execute("SELECT id FROM portal").fetchone()[0], 'thread:friend')
             self.assertTrue((cpdir / ('reset-' + digest + '.pending')).exists())
             self.assertFalse(scope.exists())
             self.assertFalse(checkpoint.exists())
