@@ -632,8 +632,18 @@ def matrimail_auto_rebuild_cleanup(home=Path('/var/lib/matrimail'),
             if response.get('status') != 'complete':
                 incomplete += 1
         except HTTPError as error:
-            # Synapse may expire the status record; do not guess completion.
-            incomplete += 1
+            if error.code != 404:
+                incomplete += 1
+                continue
+            # Synapse discards purge-status records after a restart or 24h.
+            # A previously accepted deletion is complete only if its room is
+            # also absent from the authoritative room-detail endpoint.
+            try:
+                api('/_synapse/admin/v1/rooms/' + quote(room, safe=''), token)
+                incomplete += 1
+            except HTTPError as lookup:
+                if lookup.code != 404:
+                    incomplete += 1
     return {'status': 'complete' if incomplete == 0 else 'in_progress',
             'submitted_now': len(submitted), 'remaining_or_unconfirmed': incomplete,
             'eligible_rooms': len(candidates)}
