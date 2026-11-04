@@ -294,6 +294,18 @@ class Tests(unittest.TestCase):
             self.assertEqual(status['blocked_rooms'], 1)
             scope.write_text(json.dumps({**source, 'complete': False}))
             self.assertFalse(c.matrimail_v3_rebuild_status(home)['ready'])
+            # Restore source coverage; a second portal sharing the old Matrix
+            # room ID must prevent an owner-only deletion.
+            scope.write_text(json.dumps(source))
+            with sqlite3.connect(dbpath) as db:
+                db.execute("INSERT INTO message VALUES (?,?,?,?,?,?)",
+                    ('mail', receiver, 'contact-v3-email:one', 'attachment',
+                     'contact-v3:alice', '$restored'))
+                db.execute("INSERT INTO portal VALUES (?,?,?,?)",
+                    ('mail', 'contact-v3:shared', receiver, '!old:iniyanjoseph.com'))
+            ambiguous = c.matrimail_v3_rebuild_status(home)
+            self.assertFalse(ambiguous['ready'])
+            self.assertEqual(ambiguous['blocked_rooms'], 1)
 
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
