@@ -119,8 +119,8 @@ class Tests(unittest.TestCase):
             config.write_text('network:\\n  contact_rooms: true\\n')
             return True, 'loaded-appservice'
         module.enable_matrimail_contact_rooms.side_effect = apply
-        with patch.object(finish, 'MATRIMAIL_HOME', directory), \\
-             patch.object(finish, 'load_script', return_value=module), \\
+        with patch.object(finish, 'MATRIMAIL_HOME', directory), \
+             patch.object(finish, 'load_script', return_value=module), \
              patch.object(finish, 'command') as cmd:
             result = finish.Setup.ensure_matrimail_contact_routing(self.setup)
         self.assertIn('Re-enabled', result)
@@ -138,8 +138,8 @@ class Tests(unittest.TestCase):
         marker.write_text(json.dumps({'sha256': 'original'}))
         module = Mock()
         module.enable_matrimail_contact_rooms.return_value = False, 'original'
-        with patch.object(finish, 'MATRIMAIL_HOME', directory), \\
-             patch.object(finish, 'load_script', return_value=module), \\
+        with patch.object(finish, 'MATRIMAIL_HOME', directory), \
+             patch.object(finish, 'load_script', return_value=module), \
              patch.object(finish, 'command') as cmd:
             self.assertIn('enabled', finish.Setup.ensure_matrimail_contact_routing(self.setup))
             cmd.assert_not_called()
@@ -151,10 +151,10 @@ class Tests(unittest.TestCase):
     def test_duplicate_systemd_start_skips_without_running_setup(self):
         # Activation of the timer and boot-resume unit during NixOS switch
         # must not race the original worker through its nonblocking lock.
-        with patch.object(finish.os, 'geteuid', return_value=0), \\
-             patch.object(finish.os, 'uname', return_value=Mock(nodename='contabo')), \\
-             patch.object(finish.fcntl, 'flock', side_effect=BlockingIOError), \\
-             patch.object(finish, 'Setup', side_effect=AssertionError('must not run')), \\
+        with patch.object(finish.os, 'geteuid', return_value=0), \
+             patch.object(finish.os, 'uname', return_value=Mock(nodename='contabo')), \
+             patch.object(finish.fcntl, 'flock', side_effect=BlockingIOError), \
+             patch.object(finish, 'Setup', side_effect=AssertionError('must not run')), \
              patch.object(finish.sys, 'argv', ['contabo-finish-setup']):
             self.assertEqual(finish.main(), 0)
         self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
