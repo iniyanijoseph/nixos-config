@@ -59,19 +59,33 @@ func canonicalContactAddress(value string)string{
  parsed,err:=mail.ParseAddress(value);if err!=nil{return ""};return strings.ToLower(parsed.Address)
 }
 
-// Incoming conversations are anchored to their first external sender. Sent-first
-// conversations use their external recipient set. Never fold different accounts
-// together, or strip address components such as plus-tags.
+// One-person conversations share a contact room. Multi-person conversations
+// share a group room keyed by the *canonical set* of external participants,
+// regardless of who most recently sent the message, To/Cc ordering, or case.
+// The email chain still has its own Matrix thread inside that room. Room keys
+// are scoped by the existing portal receiver, so distinct accounts remain
+// separate even when their external recipient sets happen to match.
+//
+// Deliberately exclude Bcc: it is not a reliable shared property of a thread
+// (and must not be disclosed through room names or inferred reply-all targets).
 func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
- own:=map[string]bool{};for _,value:=range selves{own[canonicalContactAddress(value)]=true}
- from:=canonicalContactAddress(parsed.From)
- if from!=""&&!own[from]{return from,nil}
- others:=map[string]bool{}
- for _,value:=range append(append([]string{},parsed.To...),parsed.Cc...){
-  addr:=canonicalContactAddress(value);if addr!=""&&!own[addr]{others[addr]=true}
+ if parsed==nil{return "",fmt.Errorf("email is missing")}
+ own:=map[string]bool{}
+ for _,value:=range selves{if addr:=canonicalContactAddress(value);addr!=""{own[addr]=true}}
+ participants:=map[string]bool{}
+ for _,value:=range append(append([]string{parsed.From},parsed.To...),parsed.Cc...){
+  addr:=canonicalContactAddress(value)
+  if addr!=""&&!own[addr]{participants[addr]=true}
  }
- values:=make([]string,0,len(others));for value:=range others{values=append(values,value)};sort.Strings(values)
- if len(values)==0{if from!=""{return from,nil};return "",fmt.Errorf("email has no usable contact address")}
+ values:=make([]string,0,len(participants))
+ for value:=range participants{values=append(values,value)}
+ sort.Strings(values)
+ if len(values)==0{
+  // A message to self should still be importable without an arbitrary
+  // missing-contact failure.
+  if from:=canonicalContactAddress(parsed.From);from!=""{return from,nil}
+  return "",fmt.Errorf("email has no usable contact address")
+ }
  return strings.Join(values,","),nil
 }
 

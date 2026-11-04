@@ -59,6 +59,26 @@ func TestContaboContactRepliesUseSelectedChainAfterRestart(t *testing.T){
  if _,err=client.handleMatrixMessageOutbound(ctx,msg);err==nil||len(sender.messages)!=3{t.Fatal("cross-account reply was sent")}
 }
 
+func TestContaboGroupRoomNameAndReplyAllRecipients(t *testing.T){
+ ec:=&EmailConnector{}
+ group:="alice@example.com,bob@example.com"
+ info,err:=ec.contactChatInfo(email.ContactPortalID(group));if err!=nil{t.Fatal(err)}
+ if info.Name==nil||*info.Name!="alice@example.com, bob@example.com"{
+  t.Fatalf("unexpected group name: %#v",info.Name)
+ }
+ if info.Topic==nil||!strings.Contains(*info.Topic,"Group email conversation"){
+  t.Fatal("multi-person group has no recipient-aware description")
+ }
+ if len(info.Members.MemberMap)<3{t.Fatal("group room omitted an external participant")}
+ thread:=&email.EmailThread{ThreadID:"trio",MessageID:"m1",Subject:"Dinner",
+  Participants:[]string{"me@gmail.com","alice@example.com","bob@example.com"},
+  Cc:[]string{"bob@example.com"}}
+ to,cc,err:=resolveComposeRecipients(thread,[]string{"me@gmail.com"})
+ if err!=nil||len(to)!=1||len(cc)!=1||to[0].Address!="alice@example.com"||cc[0].Address!="bob@example.com"{
+  t.Fatalf("reply-all lost To/Cc or self exclusion: %v %v %v",to,cc,err)
+ }
+}
+
 func TestContaboContactRoomPermissionsAndOwnership(t *testing.T){
  ec:=&EmailConnector{}
  info,err:=ec.contactChatInfo(email.ContactPortalID("alice@example.com"));if err!=nil{t.Fatal(err)}

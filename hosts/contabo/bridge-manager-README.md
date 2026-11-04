@@ -106,6 +106,10 @@ backfills and other early exits are reported in the private Matrimail journal
 instead of silently doing nothing. Replay uses a two-messages/second limit,
 a 5 GiB free-space guard, UIDVALIDITY checks and durable folder checkpoints.
 A manual `!matrimail backfill all <email>` remains available to resume.
+A paused import keeps its cursor and reattempts the failing UID on the next
+run. The private Matrimail journal now includes the folder and UID for the
+failed source message, not the email subject or sender. Do not delete
+older rooms while a backfill is paused or before source coverage is verified.
 
 A deployment alone cannot manufacture historical emails that no longer exist
 in those IMAP folders. If you have only a new Stalwart mailbox forwarding
@@ -150,10 +154,21 @@ does not invent their content or modify the originals.
 
 ## Contact rooms and email replies
 
-The pinned Matrimail patch enables one contact room per monitored account and
-external address. Separate subjects appear as native Matrix threads. Incoming
-chains stay anchored to their original contact even when participants change;
-sent-first multi-recipient conversations use a separate recipient-set room.
+The pinned Matrimail patch creates one room per external contact (for
+one-to-one conversations) or per canonical, sorted external participant set
+(for multi-person conversations). For example, a message from Alice to you
+and Bob shares a group room with Bob's reply to you and Alice; neither is
+misfiled into whichever individual's room sent most recently. Separate
+subjects appear as native Matrix threads within that same group room. Sender
+rotation, To/Cc ordering and aliases belonging to your own account do not
+change the destination. Bcc recipients are intentionally not inferred as
+group members.
+
+Once a chain has been imported, its room identity remains fixed to preserve
+Matrix thread continuity, even if someone joins or leaves the email chain.
+The latest message still determines reply-all recipients. Previously imported
+single-sender rooms are **not moved by this change**. Those must be rebuilt
+from available IMAP source messages before the old rooms can be retired.
 
 Reply inside a thread (or explicitly reply to an email) to retain that chain's
 subject, recipients and RFC email headers. Normal replies are reply-all;

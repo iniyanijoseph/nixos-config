@@ -28,8 +28,14 @@ func(ec *EmailConnector)contactChatInfo(portalID networkid.PortalID)(*bridgev2.C
   ghost:=MakeUserID(address)
   members[ghost]=bridgev2.ChatMember{EventSender:bridgev2.EventSender{Sender:ghost},Membership:event.MembershipJoin,PowerLevel:ptr.Ptr(0)}
  }
+ title:=contact
+ topic:="Email contact — each subject is a Matrix thread. Reply inside its thread; a message outside a thread starts a new email."
+ if strings.Contains(contact,","){
+  title=strings.Join(strings.Split(contact,","),", ")
+  topic="Group email conversation — participants: "+title+". Each subject is a Matrix thread; replies follow the selected thread's To/Cc context."
+ }
  return &bridgev2.ChatInfo{
-  Name:ptr.Ptr(contact),Topic:ptr.Ptr("Email contact — each subject is a Matrix thread. Reply inside its thread; a message outside a thread starts a new email."),
+  Name:ptr.Ptr(title),Topic:ptr.Ptr(topic),
   Type:ptr.Ptr(database.RoomTypeDefault),
   Members:&bridgev2.ChatMemberList{MemberMap:members,IsFull:false,PowerLevels:matrixrooms.BuildEmailPowerLevels()},
  },nil
@@ -98,13 +104,17 @@ func fnContactCompose(ce *commands.Event,ec *EmailConnector){
  var client *EmailClient
  for _,login:=range ce.User.GetUserLogins(){if c,ok:=login.Client.(*EmailClient);ok{client=c;break}}
  if client==nil{ce.Reply("Connect an email account with !matrimail login first.");return}
- key:=networkid.PortalKey{ID:email.ContactPortalID(strings.ToLower(args.To)),Receiver:client.UserLogin.ID}
+ participants,err:=email.ContactForEmail(&email.ParsedEmail{
+  From:client.Email,To:[]string{args.To},Cc:append([]string{},args.Cc...),
+ },[]string{client.Email})
+ if err!=nil{ce.Reply("Could not determine email participants: %s",err);return}
+ key:=networkid.PortalKey{ID:email.ContactPortalID(participants),Receiver:client.UserLogin.ID}
  portal,err:=ce.Bridge.GetPortalByKey(ce.Ctx,key);if err!=nil{ce.Reply("Could not open contact room: %s",err);return}
  info,err:=ec.contactChatInfo(key.ID);if err!=nil{ce.Reply("%s",err);return}
  if portal.MXID==""{if err=portal.CreateMatrixRoom(ce.Ctx,client.UserLogin,info);err!=nil{ce.Reply("Could not create contact room: %s",err);return}}
  draftID:="compose-"+uuid.NewString()
  thread:=&email.EmailThread{ThreadID:draftID,Subject:args.Subject,Participants:append([]string{strings.ToLower(args.To),client.Email},args.Cc...),Cc:args.Cc,IsDraft:true}
- chain,err:=ec.Contacts.Record(ce.Ctx,string(client.UserLogin.ID),thread,draftID,strings.ToLower(args.To),time.Now())
+ chain,err:=ec.Contacts.Record(ce.Ctx,string(client.UserLogin.ID),thread,draftID,participants,time.Now())
  if err!=nil{ce.Reply("Could not save draft context: %s",err);return}
  subject:=args.Subject;if subject==""{subject="(no subject)"}
  content:=&event.MessageEventContent{MsgType:event.MsgNotice,Body:"Subject: "+subject+"\nTo: "+args.To+"\nCc: "+strings.Join(args.Cc,", ")+"\nReply in this Matrix thread to send your email. Nothing has been sent yet."}
