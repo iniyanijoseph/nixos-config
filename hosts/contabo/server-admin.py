@@ -520,6 +520,15 @@ def matrimail_v3_rebuild_status(home=Path('/var/lib/matrimail')):
             if (bridge_id, receiver) not in verified_accounts:
                 blocked.append(label)
                 continue
+            # A room mapped by any other bridge portal is not solely owned
+            # by this superseded email portal; refuse to delete it.
+            shared = db.execute("""
+                SELECT COUNT(*) FROM portal
+                WHERE mxid=? AND NOT (bridge_id=? AND receiver=? AND id=?)
+            """, (mxid, bridge_id, receiver, portal_id)).fetchone()[0]
+            if shared:
+                blocked.append(label)
+                continue
             old = db.execute("""
                 SELECT id,part_id FROM message
                 WHERE bridge_id=? AND room_receiver=? AND room_id=?
