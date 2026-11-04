@@ -202,18 +202,17 @@ Gmail is not imported. No account logout is required for this update.
 ## Removing superseded email rooms
 
 First complete the retained IMAP import and inspect the private journal
-for a blocked UID if it pauses. On November 4, Matrimail stopped at 533/3453
-INBOX messages because a source message had an unparseable sender and no
-usable recipients (`email has no usable contact address`). The pinned
-contact router now retains such an email in the owner's self room rather
-than halting the whole import; replies already linked to another chain
-retain that chain's room. This does not repair errors encountered earlier
-in IMAP fetch, native Matrix event mapping or message parsing; those are
-still reported and checkpointed separately.
+for a blocked UID if it pauses. One supported failure mode is a
+source message with an unparseable sender and no usable recipients
+(`email has no usable contact address`). The patched contact router
+preserves such an email in the owner's self room instead of halting import;
+replies linked to an existing chain retain that chain's room. This does
+not repair failures in IMAP fetch, native Matrix mapping, or the upstream
+email parser; those are still checkpointed and reported.
 
-The 3453 messages are only the selected **INBOX** snapshot, not necessarily
-the entire Gmail archive. Check whether the authenticated account also
-requires `[Gmail]/All Mail` to recover archived and sent correspondence.
+A selected **INBOX** snapshot is not necessarily the entire Gmail archive.
+Check whether the authenticated account also requires `[Gmail]/All Mail`
+to recover archived and sent correspondence.
 Do not treat a completed INBOX scan as full mailbox parity.
 
 To locate a blocked UID if import pauses:
