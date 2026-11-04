@@ -431,3 +431,30 @@ A small Nix-built `contaboctl` may eventually expose `doctor`,
 See `MATRIX.md`, `BACKUPS.md` and the service modules for setup details.
 Older `DISCORD.md` instructions refer to a retired bridge configuration
 and are **not** a current deployment runbook.
+
+### Matrimail clean reset: worker lock contention
+
+`contabo-admin mail-reset --apply` shares the commissioning worker lock with
+finish-setup and the post-mail worker. A reset waits up to 300 seconds for a
+post-mail pass to finish; use `--lock-wait-seconds 3600` for a longer wait.
+A competing reset or an active main setup runner produces a specific error.
+Lock timeout occurs before room deletion, service stops, or reset-ledger creation.
+Keep lock files in place: removing a locked file permits two workers to proceed
+on different inodes.
+
+Build and run just the updated administration package without switching NixOS
+(fish-compatible):
+
+```fish
+cd /etc/nixos
+and sudo git -c safe.directory=/etc/nixos pull --ff-only origin main
+and sudo nix build ./hosts/contabo#contabo-admin --out-link /run/matrimail-reset-admin
+and sudo systemd-run --unit=matrimail-clean-reset-retry --collect /run/matrimail-reset-admin/bin/contabo-admin mail-reset --apply --lock-wait-seconds 3600
+```
+
+Follow progress with `sudo journalctl -fu matrimail-clean-reset-retry` and
+`sudo /run/matrimail-reset-admin/bin/contabo-admin mail-reset`. If the main
+setup runner is active, let it finish before retrying. For a wait timeout,
+inspect `sudo systemctl status contabo-post-mail.service contabo-finish-setup.service`
+and `sudo lslocks`; the lock can also belong to a manually launched worker.
+The original backup and administrator-session prerequisites still apply.

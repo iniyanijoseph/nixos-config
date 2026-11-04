@@ -1,4 +1,5 @@
 import csv
+import fcntl
 from datetime import datetime, timezone
 import importlib.util
 import io
@@ -405,17 +406,87 @@ class Tests(unittest.TestCase):
                  patch.object(c.time, 'sleep'):
                 finished=c.matrimail_clean_reset(home, private, receipt, apply=True,
                     worker_lock=private / 'setup-worker.lock')
-                prior_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
+                prior_stops=sum(call.args[0][:2] == ['systemctl','stop'] for call in run.call_args_list)
                 repeated=c.matrimail_clean_reset(home, private, receipt, apply=True,
                     worker_lock=private / 'setup-worker.lock')
-                later_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
+                later_stops=sum(call.args[0][:2] == ['systemctl','stop'] for call in run.call_args_list)
                 self.assertEqual(later_stops,prior_stops)
+                self.assertEqual(prior_stops, 2)
             self.assertEqual(finished['status'],'complete')
             self.assertEqual(repeated['status'],'complete')
             with sqlite3.connect(database) as db:
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM portal").fetchone()[0],1)
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM user_login").fetchone()[0],2)
             self.assertEqual(len(list(private.glob('matrimail-before-clean-reset-*.sqlite'))),1)
+
+    def test_reset_waits_for_real_worker_lock_then_holds_it(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'worker.lock'
+            with path.open('a') as owner, path.open('a') as reset, path.open('a') as contender:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                def release(_seconds):
+                    fcntl.flock(owner, fcntl.LOCK_UN)
+                with patch.object(c.subprocess, 'run', return_value=SimpleNamespace(returncode=3)), \
+                     patch.object(c.time, 'sleep', side_effect=release) as sleep, \
+                     patch.object(c.sys, 'stderr', new_callable=io.StringIO) as log:
+                    c.matrimail_reset_acquire_worker(reset.fileno(), 5)
+                sleep.assert_called_once()
+                self.assertIn('Waiting up to 5s', log.getvalue())
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Closing the reset descriptor releases the original inode lock.
+            with path.open('a') as next_worker:
+                fcntl.flock(next_worker, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_reset_worker_timeout_leaves_rooms_and_services_untouched(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / 'worker.lock'
+            with path.open('a') as owner:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch.object(c.os, 'uname', return_value=SimpleNamespace(nodename='contabo')), \
+                     patch.object(c.subprocess, 'run', return_value=SimpleNamespace(returncode=3)) as run, \
+                     patch.object(c, 'api', side_effect=AssertionError('no Matrix changes')), \
+                     patch.object(c, 'admin_token', side_effect=AssertionError('no credentials read')), \
+                     patch.object(c.time, 'sleep') as sleep:
+                    with self.assertRaisesRegex(RuntimeError, 'worker lock is still busy'):
+                        c.matrimail_clean_reset(root, root, apply=True,
+                            worker_lock=path, lock_wait_seconds=0)
+                sleep.assert_not_called()
+                self.assertTrue(all(call.args[0][:2] == ['systemctl', 'is-active']
+                                    for call in run.call_args_list))
+                self.assertFalse((root / c.RESET_MANIFEST).exists())
+                with path.open('a') as contender:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_reset_refuses_to_wait_on_active_setup_switch(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'worker.lock'
+            with path.open('a') as owner, path.open('a') as reset:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch.object(c.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                     patch.object(c.time, 'sleep') as sleep:
+                    with self.assertRaisesRegex(RuntimeError, 'Finish-setup is active and the worker lock is busy'):
+                        c.matrimail_reset_acquire_worker(reset.fileno())
+                sleep.assert_not_called()
+
+    def test_second_reset_reports_existing_reset_without_touching_worker(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / 'matrimail-clean-reset.lock'
+            with path.open('a') as owner:
+                fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch.object(c.os, 'uname', return_value=SimpleNamespace(nodename='contabo')), \
+                     patch.object(c.subprocess, 'run', side_effect=AssertionError('no service changes')):
+                    with self.assertRaisesRegex(RuntimeError, 'clean reset is already running'):
+                        c.matrimail_clean_reset(root, root, apply=True,
+                            worker_lock=root / 'worker.lock')
+                self.assertFalse((root / 'worker.lock').exists())
 
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
@@ -473,3 +544,4 @@ class PostgreSQLQuery(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
