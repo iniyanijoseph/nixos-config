@@ -258,6 +258,8 @@ class Setup:
             raise RuntimeError('Contact-based email routing is not enabled')
         if not report.get('bridge_logins'):
             raise RuntimeError('No saved Matrimail account login for historical import')
+        if not report.get('contact_rooms') or not report.get('contact_message_parts'):
+            raise RuntimeError('No populated contact-based email rooms; consolidation is not confirmed')
         old = report['legacy_rooms']
         if old:
             if report['legacy_message_parts'] == 0:
