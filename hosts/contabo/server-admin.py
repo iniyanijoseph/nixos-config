@@ -918,16 +918,48 @@ def matrimail_reset_clear_native(home, manifest):
     return len(manifest['portals'])
 
 
+def matrimail_reset_acquire_worker(workerfd, wait_seconds=300):
+    """Let a current post-mail pass finish without interrupting its work."""
+    deadline = time.monotonic() + wait_seconds
+    announced = False
+    while True:
+        try:
+            fcntl.flock(workerfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if subprocess.run(['systemctl', 'is-active', '--quiet',
+                               'contabo-finish-setup.service']).returncode == 0:
+                raise RuntimeError(
+                    'Finish-setup is active and the worker lock is busy; let it finish before retrying '
+                    'mail-reset --apply. Inspect: sudo systemctl status '
+                    'contabo-finish-setup.service. Reset has not changed any rooms.') from None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    'Setup/post-mail worker lock is still busy; reset has not changed '
+                    'any rooms. Inspect: sudo systemctl status contabo-post-mail.service '
+                    'contabo-finish-setup.service; sudo lslocks. Retry mail-reset --apply '
+                    'after the current worker finishes. Keep the existing lock file.') from None
+            if not announced:
+                print(f'Waiting up to {wait_seconds}s for the setup/post-mail worker '
+                      'lock; reset has not changed any rooms.', file=sys.stderr, flush=True)
+                announced = True
+            time.sleep(min(1, remaining))
+
+
 def matrimail_clean_reset(home=Path('/var/lib/matrimail'), directory=PRIVATE,
                          backup_receipt=Path('/var/lib/migration-queue/finish-setup/backup.json'),
                          apply=False, batch_size=10,
-                         worker_lock=Path('/var/lib/migration-queue/finish-setup/worker.lock')):
+                         worker_lock=Path('/var/lib/migration-queue/finish-setup/worker.lock'),
+                         lock_wait_seconds=300):
     """One-time, resumable removal of owner Matrimail conversation rooms.
     This intentionally does NOT require v3 parity with obsolete Matrix rooms:
     the user elected to discard them and reconstruct from source IMAP instead.
     """
     if not 1 <= batch_size <= 20:
         raise ValueError('Choose an API deletion concurrency of 1–20 rooms')
+    if not 0 <= lock_wait_seconds <= 3600:
+        raise ValueError('Choose a worker lock wait of 0–3600 seconds')
     manifest_path = Path(directory) / RESET_MANIFEST
     if not apply:
         if manifest_path.exists():
@@ -952,20 +984,24 @@ def matrimail_clean_reset(home=Path('/var/lib/matrimail'), directory=PRIVATE,
                      os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     workerfd = None
     try:
-        fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('Another Matrimail clean reset is already running; '
+                               'inspect sudo contabo-admin mail-reset and its journal. '
+                               'Keep the existing lock file.') from None
         # The existing setup runner and its post-mail timer use this same
         # lock. Hold it throughout the reset to prevent a concurrent
         # integration switch or a restarted Matrimail service.
         worker_lock = Path(worker_lock)
         worker_lock.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         workerfd = os.open(worker_lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        fcntl.flock(workerfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        matrimail_reset_acquire_worker(workerfd, lock_wait_seconds)
         if subprocess.run(['systemctl', 'is-active', '--quiet',
                            'contabo-finish-setup.service']).returncode == 0:
             raise RuntimeError('Finish-setup is currently active; do not race a NixOS switch')
-        if subprocess.run(['systemctl', 'is-active', '--quiet',
-                           'contabo-post-mail.service']).returncode == 0:
-            raise RuntimeError('Post-mail worker is active; retry when it finishes')
+        # A post-mail service can still be in systemd teardown after releasing
+        # its lock. The acquired worker lock is the exclusion guarantee.
         if not manifest_path.exists():
             if (not backup_receipt.is_file()
                     or time.time() - backup_receipt.stat().st_mtime > 24*3600):
@@ -1116,7 +1152,7 @@ def main():
     p = subs.add_parser('mail-prune-legacy'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=25)
     p = subs.add_parser('mail-auto-rebuild'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=10)
     subs.add_parser('mail-duplicates')
-    p = subs.add_parser('mail-reset'); p.add_argument('--apply', action='store_true'); p.add_argument('--batch-size', type=int, default=10)
+    p = subs.add_parser('mail-reset'); p.add_argument('--apply', action='store_true'); p.add_argument('--batch-size', type=int, default=10); p.add_argument('--lock-wait-seconds', type=int, default=300)
     subs.add_parser('mail-admin-auth')
     subs.add_parser('configure-bridges')
     p = subs.add_parser('cleanup'); p.add_argument('--apply', action='store_true')
@@ -1181,7 +1217,8 @@ def main():
     elif args.command == 'mail-duplicates':
         print(json.dumps(matrimail_v3_duplicate_audit(), indent=2))
     elif args.command == 'mail-reset':
-        print(json.dumps(matrimail_clean_reset(apply=args.apply, batch_size=args.batch_size), indent=2))
+        print(json.dumps(matrimail_clean_reset(apply=args.apply, batch_size=args.batch_size,
+                                             lock_wait_seconds=args.lock_wait_seconds), indent=2))
     elif args.command == 'mail-admin-auth':
         admin_token()
         print('Matrix administrator session authenticated and cached privately for safe, unattended Matrimail room cleanup.')
@@ -1199,3 +1236,4 @@ if __name__ == '__main__':
         print(f'Administration request failed (HTTP {error.code}). Credentials and response bodies were not printed.', file=sys.stderr); sys.exit(1)
     except Exception as error:
         print(f'Administration failed: {error}', file=sys.stderr); sys.exit(1)
+
