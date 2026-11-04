@@ -41,14 +41,15 @@ func legacyCoverageForDB(ctx context.Context,db *sql.DB,bridgeID,portalID,receiv
  rows,err:=db.QueryContext(ctx,`SELECT o.id,
      COUNT(DISTINCT o.part_id) AS old_parts,
      COUNT(DISTINCT CASE WHEN n.mxid IS NOT NULL AND n.mxid != '' AND n.mxid NOT LIKE '~fake:%'
-         THEN n.part_id END) AS new_parts,
+         THEN o.part_id END) AS new_parts,
      MIN(CASE WHEN n.mxid IS NOT NULL AND n.mxid != '' AND n.mxid NOT LIKE '~fake:%'
          THEN n.room_id END) AS first_room,
      MAX(CASE WHEN n.mxid IS NOT NULL AND n.mxid != '' AND n.mxid NOT LIKE '~fake:%'
          THEN n.room_id END) AS last_room
    FROM message o LEFT JOIN message n
      ON n.bridge_id=o.bridge_id AND n.room_receiver=o.room_receiver
-       AND n.id='contact-email:' || substr(o.id,7) AND n.room_id LIKE 'contact:%'
+       AND n.id='contact-email:' || substr(o.id,7)
+       AND n.part_id=o.part_id AND n.room_id LIKE 'contact:%'
    WHERE o.bridge_id=$1 AND o.room_id=$2 AND o.room_receiver=$3
      AND o.id LIKE 'email:%' AND o.mxid IS NOT NULL AND o.mxid != ''
      AND o.mxid NOT LIKE '~fake:%'
@@ -132,26 +133,31 @@ func(ec *EmailConnector) finalizeLegacyConsolidation(ctx context.Context, login 
 }
 
 func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient){
- if client==nil || client.IMAPClient==nil || client.UserLogin==nil || ec.Contacts==nil{return}
+ if client==nil || client.UserLogin==nil || ec.Contacts==nil{return}
  ctx:=client.ctx
- // Reconnect/reauth is handled by the existing login flow; do not hammer IMAP.
- timer:=time.NewTicker(10*time.Second);defer timer.Stop()
- for !client.IsConnected(){
-  select{case<-ctx.Done():return;case<-timer.C:}
- }
+ // Replay uses a separate read-only IMAP socket; live IDLE readiness is not required.
  portals,err:=ec.legacyPortalsFor(ctx,client.UserLogin)
  if err!=nil{client.UserLogin.Log.Error().Err(err).Msg("Legacy email portal audit failed");return}
- if len(portals)==0{return}
+ if len(portals)==0{client.UserLogin.Log.Info().Msg("Email consolidation: no legacy per-subject rooms found");return}
+ if client.IMAPClient==nil{client.UserLogin.Log.Warn().Int("legacy_rooms",len(portals)).Msg("Email consolidation blocked: no IMAP account; old rooms preserved");return}
  key:=string(client.UserLogin.ID)
- if _,busy:=contaboMailJobs.LoadOrStore(key,true);busy{return}
+ if _,busy:=contaboMailJobs.LoadOrStore(key,true);busy{client.UserLogin.Log.Info().Msg("Email consolidation deferred: another backfill running");return}
  defer contaboMailJobs.Delete(key)
  if _,busy:=contaboLegacyRun.LoadOrStore(key,true);busy{return}
  defer contaboLegacyRun.Delete(key)
  folders:=append([]string(nil),client.MonitoredFolders...)
  if len(folders)==0{folders=[]string{"INBOX"}}
- client.UserLogin.Log.Info().Int("legacy_rooms",len(portals)).
-    Msg("Replaying retained IMAP history into consolidated email contact rooms")
- total,err:=client.IMAPClient.ContaboBackfill(ctx,folders,0,nil)
+ client.UserLogin.Log.Info().Int("legacy_rooms",len(portals)).Strs("selected_folders",folders).
+    Msg("Starting independent IMAP replay into consolidated contact rooms")
+ lastFolder:=""
+ lastReported:=-1
+ total,err:=client.IMAPClient.ContaboBackfill(ctx,folders,0,func(folder string,done,expected int){
+  if folder!=lastFolder || done==expected || done-lastReported>=250{
+   client.UserLogin.Log.Info().Int("processed",done).Int("total_in_folder",expected).
+     Msg("Retrospective Matrimail contact-room import progress")
+   lastFolder=folder;lastReported=done
+  }
+ })
  if err!=nil{
   client.UserLogin.Log.Error().Err(err).Int("processed",total).
     Msg("Contact-room migration paused; source rooms preserved; resume with !matrimail backfill all")
@@ -166,7 +172,7 @@ func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient){
 }
 
 func(ec *EmailConnector) startAutoConsolidation(client *EmailClient){
- if ec.Contacts==nil || client.IMAPClient==nil{return}
+ if ec.Contacts==nil{return}
  go ec.autoConsolidateLegacy(client)
 }
 

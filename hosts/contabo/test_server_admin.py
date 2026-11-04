@@ -100,6 +100,46 @@ class Tests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'missing or invalid'):
                 c.bridge_provisioning_secret('whatsapp', '$WHATSAPP_PROVISIONING_SECRET', env)
 
+    def test_mail_consolidation_audit_is_read_only_and_account_scoped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / 'config.yaml'
+            db_path = root / 'matrimail.db'
+            config.write_text('network:\n  contact_rooms: true\ndatabase:\n  uri: file:' +
+                              str(db_path) + '?_fk=1\n')
+            config.chmod(0o600)
+            with sqlite3.connect(db_path) as db:
+                db.execute('CREATE TABLE portal (id TEXT, mxid TEXT)')
+                db.execute('CREATE TABLE message (bridge_id TEXT, room_receiver TEXT, id TEXT, part_id TEXT, room_id TEXT, mxid TEXT)')
+                db.execute('CREATE TABLE email_accounts (id TEXT)')
+                db.execute('CREATE TABLE user_login (id TEXT)')
+                db.execute('INSERT INTO user_login VALUES (\'email:example\')')
+                db.execute('INSERT INTO email_accounts VALUES (\'example\')')
+                db.execute('INSERT INTO portal VALUES (\'thread:old\',\'!old:example.com\')')
+                db.execute('INSERT INTO message VALUES (\'mail\',\'email:example\',\'email:m1\',\'text\',\'thread:old\',\'$legacy\')')
+            status = c.mail_consolidation_status(root)
+            self.assertEqual(status['legacy_rooms'], 1)
+            self.assertEqual(status['contact_rooms'], 0)
+            self.assertEqual(status['legacy_parts_with_contact_mappings'], 0)
+            self.assertIn('No populated contact rooms', status['assessment'])
+            with sqlite3.connect(db_path) as db:
+                db.execute('INSERT INTO portal VALUES (\'contact:alice\',\'!new:example.com\')')
+                db.execute('INSERT INTO message VALUES (\'mail\',\'email:example\',\'contact-email:m1\',\'text\',\'contact:alice\',\'$new\')')
+                db.execute('INSERT INTO message VALUES (\'mail\',\'other-account\',\'contact-email:m1\',\'attachment\',\'contact:alice\',\'$other\')')
+            status = c.mail_consolidation_status(root)
+            self.assertEqual(status['legacy_parts_with_contact_mappings'], 1)
+            self.assertEqual(status['contact_message_parts'], 2)
+            self.assertIn('not all marked as archived', status['assessment'])
+            with sqlite3.connect(db_path) as db:
+                db.execute('CREATE TABLE contabo_legacy_mail_retirement (portal_id TEXT)')
+                db.execute('INSERT INTO contabo_legacy_mail_retirement VALUES (\'thread:old\')')
+            self.assertIn('appear complete', c.mail_consolidation_status(root)['assessment'])
+            self.assertNotIn('email:example', str(status))
+            self.assertNotIn('!new:example.com', str(status))
+            # The audit must not update source message mappings or room names.
+            with sqlite3.connect(db_path) as db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM message').fetchone()[0], 3)
+
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
         self.assertTrue(c.mapping_proof(events, now=1000, minutes=1)['recent_both_directions'])

@@ -8,11 +8,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 
 STATE = Path('/var/lib/migration-queue/finish-setup')
 OCC = '/run/current-system/sw/bin/nextcloud-occ'
+DISCORD_NATIVE = Path('/var/lib/mautrix-discord-native')
 CORE = ('matrix-synapse', 'nginx', 'mautrix-whatsapp', 'postgresql')
 
 
@@ -215,10 +217,83 @@ class Setup:
 
     def discord_native(self):
         module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        directory = DISCORD_NATIVE
+        snapshot, mapping = directory / 'archive.sqlite', directory / 'bridge.db'
+        # Once the user has native historical state, ordinary commissioning
+        # must not repeatedly POST the archive, re-pair, or restart its bridge.
+        # The archive and native mappings can be checked without a login.
+        if snapshot.is_file() and mapping.is_file():
+            with sqlite3.connect('file:' + str(snapshot) + '?mode=ro', uri=True) as source:
+                channels = [row[0] for row in source.execute(
+                    "SELECT id FROM channels WHERE kind IN ('dms','guild:804408079940583475')")]
+            owner = None
+            if module.discord_pilot_verified():
+                owner = json.loads((module.STATE / 'discord-pilot-verified.json').read_text())['receiver']
+            expected, mapped = module.discord_coverage(snapshot, mapping, channels, owner)
+            verified = bool(owner and expected and expected == mapped)
+            self.record('Discord historical mapping coverage',
+                        'done' if verified else 'blocked',
+                        f'{mapped}/{expected} selected-scope historical message mappings; '
+                        + ('receiver verified' if owner else 'account receiver not independently verified')
+                        + '; live session and media parity are separate checks')
+            return 'Existing Discord native import preserved; no repeated historical replay or bridge re-pairing'
         self.record('Discord history and live cutover', 'blocked', module.commission_discord())
-        self.photos_deferred = json.loads((module.STATE/'discord-progress.json').read_text())['import_in_progress']
         self.backup()
-        return 'Discord service deployed; import/pairing/coverage state is recorded separately'
+        return 'Discord service provisioned; import and live login require separate acceptance'
+
+    def email_consolidation(self):
+        """Require verifiable contact-room history before automatic photo work.
+
+        This read-only audit cannot prove content or source IMAP completeness,
+        but prevents a silent, unfinished Matrimail replay from being treated
+        as completed simply because the service was restarted.
+        """
+        script = os.environ.get('CONTABO_ADMIN_SCRIPT')
+        if not script:
+            raise RuntimeError('Private Matrimail audit script is not configured')
+        admin = load_script('contabo_mail_admin', script)
+        report = admin.mail_consolidation_status()
+        atomic(STATE / 'mail-consolidation.json', json.dumps(report, indent=2) + '\n')
+        if not report.get('contact_routing_enabled'):
+            raise RuntimeError('Contact-based email routing is not enabled')
+        if not report.get('bridge_logins'):
+            raise RuntimeError('No saved Matrimail account login for historical import')
+        if not report.get('contact_rooms') or not report.get('contact_message_parts'):
+            raise RuntimeError('No populated contact-based email rooms; consolidation is not confirmed')
+        old = report['legacy_rooms']
+        if old:
+            if report['legacy_message_parts'] == 0:
+                raise RuntimeError('Legacy email rooms exist but have no auditable native message mappings')
+            if report['legacy_parts_with_contact_mappings'] < report['legacy_message_parts']:
+                raise RuntimeError('Matrimail history replay is incomplete; preserve old email rooms')
+            if report['archived_legacy_rooms'] < old:
+                raise RuntimeError('Matrimail contact rooms exist but historical room retirement is incomplete')
+        return (f"Contact-room audit passed: {report['legacy_parts_with_contact_mappings']}/"
+                f"{report['legacy_message_parts']} legacy parts mapped; "
+                f"{report['archived_legacy_rooms']}/{old} legacy rooms archived. "
+                "Email sending and attachment parity need separate acceptance.")
+
+    def after_email(self):
+        """Timer retry: resume photo work once mail history is reconciled.
+
+        The main runner and this follow-up share the same worker lock, so a
+        new NixOS switch or interactive launcher never overlaps remediation.
+        """
+        if (STATE / 'photo-after-email-complete').exists():
+            return 0
+        if not self.step('Post-mail preflight', self.preflight):
+            return 2
+        if not self.step('Email consolidation', self.email_consolidation):
+            self.record('Photo Files dates', 'deferred',
+                        'Waiting for verified email contact-room mappings; Discord login is not the blocker')
+            return 2
+        if not self.step('Post-mail offsite backup', self.backup):
+            return 2
+        photos_ok = self.step('Photo Files dates', self.photos)
+        apps_ok = self.step('Nextcloud apps', self.apps)
+        if photos_ok and apps_ok:
+            atomic(STATE / 'photo-after-email-complete', 'Photo stage and Nextcloud apps verified after email audit\n')
+        return 0 if photos_ok and apps_ok else 2
 
     def run(self):
         # Reset stale RUNNING records after interruption; recheck actual state.
@@ -227,14 +302,33 @@ class Setup:
             return 2
         backed_up = self.step('Offsite backup', self.backup)
         if backed_up:
-            self.step('Discord native deployment', self.discord_native)
-            if self.step('Messaging service deployment', self.integrations):
+            # Email reconstruction has priority; avoid a premature Discord
+            # reconfiguration or expensive archive walk before the mail audit.
+            messaging_ok = self.step('Messaging service deployment', self.integrations)
+            if messaging_ok:
                 self.step('Mail service deployment', self.mail)
-            self.step('Nextcloud apps', self.apps)
-            if self.photos_deferred:
-                self.record('Photo Files dates','deferred','Discord/messaging have priority; waiting for the archive import')
+                email_ok = self.step('Email consolidation', self.email_consolidation)
             else:
-                self.step('Photo Files dates', self.photos)
+                email_ok = False
+                self.record('Email consolidation', 'blocked', 'Messaging deployment did not complete')
+            if email_ok:
+                photos_ok = self.step('Photo Files dates', self.photos)
+                apps_ok = self.step('Nextcloud apps', self.apps)
+                if photos_ok and apps_ok:
+                    atomic(STATE / 'photo-after-email-complete', 'Photo stage and Nextcloud apps verified after email audit\n')
+            else:
+                self.record('Photo Files dates', 'deferred',
+                            'Waiting for email-room consolidation; Discord authentication does not block photos')
+                self.record('Nextcloud apps', 'deferred',
+                            'Scheduled after email consolidation and photo work')
+            if ((DISCORD_NATIVE / 'archive.sqlite').is_file()
+                    and (DISCORD_NATIVE / 'bridge.db').is_file()):
+                self.step('Discord native deployment', self.discord_native)
+            elif email_ok:
+                self.step('Discord native deployment', self.discord_native)
+            else:
+                self.record('Discord native deployment', 'deferred',
+                            'Existing email replay takes priority over new Discord provisioning')
         else:
             self.record('Photo Files dates', 'blocked', 'Fresh backup prerequisite failed')
             self.record('Nextcloud apps', 'blocked', 'Fresh backup prerequisite failed')
@@ -260,7 +354,18 @@ def main():
     os.umask(0o077)
     STATE.mkdir(parents=True, mode=0o700, exist_ok=True)
     with (STATE / 'worker.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            # An already-running commissioning worker owns the host. The
+            # timer retries later; never overlap private data migrations.
+            if len(sys.argv) > 1 and sys.argv[1] == '--after-email':
+                return 0
+            raise
+        if len(sys.argv) > 1 and sys.argv[1] == '--after-email':
+            return Setup().after_email()
+        if len(sys.argv) > 1:
+            raise SystemExit('Usage: contabo-finish-setup [--after-email]')
         return Setup().run()
 
 

@@ -43,4 +43,46 @@ in {
       StandardError = "append:${state}/run.log";
     };
   };
+
+  # Photo remediation is gated by a verified, read-only email-room audit.
+  # A periodic one-shot retry avoids re-running the entire commissioning
+  # launcher merely because an IMAP history import is still in progress.
+  # Both paths acquire the same worker.lock and share the pinned runner.
+  systemd.services.contabo-post-mail = {
+    description = "Continue backed-up photo remediation after Matrimail reconciliation";
+    wants = [ "network-online.target" ];
+    after = [ "network-online.target" "matrix-synapse.service" "matrimail.service" "nextcloud-setup.service" ];
+    unitConfig = {
+      ConditionHost = "contabo";
+      ConditionPathExists = [
+        "${state}/resume-on-boot"
+        "${state}/runner/bin/contabo-finish-setup"
+        "!${state}/photo-after-email-complete"
+      ];
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${state}/runner/bin/contabo-finish-setup --after-email";
+      UMask = "0077";
+      TimeoutStartSec = "infinity";
+      StandardOutput = "append:${state}/run.log";
+      StandardError = "append:${state}/run.log";
+      # Missing email history/temporary IMAP failure is a deferred retry,
+      # not an assertion that photo work was completed.
+      SuccessExitStatus = [ 2 ];
+    };
+  };
+
+  systemd.timers.contabo-post-mail = {
+    description = "Retry email-first photo commissioning without touching Discord import";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "30min";
+      OnUnitInactiveSec = "2h";
+      RandomizedDelaySec = "5min";
+      Persistent = false;
+      Unit = "contabo-post-mail.service";
+    };
+  };
+
 }

@@ -286,6 +286,78 @@ def ensure_whatsapp_secret(path=Path('/var/lib/secrets/mautrix-whatsapp.env')):
     return True
 
 
+
+def mail_consolidation_status(home=Path('/var/lib/matrimail')):
+    """Read-only, sanitized progress audit of native Matrimail room mappings."""
+    home = Path(home)
+    config = yaml.safe_load(read_private(home / 'config.yaml'))
+    enabled = config.get('network', {}).get('contact_rooms') is True
+    uri = config.get('database', {}).get('uri', '')
+    if not isinstance(uri, str) or not uri.startswith('file:'):
+        raise RuntimeError('Matrimail audit requires a file-backed SQLite database')
+    db_path = Path(uri.split('?', 1)[0][5:])
+    if not db_path.is_absolute():
+        db_path = home / db_path
+    if not db_path.resolve().is_relative_to(home.resolve()):
+        raise RuntimeError('Matrimail database is outside the expected private directory')
+    if not db_path.is_file():
+        raise RuntimeError('Matrimail database file does not exist')
+    with sqlite3.connect('file:' + str(db_path) + '?mode=ro', uri=True, timeout=5) as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {'portal', 'message'}.issubset(tables):
+            raise RuntimeError('Matrimail native portal/message tables are missing')
+        def count(query):
+            return int(db.execute(query).fetchone()[0])
+        legacy_rooms = count("SELECT COUNT(*) FROM portal WHERE id LIKE 'thread:%' AND mxid IS NOT NULL AND mxid!=''")
+        contact_rooms = count("SELECT COUNT(*) FROM portal WHERE id LIKE 'contact:%' AND mxid IS NOT NULL AND mxid!=''")
+        old_parts = count("""SELECT COUNT(*) FROM message
+            WHERE room_id LIKE 'thread:%' AND id LIKE 'email:%'
+            AND mxid IS NOT NULL AND mxid!='' AND mxid NOT LIKE '~fake:%'""")
+        new_parts = count("""SELECT COUNT(*) FROM message
+            WHERE room_id LIKE 'contact:%' AND id LIKE 'contact-email:%'
+            AND mxid IS NOT NULL AND mxid!='' AND mxid NOT LIKE '~fake:%'""")
+        verified_parts = count("""SELECT COUNT(*) FROM message o
+            WHERE o.room_id LIKE 'thread:%' AND o.id LIKE 'email:%'
+              AND o.mxid IS NOT NULL AND o.mxid!='' AND o.mxid NOT LIKE '~fake:%'
+              AND EXISTS (SELECT 1 FROM message n
+                  WHERE n.bridge_id=o.bridge_id AND n.room_receiver=o.room_receiver
+                    AND n.id='contact-email:' || substr(o.id,7)
+                    AND n.part_id=o.part_id AND n.room_id LIKE 'contact:%'
+                    AND n.mxid IS NOT NULL AND n.mxid!='' AND n.mxid NOT LIKE '~fake:%')""")
+        retired = count("SELECT COUNT(*) FROM contabo_legacy_mail_retirement") if 'contabo_legacy_mail_retirement' in tables else 0
+        accounts = count("SELECT COUNT(*) FROM email_accounts") if 'email_accounts' in tables else None
+        logins = count("SELECT COUNT(*) FROM user_login") if 'user_login' in tables else None
+        cursors = len(list((home / 'contabo-backfill-contacts-v2').glob('*.json')))
+    if not enabled:
+        assessment = 'Contact-room routing is disabled in the live bridge config'
+    elif logins == 0:
+        assessment = 'No saved bridge login: IMAP replay cannot start'
+    elif contact_rooms == 0 or new_parts == 0:
+        assessment = 'No populated contact rooms exist; historical consolidation is not yet verified'
+    elif legacy_rooms == 0:
+        assessment = 'No native legacy portals detected; this does not prove all old Matrix rooms were consolidated'
+    elif verified_parts < old_parts:
+        assessment = 'Historical migration incomplete: legacy message parts lack verified contact-room mappings'
+    elif retired < legacy_rooms:
+        assessment = 'Mappings present but old rooms not all marked as archived'
+    else:
+        assessment = 'Native mappings and old-room labels appear complete; verify in Matrix client'
+    return {
+        'contact_routing_enabled': enabled,
+        'configured_accounts': accounts,
+        'bridge_logins': logins,
+        'legacy_rooms': legacy_rooms,
+        'contact_rooms': contact_rooms,
+        'legacy_message_parts': old_parts,
+        'contact_message_parts': new_parts,
+        'legacy_parts_with_contact_mappings': verified_parts,
+        'archived_legacy_rooms': retired,
+        'history_checkpoint_files': cursors,
+        'assessment': assessment,
+        'limitations': 'Read-only metadata audit. Does not prove IMAP source coverage, attachment parity, full Matrix event accessibility, or decrypted content.'
+    }
+
+
 def storage_audit():
     for args in (['df', '-h', '/'], ['du', '-xhd1', '/var/lib'], ['du', '-xhd1', '/nix'], ['journalctl', '--disk-usage']):
         subprocess.run(args, check=True)
@@ -339,7 +411,7 @@ def main():
     p = subs.add_parser('revoke-invite'); p.add_argument('token')
     p = subs.add_parser('stats'); p.add_argument('--days', type=int, default=90); p.add_argument('--room'); p.add_argument('--timezone', default='America/New_York')
     p = subs.add_parser('bridges'); p.add_argument('--network', choices=BRIDGES); p.add_argument('--core', action='store_true'); p.add_argument('--record', action='store_true'); p.add_argument('--room'); p.add_argument('--minutes', type=int, default=30)
-    subs.add_parser('whatsapp-secret'); subs.add_parser('storage')
+    subs.add_parser('whatsapp-secret'); subs.add_parser('storage'); subs.add_parser('mail-consolidation')
     subs.add_parser('configure-bridges')
     p = subs.add_parser('cleanup'); p.add_argument('--apply', action='store_true')
     p = subs.add_parser('serve'); p.add_argument('--port', type=int, default=8766)
@@ -390,6 +462,8 @@ def main():
         module.configure_private_bridge_settings()
     elif args.command == 'storage':
         storage_audit()
+    elif args.command == 'mail-consolidation':
+        print(json.dumps(mail_consolidation_status(), indent=2))
     elif args.command == 'cleanup':
         cleanup(args.apply)
     elif args.command == 'serve':
