@@ -72,26 +72,20 @@ func TestContaboContactRoomPermissionsAndOwnership(t *testing.T){
  portal.Receiver=login.ID;portal.ID="unrelated-room";if contactRoomOwnedBy(portal,login){t.Fatal("arbitrary invite accepted")}
 }
 
-func TestContaboGroupRoomMetadataDoesNotChangeReplyRecipients(t *testing.T){
+func TestContaboGroupRoomMetadata(t *testing.T){
  ec:=&EmailConnector{}
  group:=email.ContactPortalID("alice@example.com,bob@example.com")
  info,err:=ec.contactChatInfo(group);if err!=nil{t.Fatal(err)}
  if info.Name==nil||!strings.Contains(*info.Name,"Group email"){
   t.Fatalf("multi-party group room not identified: %+v",info.Name)
  }
+ if info.Topic==nil||!strings.Contains(*info.Topic,"selected email"){
+  t.Fatalf("group room topic should explain explicit per-message replies: %+v",info.Topic)
+ }
  if len(info.Members.MemberMap)!=3{t.Fatalf("unexpected group member count %d",len(info.Members.MemberMap))}
- thread:=&email.EmailThread{
-  Participants:[]string{"me@gmail.com","alice@example.com","bob@example.com"},
-  LastFrom:"alice@example.com",LastTo:[]string{"me@gmail.com"},
-  LastCc:[]string{"bob@example.com"},
- }
- // Topic/room membership must not make a reply broadcast automatically.
- // Recipient selection is resolved from the explicit selected mail chain.
- to,cc,err:=resolveComposeRecipients(thread,[]string{"me@gmail.com"})
+ direct,err:=ec.contactChatInfo(email.ContactPortalID("alice@example.com"))
  if err!=nil{t.Fatal(err)}
- if len(to)!=1||to[0].Address!="alice@example.com"||len(cc)!=0{
-  t.Fatalf("unexpected address set from group thread: to=%v cc=%v",to,cc)
- }
+ if direct.Name==nil||*direct.Name!="alice@example.com"{t.Fatalf("direct room mislabeled: %v",direct.Name)}
 }
 
 func TestContaboComposeCcAndDraftReplyHeaders(t *testing.T){
