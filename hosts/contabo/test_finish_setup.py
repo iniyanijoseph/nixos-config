@@ -64,14 +64,19 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.setup.apps.call_count, 2)
         self.assertEqual(self.setup.results['Overall commissioning']['status'], 'blocked')
 
-    def test_discord_and_messaging_precede_photo_work(self):
+    def test_email_and_photos_precede_discord_reconciliation(self):
         order=[]
         for name in ('preflight','backup','discord_native','integrations','mail','apps','photos','discord'):
             setattr(self.setup,name,Mock(side_effect=lambda n=name:order.append(n) or n))
-        self.setup.run()
-        self.assertLess(order.index('backup'),order.index('discord_native'))
-        self.assertLess(order.index('discord_native'),order.index('integrations'))
+        # Simulate an already-deployed Discord archive; it is only inspected
+        # after independently verifying email and repairing photos.
+        with patch.object(finish, 'DISCORD_NATIVE', Path(self.tmp.name)):
+            (Path(self.tmp.name) / 'archive.sqlite').touch()
+            (Path(self.tmp.name) / 'bridge.db').touch()
+            self.setup.run()
+        self.assertLess(order.index('backup'),order.index('integrations'))
         self.assertLess(order.index('integrations'),order.index('photos'))
+        self.assertLess(order.index('photos'),order.index('discord_native'))
         self.setup.email_consolidation.assert_called_once()
 
     def test_disconnected_discord_does_not_block_photos_after_email(self):
