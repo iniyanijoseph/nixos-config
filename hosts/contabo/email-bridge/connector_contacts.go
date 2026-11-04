@@ -28,8 +28,14 @@ func(ec *EmailConnector)contactChatInfo(portalID networkid.PortalID)(*bridgev2.C
   ghost:=MakeUserID(address)
   members[ghost]=bridgev2.ChatMember{EventSender:bridgev2.EventSender{Sender:ghost},Membership:event.MembershipJoin,PowerLevel:ptr.Ptr(0)}
  }
+ title:=contact
+ topic:="Email contact — each subject is a Matrix thread. Reply inside its thread; a message outside a thread starts a new email."
+ if strings.Contains(contact,","){
+  title="Group email · "+contact
+  topic="Group email conversation — each subject is a Matrix thread. Replies use the selected email's To/Cc context, not everyone who has ever participated."
+ }
  return &bridgev2.ChatInfo{
-  Name:ptr.Ptr(contact),Topic:ptr.Ptr("Email contact — each subject is a Matrix thread. Reply inside its thread; a message outside a thread starts a new email."),
+  Name:ptr.Ptr(title),Topic:ptr.Ptr(topic),
   Type:ptr.Ptr(database.RoomTypeDefault),
   Members:&bridgev2.ChatMemberList{MemberMap:members,IsFull:false,PowerLevels:matrixrooms.BuildEmailPowerLevels()},
  },nil
