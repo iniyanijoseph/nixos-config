@@ -141,11 +141,11 @@ func TestContaboRepairUnblocksEncryptedRepliesAndAcceptsOnlyPortalInvites(t *tes
  user:=&bridgev2.User{User:&database.User{MXID:"@me:example.com",AccessToken:"saved"},Bridge:bridge,Log:zerolog.Nop()}
  login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:"email:me@gmail.com",UserMXID:user.MXID},User:user}
  ec:=&EmailConnector{Bridge:bridge,Config:Config{AutoJoinRooms:true}}
- portal:=&bridgev2.Portal{Portal:&database.Portal{PortalKey:networkid.PortalKey{ID:"thread:legacy",Receiver:login.ID},MXID:"!room:example.com"}}
+ portal:=&bridgev2.Portal{Portal:&database.Portal{PortalKey:networkid.PortalKey{ID:email.ContactPortalID("legacy@example.com"),Receiver:login.ID},MXID:"!room:example.com"}}
  if err:=ec.repairContactRoom(ctx,portal,login);err!=nil{t.Fatal(err)}
  if intent.joins!=1||intent.states!=1||mx.levels.Events[event.EventMessage.Type]!=0||mx.levels.Events[event.EventEncrypted.Type]!=0{t.Fatal("repair did not unblock posting and accept invitation")}
  mx.membership=event.MembershipLeave
  if err:=ec.repairContactRoom(ctx,portal,login);err!=nil||intent.joins!=1{t.Fatal("explicitly left room was force-joined")}
- portal.ID="unrelated";mx.membership=event.MembershipInvite
- if err:=ec.repairContactRoom(ctx,portal,login);err==nil||intent.joins!=1{t.Fatal("arbitrary invite accepted")}
+ portal.ID="thread:retired";mx.membership=event.MembershipInvite
+ if err:=ec.repairContactRoom(ctx,portal,login);err==nil||intent.joins!=1{t.Fatal("obsolete room incorrectly repaired")}
 }

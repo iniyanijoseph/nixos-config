@@ -2,6 +2,7 @@ package imap
 
 import (
  "context"
+ "encoding/json"
  "errors"
  "os"
  "path/filepath"
@@ -55,4 +56,23 @@ func TestContaboMailMappingWaitRequiresNativeMapping(t *testing.T){
  ctx,cancel:=context.WithTimeout(context.Background(),time.Millisecond);defer cancel()
  if err=contaboWaitForMailMapping(ctx,func()(bool,error){return false,nil},time.Microsecond);err==nil{t.Fatal("missing mapping accepted")}
  if err=contaboWaitForMailMapping(context.Background(),func()(bool,error){return false,errors.New("database unavailable")},0);err==nil{t.Fatal("mapping lookup failure ignored")}
+}
+
+func TestContaboV3SourceScopeIsAtomicAndPrivate(t *testing.T){
+ path:=filepath.Join(t.TempDir(),"contabo-backfill-contacts-v3","scope-0123456789.json")
+ source:=contaboMailRebuildScope{Version:3,AccountHash:"0123456789",
+  Folders:[]string{"INBOX","[Gmail]/All Mail"},
+  CursorFiles:[]string{"a.json","b.json"}}
+ if err:=contaboSaveRebuildScope(path,source);err!=nil{t.Fatal(err)}
+ raw,err:=os.ReadFile(path);if err!=nil{t.Fatal(err)}
+ var saved contaboMailRebuildScope
+ if err=json.Unmarshal(raw,&saved);err!=nil{t.Fatal(err)}
+ if saved.Complete || len(saved.CursorFiles)!=2{t.Fatal("incomplete scope was prematurely certified")}
+ source.Complete=true
+ if err=contaboSaveRebuildScope(path,source);err!=nil{t.Fatal(err)}
+ raw,err=os.ReadFile(path);if err!=nil{t.Fatal(err)}
+ if err=json.Unmarshal(raw,&saved);err!=nil||!saved.Complete{
+  t.Fatal("completed source scope was not saved",err)
+ }
+ info,err:=os.Stat(path);if err!=nil||info.Mode().Perm()!=0600{t.Fatal("scope file permissions unsafe")}
 }

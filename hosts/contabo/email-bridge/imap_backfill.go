@@ -10,12 +10,33 @@ import (
  "os"
  "path/filepath"
  "sort"
+ "strings"
  "syscall"
  "time"
 
  imaplib "github.com/emersion/go-imap/v2"
  "maunium.net/go/mautrix/bridgev2/networkid"
 )
+
+// A full-history v3 replay is complete only when every frozen mailbox
+// checkpoint has finished. A failed run leaves the scope incomplete.
+type contaboMailRebuildScope struct {
+ Version int `json:"version"`
+ AccountHash string `json:"account_hash"`
+ Folders []string `json:"folders"`
+ CursorFiles []string `json:"cursor_files"`
+ Complete bool `json:"complete"`
+}
+func contaboSaveRebuildScope(path string, value contaboMailRebuildScope)error{
+ if err:=os.MkdirAll(filepath.Dir(path),0700);err!=nil{return err}
+ file,err:=os.CreateTemp(filepath.Dir(path),".scope-");if err!=nil{return err}
+ tmp:=file.Name();defer os.Remove(tmp)
+ if err=json.NewEncoder(file).Encode(value);err==nil{err=file.Sync()}
+ closeErr:=file.Close();if err!=nil{return err};if closeErr!=nil{return closeErr}
+ if err=os.Rename(tmp,path);err!=nil{return err}
+ dir,err:=os.Open(filepath.Dir(path));if err!=nil{return err};defer dir.Close()
+ return dir.Sync()
+}
 
 type contaboMailCursor struct {
  Version int `json:"version"`
@@ -97,6 +118,22 @@ func(c *Client)ContaboBackfill(ctx context.Context,mailboxes []string,days int,p
  worker.Host=c.Host;worker.Port=c.Port;worker.TLS=c.TLS
  worker.UseXOAUTH2=c.UseXOAUTH2;worker.AccessToken=c.AccessToken;worker.TokenProvider=c.TokenProvider
  worker.SetProcessor(c.processor)
+ if days==0 && strings.EqualFold(c.Host,"imap.gmail.com"){
+  allMail:=false
+  for _,folder:=range mailboxes{if strings.EqualFold(folder,"[Gmail]/All Mail"){allMail=true}}
+  if !allMail{mailboxes=append(mailboxes,"[Gmail]/All Mail")}
+ }
+ accountHash:=sha256.Sum256([]byte(string(c.login.ID)))
+ scope:=contaboMailRebuildScope{Version:3,AccountHash:fmt.Sprintf("%x",accountHash),Folders:append([]string(nil),mailboxes...)}
+ cursorFor:=func(mailbox string)string{
+  key:=sha256.Sum256([]byte(string(c.login.UserMXID)+"\x00"+c.Email+"\x00"+c.Host+fmt.Sprintf(":%d",c.Port)+"\x00"+mailbox+fmt.Sprintf("\x00%d",days)))
+  return filepath.Join("contabo-backfill-contacts-v3",fmt.Sprintf("%x.json",key))
+ }
+ scopePath:=filepath.Join("contabo-backfill-contacts-v3","scope-"+scope.AccountHash+".json")
+ if days==0{
+  for _,folder:=range mailboxes{scope.CursorFiles=append(scope.CursorFiles,filepath.Base(cursorFor(folder)))}
+  if err=contaboSaveRebuildScope(scopePath,scope);err!=nil{return 0,err}
+ }
  if err=worker.Connect();err!=nil{return 0,err}
  defer worker.Disconnect()
  // Closing this worker's connection unblocks any IMAP command on cancellation.
@@ -107,8 +144,7 @@ func(c *Client)ContaboBackfill(ctx context.Context,mailboxes []string,days int,p
   selected,err:=worker.client.Select(mailbox,&imaplib.SelectOptions{ReadOnly:true}).Wait()
   if err!=nil{return total,fmt.Errorf("history mailbox select failed: %w",err)}
   if selected.UIDValidity==0||selected.UIDNext==0{return total,fmt.Errorf("mailbox did not supply a stable UIDVALIDITY/UIDNEXT")}
-  key:=sha256.Sum256([]byte(string(c.login.UserMXID)+"\x00"+c.Email+"\x00"+c.Host+fmt.Sprintf(":%d",c.Port)+"\x00"+mailbox+fmt.Sprintf("\x00%d",days)))
-  path:=filepath.Join("contabo-backfill-contacts-v2",fmt.Sprintf("%x.json",key))
+  path:=cursorFor(mailbox)
   processed,err:=contaboBackfillMailbox(ctx,path,selected.UIDValidity,uint32(selected.UIDNext-1),days,
    func(after,until uint32,since time.Time)([]uint32,error){
     set:=imaplib.UIDSet{};set.AddRange(imaplib.UID(after+1),imaplib.UID(until))
@@ -129,6 +165,10 @@ func(c *Client)ContaboBackfill(ctx context.Context,mailboxes []string,days int,p
    },func(done,count int){if progress!=nil{progress(mailbox,done,count)}},500*time.Millisecond)
   total+=processed
   if err!=nil{return total,err}
+ }
+ if days==0{
+  scope.Complete=true
+  if err=contaboSaveRebuildScope(scopePath,scope);err!=nil{return total,err}
  }
  return total,nil
 }

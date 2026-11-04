@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import importlib.util
 import io
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -209,6 +210,102 @@ class Tests(unittest.TestCase):
             with sqlite3.connect(db_path) as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM portal').fetchone()[0], 3)
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM message').fetchone()[0], 4)
+
+    def test_v3_auto_rebuild_deletes_only_verified_owner_old_rooms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / 'matrimail'
+            home.mkdir()
+            dbpath = home / 'bridge.db'
+            cfg = home / 'config.yaml'
+            cfg.write_text('network:\n  contact_rooms: true\ndatabase:\n  uri: file:' + str(dbpath) + '\n')
+            cfg.chmod(0o600)
+            receiver = 'email:owner@gmail.com'
+            digest = hashlib.sha256(receiver.encode()).hexdigest()
+            cpdir = home / 'contabo-backfill-contacts-v3'
+            cpdir.mkdir()
+            cursor = 'a' * 64 + '.json'
+            checkpoint = cpdir / cursor
+            checkpoint.write_text(json.dumps({'version': 1, 'uid_validity': 100,
+                                              'after': 120, 'waterline': 120}))
+            checkpoint.chmod(0o600)
+            scope = cpdir / ('scope-' + digest + '.json')
+            source = {'version': 3, 'account_hash': digest, 'complete': True,
+                      'folders': ['[Gmail]/All Mail'], 'cursor_files': [cursor]}
+            scope.write_text(json.dumps(source))
+            scope.chmod(0o600)
+            with sqlite3.connect(dbpath) as db:
+                db.execute('CREATE TABLE portal (bridge_id TEXT, id TEXT, receiver TEXT, mxid TEXT)')
+                db.execute('CREATE TABLE message (bridge_id TEXT, room_receiver TEXT, id TEXT, part_id TEXT, room_id TEXT, mxid TEXT)')
+                db.execute('CREATE TABLE user_login (bridge_id TEXT, user_mxid TEXT, id TEXT)')
+                db.execute('CREATE TABLE contabo_mail_v3_retirement (bridge_id TEXT, receiver TEXT, portal_id TEXT)')
+                db.executemany('INSERT INTO user_login VALUES (?,?,?)',
+                    [('mail', c.OWNER, receiver), ('mail', '@friend:iniyanjoseph.com', 'email:friend@gmail.com')])
+                db.executemany('INSERT INTO portal VALUES (?,?,?,?)', [
+                    ('mail','thread:old',receiver,'!old:iniyanjoseph.com'),
+                    ('mail','contact:misgrouped',receiver,'!misgrouped:iniyanjoseph.com'),
+                    ('mail','contact-v3:alice',receiver,'!new:iniyanjoseph.com'),
+                    ('mail','thread:friend','email:friend@gmail.com','!friend:iniyanjoseph.com')])
+                db.executemany('INSERT INTO message VALUES (?,?,?,?,?,?)', [
+                    ('mail',receiver,'email:one','text','thread:old','$old1'),
+                    ('mail',receiver,'email:one','attachment','thread:old','$old2'),
+                    ('mail',receiver,'contact-email:two','text','contact:misgrouped','$old3'),
+                    ('mail',receiver,'contact-v3-email:one','text','contact-v3:alice','$new1'),
+                    ('mail',receiver,'contact-v3-email:one','attachment','contact-v3:alice','$new2'),
+                    ('mail',receiver,'contact-v3-email:two','text','contact-v3:alice','$new3'),
+                    ('mail','email:friend@gmail.com','email:friend','text','thread:friend','$other')])
+                db.executemany('INSERT INTO contabo_mail_v3_retirement VALUES (?,?,?)',[
+                    ('mail',receiver,'thread:old'),('mail',receiver,'contact:misgrouped')])
+            verified = c.matrimail_v3_rebuild_status(home)
+            self.assertTrue(verified['ready'])
+            self.assertEqual(verified['eligible_rooms'], 2)
+            self.assertEqual(verified['verified_v3_parts'], 3)
+            self.assertNotIn('!friend', str(verified))
+            private = root / 'private'
+            backup = root / 'backup.json'
+            with patch.object(c, 'api', side_effect=AssertionError('preview only')):
+                preview = c.matrimail_auto_rebuild_cleanup(home, private, backup_path=backup)
+            self.assertEqual(preview['status'], 'preview')
+            self.assertEqual(preview['pending'], 2)
+            with patch.object(c, 'admin_token', side_effect=AssertionError('no backup')):
+                deferred = c.matrimail_auto_rebuild_cleanup(home, private, backup, apply=True)
+            self.assertEqual(deferred['status'], 'deferred')
+            backup.write_text('{}')
+            c.atomic_private(private / 'admin-session.json', '{}')
+            calls = []
+            def api(path, token, body=None, method=None):
+                calls.append((path, method, body))
+                if method == 'DELETE':
+                    return {'delete_id': 'accepted-' + str(len(calls))}
+                return {'status': 'complete'}
+            with patch.object(c, 'admin_token', return_value='admin'), patch.object(c, 'api', side_effect=api):
+                done = c.matrimail_auto_rebuild_cleanup(home, private, backup, apply=True)
+                again = c.matrimail_auto_rebuild_cleanup(home, private, backup, apply=True)
+            self.assertEqual(done['status'], 'complete')
+            self.assertEqual(again['submitted_now'], 0)
+            deletes = [x for x in calls if x[1] == 'DELETE']
+            self.assertEqual(len(deletes), 2)
+            self.assertTrue(all('/_synapse/admin/v2/rooms/%21' in x[0] for x in deletes))
+            self.assertTrue(all(x[2] == {'block': True, 'purge': True} for x in deletes))
+            with sqlite3.connect(dbpath) as db:
+                db.execute("DELETE FROM message WHERE id='contact-v3-email:one' AND part_id='attachment'")
+            status = c.matrimail_v3_rebuild_status(home)
+            self.assertFalse(status['ready'])
+            self.assertEqual(status['blocked_rooms'], 1)
+            scope.write_text(json.dumps({**source, 'complete': False}))
+            self.assertFalse(c.matrimail_v3_rebuild_status(home)['ready'])
+            # Restore source coverage; a second portal sharing the old Matrix
+            # room ID must prevent an owner-only deletion.
+            scope.write_text(json.dumps(source))
+            with sqlite3.connect(dbpath) as db:
+                db.execute("INSERT INTO message VALUES (?,?,?,?,?,?)",
+                    ('mail', receiver, 'contact-v3-email:one', 'attachment',
+                     'contact-v3:alice', '$restored'))
+                db.execute("INSERT INTO portal VALUES (?,?,?,?)",
+                    ('mail', 'contact-v3:shared', receiver, '!old:iniyanjoseph.com'))
+            ambiguous = c.matrimail_v3_rebuild_status(home)
+            self.assertFalse(ambiguous['ready'])
+            self.assertEqual(ambiguous['blocked_rooms'], 1)
 
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]

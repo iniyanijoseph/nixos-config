@@ -4,6 +4,7 @@ import argparse
 import csv
 from datetime import datetime, timedelta, timezone
 import getpass
+import hashlib
 import http.server
 import io
 import json
@@ -443,6 +444,220 @@ def prune_matrimail_legacy_rooms(home=Path('/var/lib/matrimail'),
             'note': 'Synapse deletes asynchronously. These deletion requests were accepted; verify their status before describing the rooms as removed.'}
 
 
+
+def matrimail_v3_rebuild_status(home=Path('/var/lib/matrimail')):
+    """Read-only owner-scoped proof that source mail and old native parts
+    have all been delivered into a *new* contact-v3: Matrix room.
+    """
+    home = Path(home)
+    config = yaml.safe_load(read_private(home / 'config.yaml'))
+    if config.get('network', {}).get('contact_rooms') is not True:
+        raise RuntimeError('Matrimail v3 routing is not enabled')
+    uri = config.get('database', {}).get('uri', '')
+    if not isinstance(uri, str) or not uri.startswith('file:'):
+        raise RuntimeError('Matrimail v3 requires a private SQLite database')
+    path = Path(uri.split('?', 1)[0][5:])
+    if not path.is_absolute():
+        path = home / path
+    if not path.resolve().is_relative_to(home.resolve()) or not path.is_file():
+        raise RuntimeError('Matrimail v3 database is outside its private directory')
+    base = home / 'contabo-backfill-contacts-v3'
+    eligible = []
+    blocked = []
+    complete_accounts = 0
+    old_parts_total = 0
+    copied_parts_total = 0
+    with sqlite3.connect('file:' + str(path) + '?mode=ro', uri=True, timeout=10) as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        required = {'portal', 'message', 'user_login', 'contabo_mail_v3_retirement'}
+        if not required.issubset(tables):
+            return {'ready': False, 'reason': 'v3 bridge tables or retirement markers missing',
+                    'eligible_rooms': 0, 'blocked_rooms': 0, 'complete_accounts': 0}
+        accounts = db.execute(
+            'SELECT bridge_id,id FROM user_login WHERE user_mxid=?', (OWNER,)).fetchall()
+        if not accounts:
+            return {'ready': False, 'reason': 'No owner-scoped Matrimail account login',
+                    'eligible_rooms': 0, 'blocked_rooms': 0, 'complete_accounts': 0}
+        verified_accounts = set()
+        for bridge_id, receiver in accounts:
+            digest = hashlib.sha256(receiver.encode()).hexdigest()
+            scope_file = base / ('scope-' + digest + '.json')
+            try:
+                scope = json.loads(read_private(scope_file))
+                folders = scope['folders']
+                files = scope['cursor_files']
+                if (scope.get('version') != 3 or scope.get('account_hash') != digest
+                        or scope.get('complete') is not True or not isinstance(folders, list)
+                        or not folders or not isinstance(files, list)
+                        or len(folders) != len(files) or len(set(folders)) != len(folders)
+                        or len(set(files)) != len(files)
+                        or (receiver.lower().endswith('@gmail.com')
+                            and '[gmail]/all mail' not in {f.lower() for f in folders})):
+                    raise ValueError('Incomplete v3 source-mail folder scope')
+                for filename in files:
+                    if not isinstance(filename, str) or len(filename) != 69 or not filename.endswith('.json'):
+                        raise ValueError('Invalid frozen checkpoint file')
+                    if any(char not in '0123456789abcdef' for char in filename[:-5]):
+                        raise ValueError('Invalid checkpoint digest')
+                    cursor = json.loads(read_private(base / filename))
+                    if (cursor.get('version') != 1 or cursor.get('uid_validity', 0) < 1
+                            or cursor.get('after', -1) < cursor.get('waterline', 0)):
+                        raise ValueError('Incomplete or invalid frozen mailbox checkpoint')
+                verified_accounts.add((bridge_id, receiver))
+                complete_accounts += 1
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+        portals = db.execute("""
+            SELECT p.bridge_id,p.receiver,p.id,p.mxid
+            FROM portal p JOIN user_login u
+              ON u.bridge_id=p.bridge_id AND u.id=p.receiver
+            WHERE u.user_mxid=? AND (p.id LIKE 'thread:%' OR p.id LIKE 'contact:%')
+              AND p.mxid IS NOT NULL AND p.mxid!=''
+            ORDER BY p.mxid
+        """, (OWNER,)).fetchall()
+        for bridge_id, receiver, portal_id, mxid in portals:
+            label = (bridge_id, receiver, portal_id, mxid)
+            if (bridge_id, receiver) not in verified_accounts:
+                blocked.append(label)
+                continue
+            # A room mapped by any other bridge portal is not solely owned
+            # by this superseded email portal; refuse to delete it.
+            shared = db.execute("""
+                SELECT COUNT(*) FROM portal
+                WHERE mxid=? AND NOT (bridge_id=? AND receiver=? AND id=?)
+            """, (mxid, bridge_id, receiver, portal_id)).fetchone()[0]
+            if shared:
+                blocked.append(label)
+                continue
+            old = db.execute("""
+                SELECT id,part_id FROM message
+                WHERE bridge_id=? AND room_receiver=? AND room_id=?
+                  AND mxid IS NOT NULL AND mxid!='' AND mxid NOT LIKE '~fake:%'
+            """, (bridge_id, receiver, portal_id)).fetchall()
+            if not old:
+                blocked.append(label)
+                continue
+            old_parts_total += len(old)
+            copied = 0
+            supported = True
+            for msg_id, part_id in old:
+                if msg_id.startswith('email:'):
+                    raw = msg_id[6:]
+                elif msg_id.startswith('contact-email:'):
+                    raw = msg_id[14:]
+                else:
+                    supported = False
+                    break
+                new_id = 'contact-v3-email:' + raw
+                hits = db.execute("""
+                    SELECT p.mxid FROM message n JOIN portal p
+                      ON p.bridge_id=n.bridge_id AND p.receiver=n.room_receiver
+                       AND p.id=n.room_id
+                    WHERE n.bridge_id=? AND n.room_receiver=?
+                      AND n.id=? AND n.part_id=?
+                      AND n.room_id LIKE 'contact-v3:%'
+                      AND n.mxid IS NOT NULL AND n.mxid!=''
+                      AND n.mxid NOT LIKE '~fake:%'
+                      AND p.mxid IS NOT NULL AND p.mxid!=''
+                """, (bridge_id, receiver, new_id, part_id)).fetchall()
+                if len(hits) != 1:
+                    supported = False
+                    break
+                copied += 1
+            copied_parts_total += copied
+            retired = db.execute("""
+                SELECT COUNT(*) FROM contabo_mail_v3_retirement
+                WHERE bridge_id=? AND receiver=? AND portal_id=?
+            """, (bridge_id, receiver, portal_id)).fetchone()[0]
+            if (not supported or copied != len(old) or retired != 1
+                    or not isinstance(mxid, str) or not mxid.startswith('!')
+                    or not mxid.endswith(':iniyanjoseph.com')):
+                blocked.append(label)
+            else:
+                eligible.append(mxid)
+    unique = len(set(eligible)) == len(eligible) and not set(eligible).intersection(
+        {x[3] for x in blocked})
+    ready = bool(eligible and not blocked and unique and complete_accounts == len(accounts))
+    return {'ready': ready, 'eligible_rooms': len(eligible) if unique else 0,
+            'blocked_rooms': len(blocked), 'complete_accounts': complete_accounts,
+            'owner_accounts': len(accounts), 'old_parts': old_parts_total,
+            'verified_v3_parts': copied_parts_total,
+            'assessment': ('All owner-scoped old rooms can be retired after offsite backup'
+                           if ready else 'Waiting for complete v3 source replay and exact native mapping parity'),
+            '_eligible_mxids': eligible if unique else []}
+
+
+def matrimail_auto_rebuild_cleanup(home=Path('/var/lib/matrimail'),
+                                  directory=PRIVATE,
+                                  backup_path=Path('/var/lib/migration-queue/finish-setup/backup.json'),
+                                  apply=False, limit=10):
+    """Automatic, checkpointed Synapse deletion after side-by-side v3 parity.
+
+    Do not request deletion while even one old owner-scoped room is unverified.
+    In noninteractive mode an existing private administrator session is needed.
+    """
+    if not 1 <= limit <= 25:
+        raise ValueError('Use a bounded batch of 1–25 old rooms')
+    report = matrimail_v3_rebuild_status(home)
+    candidates = report.pop('_eligible_mxids', [])
+    if not report['ready']:
+        return {'status': 'deferred', **report}
+    ledger_path = directory / 'matrimail-v3-deletion-ledger.json'
+    ledger = json.loads(read_private(ledger_path)) if ledger_path.exists() else {}
+    if not isinstance(ledger, dict):
+        raise RuntimeError('Invalid v3 deletion ledger')
+    pending = [room for room in candidates if room not in ledger]
+    if not apply:
+        return {'status': 'preview', **report, 'pending': len(pending)}
+    if not backup_path.is_file() or time.time() - backup_path.stat().st_mtime > 24 * 3600:
+        return {'status': 'deferred', 'reason': 'Fresh verified offsite backup required'}
+    session = directory / 'admin-session.json'
+    if not session.is_file():
+        return {'status': 'deferred', 'reason': 'No cached Matrix administrator session; cannot purge unattended'}
+    # Verify the cached token is still an active Synapse admin token before
+    # calling the irreversible room-deletion endpoint.
+    token = admin_token(directory)
+    submitted = []
+    for room_id in pending[:limit]:
+        result = api('/_synapse/admin/v2/rooms/' + quote(room_id, safe=''),
+                     token, body={'block': True, 'purge': True}, method='DELETE')
+        deletion_id = result.get('delete_id')
+        if not isinstance(deletion_id, str) or not deletion_id:
+            raise RuntimeError('Synapse did not acknowledge room deletion; stopping')
+        ledger[room_id] = {'delete_id': deletion_id,
+                           'submitted_at': datetime.now(timezone.utc).isoformat()}
+        atomic_private(ledger_path, json.dumps(ledger, indent=2))
+        submitted.append(room_id)
+    # The next invocation verifies previously accepted deletions. A submitted
+    # request is not proof of completion; never release photo work just yet.
+    incomplete = 0
+    for room in candidates:
+        if room not in ledger:
+            incomplete += 1
+            continue
+        try:
+            response = api('/_synapse/admin/v2/rooms/delete_status/' +
+                           quote(ledger[room]['delete_id'], safe=''), token)
+            if response.get('status') != 'complete':
+                incomplete += 1
+        except HTTPError as error:
+            if error.code != 404:
+                incomplete += 1
+                continue
+            # Synapse discards purge-status records after a restart or 24h.
+            # A previously accepted deletion is complete only if its room is
+            # also absent from the authoritative room-detail endpoint.
+            try:
+                api('/_synapse/admin/v1/rooms/' + quote(room, safe=''), token)
+                incomplete += 1
+            except HTTPError as lookup:
+                if lookup.code != 404:
+                    incomplete += 1
+    return {'status': 'complete' if incomplete == 0 else 'in_progress',
+            'submitted_now': len(submitted), 'remaining_or_unconfirmed': incomplete,
+            'eligible_rooms': len(candidates)}
+
+
 def storage_audit():
     for args in (['df', '-h', '/'], ['du', '-xhd1', '/var/lib'], ['du', '-xhd1', '/nix'], ['journalctl', '--disk-usage']):
         subprocess.run(args, check=True)
@@ -498,6 +713,8 @@ def main():
     p = subs.add_parser('bridges'); p.add_argument('--network', choices=BRIDGES); p.add_argument('--core', action='store_true'); p.add_argument('--record', action='store_true'); p.add_argument('--room'); p.add_argument('--minutes', type=int, default=30)
     subs.add_parser('whatsapp-secret'); subs.add_parser('storage'); subs.add_parser('mail-consolidation')
     p = subs.add_parser('mail-prune-legacy'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=25)
+    p = subs.add_parser('mail-auto-rebuild'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=10)
+    subs.add_parser('mail-admin-auth')
     subs.add_parser('configure-bridges')
     p = subs.add_parser('cleanup'); p.add_argument('--apply', action='store_true')
     p = subs.add_parser('serve'); p.add_argument('--port', type=int, default=8766)
@@ -549,9 +766,18 @@ def main():
     elif args.command == 'storage':
         storage_audit()
     elif args.command == 'mail-consolidation':
-        print(json.dumps(mail_consolidation_status(), indent=2))
+        report = mail_consolidation_status()
+        if Path('/var/lib/matrimail/contabo-backfill-contacts-v3').is_dir():
+            v3 = matrimail_v3_rebuild_status()
+            report['v3_rebuild'] = {k: v for k, v in v3.items() if not k.startswith('_')}
+        print(json.dumps(report, indent=2))
     elif args.command == 'mail-prune-legacy':
         print(json.dumps(prune_matrimail_legacy_rooms(apply=args.apply, limit=args.limit), indent=2))
+    elif args.command == 'mail-auto-rebuild':
+        print(json.dumps(matrimail_auto_rebuild_cleanup(apply=args.apply, limit=args.limit), indent=2))
+    elif args.command == 'mail-admin-auth':
+        admin_token()
+        print('Matrix administrator session authenticated and cached privately for safe, unattended Matrimail room cleanup.')
     elif args.command == 'cleanup':
         cleanup(args.apply)
     elif args.command == 'serve':
