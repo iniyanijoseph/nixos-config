@@ -91,6 +91,12 @@ func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
  // than inventing an external recipient, joining unrelated mail by subject,
  // or silently discarding the source message. Record() retains an already
  // established chain's room when this is a reply with missing headers.
+ // If every address belongs to the owner (including Gmail's plus/dot
+ // aliases), use the stable primary account room instead of making one
+ // self-only room for each tagged variant of the sender.
+ if from!=""&&own[gmailOwnerKey(from)]{
+  for _,self:=range selves{if addr:=canonicalContactAddress(self);addr!=""{return addr,nil}}
+ }
  if from!=""{return from,nil}
  for _,self:=range selves{if addr:=canonicalContactAddress(self);addr!=""{return addr,nil}}
  return "",fmt.Errorf("email account has no usable own address for an addressless message")
