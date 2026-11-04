@@ -147,8 +147,8 @@ class Tests(unittest.TestCase):
             home.mkdir()
             db_path = home / 'bridge.db'
             config = home / 'config.yaml'
-            config.write_text('network:\\n  contact_rooms: true\\ndatabase:\\n  uri: file:' +
-                              str(db_path) + '\\n')
+            config.write_text('network:\n  contact_rooms: true\ndatabase:\n  uri: file:' +
+                              str(db_path) + '\n')
             config.chmod(0o600)
             cursors = home / 'contabo-backfill-contacts-v2'
             cursors.mkdir()
