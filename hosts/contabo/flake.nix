@@ -82,6 +82,7 @@
         export CONTABO_PHOTO_REMEDIATION_SCRIPT="${./photo-remediation.py}"
         export CONTABO_DISCORD_BINARY="${self.packages.${system}.contabo-discord-native}/bin/mautrix-discord"
         export CONTABO_COMMISSION_SCRIPT="${./commission-integrations.py}"
+        export CONTABO_ADMIN_SCRIPT="${./server-admin.py}"
         export CONTABO_GMESSAGES_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).gmessages}/bin/mautrix-gmessages"
         export CONTABO_SLACK_BINARY="${(import ./bridges-extra-pkgs.nix { inherit pkgs; }).slack}/bin/mautrix-slack"
         export CONTABO_MATRIMAIL_BINARY="${self.packages.${system}.contabo-matrimail}/bin/matrimail"
