@@ -51,6 +51,19 @@ func TestContaboContactAddressSelection(t *testing.T){
  }
  for _,tc:=range cases{got,err:=ContactForEmail(&tc.p,[]string{"me@gmail.com","me+alias@gmail.com"});if err!=nil||got!=tc.want{t.Fatalf("got %q %v want %q",got,err,tc.want)}}
  if contact,err:=ContactForEmail(&ParsedEmail{From:"me@gmail.com",To:[]string{"me@gmail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{t.Fatal("self-only mail must have its own room rather than pausing the import")}
+ // Regression from Nov 4: a historical message without parseable From/To/Cc
+ // used to halt the entire INBOX import. Preserve it in the self room.
+ for _,p:=range []*ParsedEmail{
+  {MessageID:"no-headers",Subject:"System-generated"},
+  {MessageID:"bad-from",From:"not-an-address",To:[]string{"unparseable"}},
+  {MessageID:"bcc-only",Bcc:[]string{"other@example.com"}},
+ }{
+  got,err:=ContactForEmail(p,[]string{"me@gmail.com","me+alias@gmail.com"})
+  if err!=nil||got!="me@gmail.com"{t.Fatalf("addressless mail must use owner-scoped self room, got %q: %v",got,err)}
+ }
+ if _,err:=ContactForEmail(&ParsedEmail{MessageID:"invalid"},nil);err==nil{
+  t.Fatal("missing login email must not silently create an unowned room")
+ }
 }
 
 func TestContaboGroupConversationStaysInOneRoomAcrossReplyAll(t *testing.T){
@@ -85,6 +98,29 @@ func TestContaboGroupConversationStaysInOneRoomAcrossReplyAll(t *testing.T){
  direct:=&ParsedEmail{MessageID:"independent",Subject:"Direct",From:"alice@example.com",To:[]string{"me@gmail.com"},Date:time.Unix(104,0)}
  message,err:=proc.ProcessParsedEmail(ctx,direct,login,"INBOX")
  if err!=nil||message.PortalKey.ID!=ContactPortalID("alice@example.com"){t.Fatalf("independent direct conversation incorrectly merged: %#v %v",message,err)}
+}
+
+func TestContaboAddresslessHistoryKeepsAnExistingChain(t *testing.T){
+ ctx:=context.Background()
+ db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"addressless.db"));if err!=nil{t.Fatal(err)}
+ defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ logger:=zerolog.Nop()
+ processor:=NewProcessor(&logger,NewThreadManager(nil),true,"test")
+ processor.Contacts=store
+ login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:networkid.UserLoginID("email:me@gmail.com")}}
+ root:=&ParsedEmail{MessageID:"root",Subject:"Conversation",From:"alice@example.com",To:[]string{"me@gmail.com"},Date:time.Unix(100,0)}
+ first,err:=processor.ProcessParsedEmail(ctx,root,login,"INBOX");if err!=nil{t.Fatal(err)}
+ reply:=&ParsedEmail{MessageID:"reply",InReplyTo:"root",References:[]string{"root"},Subject:"Re: Conversation",Date:time.Unix(101,0)}
+ second,err:=processor.ProcessParsedEmail(ctx,reply,login,"INBOX");if err!=nil{t.Fatal(err)}
+ if second.PortalKey!=first.PortalKey||second.ContactRoot!=first.ContactRoot{
+  t.Fatal("missing headers split a reply away from its established contact chain")
+ }
+ independent:=&ParsedEmail{MessageID:"standalone",Subject:"Automatic system message",Date:time.Unix(102,0)}
+ third,err:=processor.ProcessParsedEmail(ctx,independent,login,"INBOX");if err!=nil{t.Fatal(err)}
+ if third.PortalKey.ID!=ContactPortalID("me@gmail.com"){
+  t.Fatalf("addressless source email must appear in account self room, got %q",third.PortalKey.ID)
+ }
 }
 
 func TestContaboContactProcessorAndThreadRelations(t *testing.T){
