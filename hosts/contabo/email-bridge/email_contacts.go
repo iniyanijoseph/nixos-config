@@ -72,8 +72,15 @@ func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
   addr:=canonicalContactAddress(value);if addr!=""&&!own[addr]{others[addr]=true}
  }
  values:=make([]string,0,len(others));for value:=range others{values=append(values,value)};sort.Strings(values)
- if len(values)==0{if from!=""{return from,nil};return "",fmt.Errorf("email has no usable contact address")}
- return strings.Join(values,","),nil
+ if len(values)>0{return strings.Join(values,","),nil}
+ // Malformed, addressless, Bcc-only or system-generated mail must not stop
+ // an entire resumable import. Route these to the owner's self room rather
+ // than inventing an external recipient, joining unrelated mail by subject,
+ // or silently discarding the source message. Record() retains an already
+ // established chain's room when this is a reply with missing headers.
+ if from!=""{return from,nil}
+ for _,self:=range selves{if addr:=canonicalContactAddress(self);addr!=""{return addr,nil}}
+ return "",fmt.Errorf("email account has no usable own address for an addressless message")
 }
 
 func(s *ContactStore)GetChain(ctx context.Context,receiver,threadID string)(*ContactChain,error){
