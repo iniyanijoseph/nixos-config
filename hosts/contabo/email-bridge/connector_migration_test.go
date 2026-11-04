@@ -51,4 +51,13 @@ func TestContaboLegacyCoverageRequiresEveryPartInOwnerContactRoom(t *testing.T){
  insert("owner","contact-email:third","text","$new4","contact:alice")
  insert("owner","contact-email:third","attachment","$new5","contact:bob")
  check("thread:third",0)
+ // Counts alone are insufficient: a new attachment part with a different
+ // PartID must never certify the original part.
+ insert("owner","email:fourth","text","$old6","thread:fourth")
+ insert("owner","email:fourth","attachment","$old7","thread:fourth")
+ insert("owner","contact-email:fourth","text","$new6","contact:alice")
+ insert("owner","contact-email:fourth","other-attachment","$new7","contact:alice")
+ check("thread:fourth",0)
+ insert("owner","contact-email:fourth","attachment","$new8","contact:alice")
+ check("thread:fourth",1)
 }
