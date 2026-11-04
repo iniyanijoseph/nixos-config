@@ -42,11 +42,49 @@ func TestContaboContactPersistenceAndAccountIsolation(t *testing.T){
 func TestContaboContactAddressSelection(t *testing.T){
  cases:=[]struct{p ParsedEmail;want string}{
   {ParsedEmail{From:"Alice <ALICE@example.com>",To:[]string{"me@gmail.com"}},"alice@example.com"},
+  {ParsedEmail{From:"Alice <ALICE@example.com>",To:[]string{"me@gmail.com","bob@example.com"}},"alice@example.com,bob@example.com"},
+  {ParsedEmail{From:"Bob <BOB@example.com>",To:[]string{"alice@example.com","me@gmail.com"}},"alice@example.com,bob@example.com"},
+  {ParsedEmail{From:"me@gmail.com",To:[]string{"alice@example.com"},Cc:[]string{"BOB@example.com"}},"alice@example.com,bob@example.com"},
+  {ParsedEmail{From:"Alice <ALICE@example.com>",To:[]string{"me+alias@gmail.com"},Cc:[]string{"Bob <BOB@example.com>","alice@example.com"}},"alice@example.com,bob@example.com"},
   {ParsedEmail{From:"me@gmail.com",To:[]string{"ME@gmail.com","b@example.com","a@example.com"}},"a@example.com,b@example.com"},
   {ParsedEmail{From:"me+alias@gmail.com",To:[]string{"a@example.com"}},"a@example.com"},
  }
  for _,tc:=range cases{got,err:=ContactForEmail(&tc.p,[]string{"me@gmail.com","me+alias@gmail.com"});if err!=nil||got!=tc.want{t.Fatalf("got %q %v want %q",got,err,tc.want)}}
  if contact,err:=ContactForEmail(&ParsedEmail{From:"me@gmail.com",To:[]string{"me@gmail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{t.Fatal("self-only mail must have its own room rather than pausing the import")}
+}
+
+func TestContaboGroupConversationStaysInOneRoomAcrossReplyAll(t *testing.T){
+ ctx:=context.Background()
+ db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"group.db"));if err!=nil{t.Fatal(err)}
+ defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ logger:=zerolog.Nop()
+ proc:=NewProcessor(&logger,NewThreadManager(nil),true,"test");proc.Contacts=store
+ login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:networkid.UserLoginID("email:me@gmail.com")}}
+ inputs:=[]*ParsedEmail{
+  {MessageID:"root",Subject:"Group discussion",From:"alice@example.com",To:[]string{"me@gmail.com"},Cc:[]string{"bob@example.com"},Date:time.Unix(100,0)},
+  {MessageID:"reply-bob",Subject:"Re: Group discussion",InReplyTo:"root",References:[]string{"root"},From:"bob@example.com",To:[]string{"alice@example.com","me@gmail.com"},Date:time.Unix(101,0)},
+  {MessageID:"reply-me",Subject:"Re: Group discussion",InReplyTo:"reply-bob",References:[]string{"root","reply-bob"},From:"me@gmail.com",To:[]string{"bob@example.com","alice@example.com"},Date:time.Unix(102,0)},
+  // A direct reply late in the chain must not create a separate room.
+  {MessageID:"reply-direct",Subject:"Re: Group discussion",InReplyTo:"reply-me",References:[]string{"root","reply-bob","reply-me"},From:"alice@example.com",To:[]string{"me@gmail.com"},Date:time.Unix(103,0)},
+ }
+ var first networkid.PortalKey
+ var root networkid.MessageID
+ for i,p:=range inputs{
+  message,err:=proc.ProcessParsedEmail(ctx,p,login,"INBOX");if err!=nil{t.Fatal(err)}
+  if i==0{first=message.PortalKey;root=message.ContactRoot}
+  if message.PortalKey!=first||message.ContactRoot!=root{
+   t.Fatalf("group chain fragmented on message %d: %#v vs %#v",i,message.PortalKey,first)
+  }
+ }
+ if want:=ContactPortalID("alice@example.com,bob@example.com");first.ID!=want{
+  t.Fatalf("expected group contact room %q, got %q",want,first.ID)
+ }
+ if _,err:=store.GetMessage(ctx,"different-account","root");err!=nil{t.Fatal(err)}
+ // Other subjects for Alice alone remain in her direct room.
+ direct:=&ParsedEmail{MessageID:"independent",Subject:"Direct",From:"alice@example.com",To:[]string{"me@gmail.com"},Date:time.Unix(104,0)}
+ message,err:=proc.ProcessParsedEmail(ctx,direct,login,"INBOX")
+ if err!=nil||message.PortalKey.ID!=ContactPortalID("alice@example.com"){t.Fatalf("independent direct conversation incorrectly merged: %#v %v",message,err)}
 }
 
 func TestContaboContactProcessorAndThreadRelations(t *testing.T){
