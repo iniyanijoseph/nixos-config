@@ -150,10 +150,23 @@ does not invent their content or modify the originals.
 
 ## Contact rooms and email replies
 
-The pinned Matrimail patch enables one contact room per monitored account and
-external address. Separate subjects appear as native Matrix threads. Incoming
-chains stay anchored to their original contact even when participants change;
-sent-first multi-recipient conversations use a separate recipient-set room.
+The pinned Matrimail patch creates direct rooms for one-to-one exchanges and
+**group email rooms** for multi-person exchanges. The initial external
+participants (From, To, Cc, excluding your own configured aliases) determine
+the room, with addresses canonicalized, deduplicated and sorted. For example,
+an Alice/Bob/you conversation stays in an Alice+Bob group room whether Alice
+or Bob responds. A subsequent direct reply in the same chain remains in that
+room; a separate direct email with Alice goes into Alice's one-to-one room.
+Different subjects in a room become separate native Matrix threads.
+
+The original room association is frozen for each already-recognized chain,
+even if a fourth person joins or one person is later omitted. This prevents
+replies from jumping between rooms. Outbound reply-all follows the selected
+message's latest To/Cc, **not** the entire historical room membership.
+Some previously imported emails already have older native room mappings;
+changing routing does **not** silently move those Matrix events. A later
+isolated rebuild would be necessary to reconstruct misgrouped existing
+`contact:` rooms.
 
 Reply inside a thread (or explicitly reply to an email) to retain that chain's
 subject, recipients and RFC email headers. Normal replies are reply-all;
@@ -185,3 +198,44 @@ silently skip the migration. Existing legacy rooms/events are preserved; Matrix
 cannot move their events into new rooms. Repeated commands resume and deduplicate
 within the contact layout. Mail outside the selected folders or absent from
 Gmail is not imported. No account logout is required for this update.
+
+## Removing superseded email rooms
+
+First complete the retained IMAP import and inspect the private journal
+for a blocked UID if it pauses:
+
+```fish
+sudo journalctl -u matrimail --since '24 hours ago' --no-pager -o cat \
+  | rg -i 'history stopped at mailbox|history import paused|history scan|contact.room'
+sudo contabo-admin mail-consolidation
+```
+
+When the native mapping audit has verified the old message parts and the
+historical import checkpoints are complete, preview owner-scoped, superseded
+`thread:` rooms without modifying anything:
+
+```fish
+sudo contabo-admin mail-prune-legacy
+```
+
+Only after a verified, fresh R2 snapshot, run this explicit operation:
+
+```fish
+sudo contabo-admin mail-prune-legacy --apply --limit 25
+```
+
+This calls Synapse's **asynchronous** v2 room-deletion API. It deletes
+only retired legacy Matrimail portals that belong to the owner's login,
+with confirmed replacement message-part mappings. The private ledger
+records accepted deletion IDs and prevents duplicate submissions.
+Synapse deletion itself must be checked separately; submission is not
+proof of completed purging.
+
+Deleting a room purges its Matrix events, so neither the launcher nor
+`!matrimail backfill all` executes this operation automatically. Incomplete
+checkpoints, missing destination mappings, absent account authentication,
+and old rooms belonging to other accounts remain protected. This operation
+does not remove already-misgrouped newer `contact:` rooms, and does not
+reset credentials or the native mapping database. A wholesale clean import
+requires a distinct, backed-up versioned rebuild before old contact rooms
+can be safely purged.
