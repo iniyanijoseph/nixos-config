@@ -119,9 +119,20 @@ func(c *Client)ContaboBackfill(ctx context.Context,mailboxes []string,days int,p
  worker.UseXOAUTH2=c.UseXOAUTH2;worker.AccessToken=c.AccessToken;worker.TokenProvider=c.TokenProvider
  worker.SetProcessor(c.processor)
  if days==0 && strings.EqualFold(c.Host,"imap.gmail.com"){
-  allMail:=false
-  for _,folder:=range mailboxes{if strings.EqualFold(folder,"[Gmail]/All Mail"){allMail=true}}
-  if !allMail{mailboxes=append(mailboxes,"[Gmail]/All Mail")}
+  // For Gmail the INBOX, Sent Mail and label folders are overlapping
+  // views of All Mail. Reading those first can materialize a later reply
+  // before its archived parent and fragment one RFC thread into many rooms.
+  // Read All Mail once in UID order. Spam and Trash, if explicitly
+  // selected, are separate stores and do not duplicate All Mail.
+  unique:=[]string{"[Gmail]/All Mail"}
+  for _,folder:=range mailboxes{
+   if strings.EqualFold(folder,"[Gmail]/Spam")||strings.EqualFold(folder,"[Gmail]/Trash"){
+    present:=false
+    for _,kept:=range unique{if strings.EqualFold(folder,kept){present=true}}
+    if !present{unique=append(unique,folder)}
+   }
+  }
+  mailboxes=unique
  }
  accountHash:=sha256.Sum256([]byte(string(c.login.ID)))
  scope:=contaboMailRebuildScope{Version:3,AccountHash:fmt.Sprintf("%x",accountHash),Folders:append([]string(nil),mailboxes...)}
