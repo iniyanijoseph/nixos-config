@@ -332,10 +332,10 @@ def mail_consolidation_status(home=Path('/var/lib/matrimail')):
         assessment = 'Contact-room routing is disabled in the live bridge config'
     elif logins == 0:
         assessment = 'No saved bridge login: IMAP replay cannot start'
+    elif contact_rooms == 0 or new_parts == 0:
+        assessment = 'No populated contact rooms exist; historical consolidation is not yet verified'
     elif legacy_rooms == 0:
-        assessment = 'No old per-subject Matrimail portals detected in the native database'
-    elif contact_rooms == 0:
-        assessment = 'No consolidated contact rooms exist; replay has not produced visible destinations'
+        assessment = 'No native legacy portals detected; this does not prove all old Matrix rooms were consolidated'
     elif verified_parts < old_parts:
         assessment = 'Historical migration incomplete: legacy message parts lack verified contact-room mappings'
     elif retired < legacy_rooms:
