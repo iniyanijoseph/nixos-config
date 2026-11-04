@@ -59,15 +59,16 @@ func canonicalContactAddress(value string)string{
  parsed,err:=mail.ParseAddress(value);if err!=nil{return ""};return strings.ToLower(parsed.Address)
 }
 
-// Incoming conversations are anchored to their first external sender. Sent-first
-// conversations use their external recipient set. Never fold different accounts
-// together, or strip address components such as plus-tags.
+// A direct exchange maps to one contact room; a reply-all exchange maps to
+// a group room named by the sorted external participants. Exclude all of the
+// owner's configured addresses/aliases, preserve plus-tags, and never use the
+// sender alone when a third party is on To or Cc. Once a thread is recorded,
+// Record freezes its original room, even when later replies add/remove people.
 func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
- own:=map[string]bool{};for _,value:=range selves{own[canonicalContactAddress(value)]=true}
+ own:=map[string]bool{};for _,value:=range selves{if addr:=canonicalContactAddress(value);addr!=""{own[addr]=true}}
  from:=canonicalContactAddress(parsed.From)
- if from!=""&&!own[from]{return from,nil}
  others:=map[string]bool{}
- for _,value:=range append(append([]string{},parsed.To...),parsed.Cc...){
+ for _,value:=range append(append([]string{parsed.From},parsed.To...),parsed.Cc...){
   addr:=canonicalContactAddress(value);if addr!=""&&!own[addr]{others[addr]=true}
  }
  values:=make([]string,0,len(others));for value:=range others{values=append(values,value)};sort.Strings(values)
