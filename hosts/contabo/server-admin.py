@@ -894,6 +894,11 @@ def matrimail_reset_clear_native(home, manifest):
         db.commit()
     # v3 scope/cursors are per-login; never remove another user's checkpoints.
     base = Path(home) / 'contabo-backfill-contacts-v3'
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # The restarted bridge runs as the Matrimail account and must be able to
+    # traverse and write this directory even if the reset created it first.
+    account_home = Path(home).stat()
+    os.chown(base, account_home.st_uid, account_home.st_gid)
     for account in manifest['accounts']:
         digest = hashlib.sha256(account['receiver'].encode()).hexdigest()
         scope_path = base / ('scope-' + digest + '.json')
