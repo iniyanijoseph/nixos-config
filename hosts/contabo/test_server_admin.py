@@ -403,9 +403,11 @@ class Tests(unittest.TestCase):
                  patch.object(c, 'admin_token', return_value='cached'), \
                  patch.object(c, 'api', side_effect=fake_api), \
                  patch.object(c.time, 'sleep'):
-                finished=c.matrimail_clean_reset(home, private, receipt, apply=True)
+                finished=c.matrimail_clean_reset(home, private, receipt, apply=True,
+                    worker_lock=private / 'setup-worker.lock')
                 prior_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
-                repeated=c.matrimail_clean_reset(home, private, receipt, apply=True)
+                repeated=c.matrimail_clean_reset(home, private, receipt, apply=True,
+                    worker_lock=private / 'setup-worker.lock')
                 later_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
                 self.assertEqual(later_stops,prior_stops)
             self.assertEqual(finished['status'],'complete')
