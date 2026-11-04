@@ -105,6 +105,16 @@ func(s *ContactStore)ResolveThread(ctx context.Context,receiver,messageID string
 // context, and updates the chain tail only for chronologically newer messages.
 // An older backfill must not overwrite current recipients or the quote body.
 func(s *ContactStore)Record(ctx context.Context,receiver string,thread *EmailThread,messageID,contact string,observed time.Time)(*ContactChain,error){
+ return s.RecordWithParents(ctx,receiver,thread,messageID,contact,observed,nil)
+}
+
+// RecordWithParents uses exact RFC In-Reply-To and References links before
+// trusting an inferred in-memory ThreadID. The source IMAP replay may observe
+// a reply before its root (or after cache eviction), and the two would
+// otherwise produce separate direct/group rooms. Never merge independent
+// threads based merely on shared participants or matching subjects.
+func(s *ContactStore)RecordWithParents(ctx context.Context,receiver string,thread *EmailThread,
+ messageID,contact string,observed time.Time,parents []string)(*ContactChain,error){
  if thread==nil||thread.ThreadID==""||messageID==""{return nil,fmt.Errorf("missing email chain identity")}
  s.mu.Lock();defer s.mu.Unlock()
  tx,err:=s.DB.BeginTx(ctx,nil);if err!=nil{return nil,err};defer tx.Rollback()
@@ -125,6 +135,31 @@ func(s *ContactStore)Record(ctx context.Context,receiver string,thread *EmailThr
   return &saved,nil
  }
  if !errors.Is(err,sql.ErrNoRows){return nil,err}
+ // Link back to any previously persisted message in the same login.
+ // Prefer the immediate parent, then the nearest surviving ancestor;
+ // a distinct thread with merely overlapping CCs is never combined.
+ for _,raw:=range parents{
+  raw=RawEmailMessageID(raw)
+  if raw==""||raw==RawEmailMessageID(messageID){continue}
+  var parentData string
+  e:=tx.QueryRowContext(ctx,`SELECT data FROM contabo_email_message_v3
+     WHERE bridge_id=$1 AND receiver=$2 AND message_id=$3`,
+     s.BridgeID,receiver,raw).Scan(&parentData)
+  if errors.Is(e,sql.ErrNoRows){continue}
+  if e!=nil{return nil,e}
+  var parent ContactChain
+  if e=json.Unmarshal([]byte(parentData),&parent);e!=nil{return nil,e}
+  if parent.Contact==""||parent.RootID==""||parent.Thread==nil||parent.Thread.ThreadID==""{
+   return nil,fmt.Errorf("incomplete RFC parent contact mapping")
+  }
+  // The shared cached thread is mutable. Never change its ThreadID in
+  // place, since unrelated message processing could observe that change.
+  copyThread:=*thread
+  copyThread.ThreadID=parent.Thread.ThreadID
+  thread=&copyThread
+  contact=parent.Contact
+  break
+ }
  chain:=ContactChain{Contact:contact,RootID:ContactMessageID(messageID),Thread:thread}
  var oldContact,oldRoot string
  err=tx.QueryRowContext(ctx,`SELECT contact,root_id FROM contabo_email_chain_v3 WHERE bridge_id=$1 AND receiver=$2 AND thread_id=$3`,s.BridgeID,receiver,thread.ThreadID).Scan(&oldContact,&oldRoot)
