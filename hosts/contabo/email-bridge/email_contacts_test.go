@@ -225,6 +225,34 @@ func TestContaboAddresslessHistoryKeepsAnExistingChain(t *testing.T){
  }
 }
 
+func TestContaboGmailAllMailSentMessagesAreAttributedToOwner(t *testing.T){
+ ctx:=context.Background()
+ db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"sent-messages.db"));if err!=nil{t.Fatal(err)}
+ defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ log:=zerolog.Nop()
+ processor:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ processor.Contacts=store
+ login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:networkid.UserLoginID("email:me@gmail.com")}}
+ sent,err:=processor.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"sent-from-all-mail",From:"M. E. <m.e+archive@gmail.com>",
+  To:[]string{"alice@example.com","bob@example.com"},
+  Subject:"Three-person mail",Date:time.Unix(200,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if !sent.IsOutbound{t.Fatal("sent mail in All Mail must be attributed to the owner")}
+ if sent.PortalKey.ID!=ContactPortalID("alice@example.com,bob@example.com"){
+  t.Fatal("Gmail own-alias accidentally introduced an extra group member")
+ }
+ received,err:=processor.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"incoming-from-all-mail",From:"alice@example.com",
+  To:[]string{"me+other@gmail.com","bob@example.com"},
+  Subject:"Other message",Date:time.Unix(201,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if received.IsOutbound{t.Fatal("incoming All Mail message was misattributed to owner")}
+}
+
 func TestContaboContactProcessorAndThreadRelations(t *testing.T){
  ctx:=context.Background();db,_:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"mail.db"));defer db.Close()
  store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
