@@ -121,7 +121,7 @@ class Tests(unittest.TestCase):
             self.assertEqual(status['legacy_rooms'], 1)
             self.assertEqual(status['contact_rooms'], 0)
             self.assertEqual(status['legacy_parts_with_contact_mappings'], 0)
-            self.assertIn('No consolidated contact rooms', status['assessment'])
+            self.assertIn('No populated contact rooms', status['assessment'])
             with sqlite3.connect(db_path) as db:
                 db.execute('INSERT INTO portal VALUES (\'contact:alice\',\'!new:example.com\')')
                 db.execute('INSERT INTO message VALUES (\'mail\',\'email:example\',\'contact-email:m1\',\'text\',\'contact:alice\',\'$new\')')
