@@ -110,13 +110,13 @@ class Tests(unittest.TestCase):
         directory = Path(self.tmp.name) / 'matrimail'
         directory.mkdir()
         config = directory / 'config.yaml'
-        config.write_text('network:\\n  contact_rooms: false\\n')
+        config.write_text('network:\n  contact_rooms: false\n')
         (directory / '.contact-registration-loaded.json').write_text(
             json.dumps({'sha256': 'loaded-appservice'}))
         module = Mock()
         def apply(home):
             self.assertEqual(home, directory)
-            config.write_text('network:\\n  contact_rooms: true\\n')
+            config.write_text('network:\n  contact_rooms: true\n')
             return True, 'loaded-appservice'
         module.enable_matrimail_contact_rooms.side_effect = apply
         with patch.object(finish, 'MATRIMAIL_HOME', directory), \
@@ -133,7 +133,7 @@ class Tests(unittest.TestCase):
     def test_routing_repair_is_idempotent_and_preserves_registration_guard(self):
         directory = Path(self.tmp.name) / 'matrimail'
         directory.mkdir()
-        (directory / 'config.yaml').write_text('network:\\n  contact_rooms: true\\n')
+        (directory / 'config.yaml').write_text('network:\n  contact_rooms: true\n')
         marker = directory / '.contact-registration-loaded.json'
         marker.write_text(json.dumps({'sha256': 'original'}))
         module = Mock()
