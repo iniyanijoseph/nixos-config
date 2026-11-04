@@ -30,6 +30,7 @@ class Tests(unittest.TestCase):
         self.setup.integrations = Mock(return_value='service deployment fixture')
         self.setup.mail = Mock(return_value='mail fixture')
         self.setup.discord_native = Mock(return_value='discord fixture')
+        self.setup.email_consolidation = Mock(return_value='email audit fixture')
 
     def test_failed_backup_never_changes_apps_or_photos(self):
         self.setup.preflight = Mock(return_value='healthy')
@@ -70,14 +71,55 @@ class Tests(unittest.TestCase):
         self.assertLess(order.index('backup'),order.index('discord_native'))
         self.assertLess(order.index('discord_native'),order.index('integrations'))
         self.assertLess(order.index('integrations'),order.index('photos'))
+        self.setup.email_consolidation.assert_called_once()
 
-    def test_photos_do_not_compete_with_pending_discord_import(self):
-        self.setup.photos_deferred=True
+    def test_disconnected_discord_does_not_block_photos_after_email(self):
+        self.setup.discord_import_unverified = True
         for name in ('preflight','backup','discord_native','integrations','mail','apps','photos','discord'):
             setattr(self.setup,name,Mock(return_value='fixture'))
         self.setup.run()
+        self.setup.email_consolidation.assert_called_once()
+        self.setup.photos.assert_called_once()
+        self.assertEqual(self.setup.results['Photo Files dates']['status'], 'done')
+        self.assertTrue((finish.STATE / 'photo-after-email-complete').is_file())
+
+    def test_missing_email_consolidation_defers_photos_and_nextcloud(self):
+        self.setup.email_consolidation.side_effect = RuntimeError('no contact mappings')
+        self.setup.preflight = Mock(return_value='healthy')
+        self.setup.backup = Mock(return_value='backup')
+        self.setup.photos = Mock()
+        self.setup.apps = Mock()
+        self.setup.discord = Mock(return_value='inventory')
+        self.setup.run()
         self.setup.photos.assert_not_called()
-        self.assertEqual(self.setup.results['Photo Files dates']['status'],'deferred')
+        self.setup.apps.assert_not_called()
+        self.assertEqual(self.setup.results['Photo Files dates']['status'], 'deferred')
+        self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
+
+    def test_post_mail_retry_never_modifies_photos_before_verified_email(self):
+        self.setup.preflight = Mock(return_value='healthy')
+        self.setup.backup = Mock(return_value='backup')
+        self.setup.photos = Mock(return_value='photos')
+        self.setup.apps = Mock(return_value='apps')
+        self.setup.email_consolidation.side_effect = RuntimeError('mail not ready')
+        self.assertEqual(self.setup.after_email(), 2)
+        self.setup.photos.assert_not_called()
+        self.setup.backup.assert_not_called()
+        self.setup.email_consolidation.side_effect = None
+        self.assertEqual(self.setup.after_email(), 0)
+        self.setup.photos.assert_called_once()
+        self.setup.apps.assert_called_once()
+        self.assertTrue((finish.STATE / 'photo-after-email-complete').exists())
+        self.assertEqual(self.setup.after_email(), 0)
+        self.assertEqual(self.setup.photos.call_count, 1)
+
+    def test_photo_stage_requires_app_checks_to_mark_complete(self):
+        self.setup.preflight = Mock(return_value='healthy')
+        self.setup.backup = Mock(return_value='backup')
+        self.setup.photos = Mock(return_value='photos')
+        self.setup.apps = Mock(side_effect=RuntimeError('apps unavailable'))
+        self.assertEqual(self.setup.after_email(), 2)
+        self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
 
     def test_audit_cannot_treat_partial_scan_as_success(self):
         text = ('Media files found: 100\nSample: 100\nExif inspected: 50\n'
