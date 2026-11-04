@@ -97,15 +97,36 @@ updates the IMAP username when a corrected email address is retried.
 
 ## Retrospective consolidation of pre-existing email rooms
 
-On first connection with the patched Matrimail service, a checkpointed,
-low-rate background worker detects old per-subject `thread:` portals and
-automatically replays **all retained messages in the account's selected IMAP
-folders** into the newer contact-based portals. There is no need to issue the
-manual `backfill all` command to start this migration. Backfill uses its
-existing read-only IMAP connection, 2 messages/second limit, 5 GiB disk guard,
-and UIDVALIDITY validation. Restarting the service resumes the saved
-per-folder checkpoint. If an IMAP login is unavailable, the old rooms are
-preserved until you reconnect the account.
+On startup of each configured email account, a checkpointed, low-rate
+worker detects legacy per-subject `thread:` portals and attempts to replay
+all retained messages in the account's selected IMAP folders into contact
+rooms. It connects with a **separate read-only IMAP session**; it no longer
+waits for live IMAP IDLE to finish. Missing IMAP credentials, concurrent
+backfills and other early exits are reported in the private Matrimail journal
+instead of silently doing nothing. Replay uses a two-messages/second limit,
+a 5 GiB free-space guard, UIDVALIDITY checks and durable folder checkpoints.
+A manual `!matrimail backfill all <email>` remains available to resume.
+
+A deployment alone cannot manufacture historical emails that no longer exist
+in those IMAP folders. If you have only a new Stalwart mailbox forwarding
+recent mail, the original old Matrix rooms may contain content absent from
+the current IMAP source; that requires a separate Matrix-event recovery
+procedure rather than another IMAP retry.
+
+To diagnose exactly what happened, use the **read-only** status command on
+Contabo:
+
+```fish
+sudo contabo-admin mail-consolidation
+sudo journalctl -u matrimail --since '2026-11-03 18:00' --no-pager -o cat \
+  | rg 'Email consolidation|Contact-room migration|Legacy email room|Starting independent IMAP replay'
+```
+
+The first command reports routing state, registered account/login counts,
+old and new room counts, mapping completeness, retirement markers and
+checkpoint counts, without printing email addresses, subjects, bodies or
+credentials. It does not verify live Matrix permissions or actual mailbox
+history. Do not delete old rooms based on mapping counts alone.
 
 When replay finishes, the bridge audits the original per-subject portals
 against the new contact-room native message mappings **including message
