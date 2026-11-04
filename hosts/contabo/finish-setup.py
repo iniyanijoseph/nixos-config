@@ -14,6 +14,7 @@ import sys
 
 STATE = Path('/var/lib/migration-queue/finish-setup')
 OCC = '/run/current-system/sw/bin/nextcloud-occ'
+DISCORD_NATIVE = Path('/var/lib/mautrix-discord-native')
 CORE = ('matrix-synapse', 'nginx', 'mautrix-whatsapp', 'postgresql')
 
 
@@ -216,7 +217,7 @@ class Setup:
 
     def discord_native(self):
         module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
-        directory = Path('/var/lib/mautrix-discord-native')
+        directory = DISCORD_NATIVE
         snapshot, mapping = directory / 'archive.sqlite', directory / 'bridge.db'
         # Once the user has native historical state, ordinary commissioning
         # must not repeatedly POST the archive, re-pair, or restart its bridge.
