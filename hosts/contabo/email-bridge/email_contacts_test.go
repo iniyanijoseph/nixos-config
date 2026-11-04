@@ -39,6 +39,37 @@ func TestContaboContactPersistenceAndAccountIsolation(t *testing.T){
  otherStore,_:=NewContactStore(ctx,db,"another-bridge");other,err=otherStore.GetMessage(ctx,"me","a");if err!=nil||other!=nil{t.Fatal("cross-bridge context leak")}
 }
 
+func TestContaboSameEmailFromMultipleFoldersKeepsOneRoom(t *testing.T){
+ ctx:=context.Background()
+ db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"two-folders.db"));if err!=nil{t.Fatal(err)}
+ defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ original:=&EmailThread{ThreadID:"inbox-root",Subject:"Project",LastFrom:"alice@example.com"}
+ first,err:=store.Record(ctx,"email:me@gmail.com",original,"shared-rfc-message-id",
+  "alice@example.com",time.Unix(100,0))
+ if err!=nil{t.Fatal(err)}
+ // All Mail (or a restarted thread cache) observes the same RFC Message-ID
+ // with a different inferred chain and broader From/To/Cc participant set.
+ reinterpreted:=&EmailThread{ThreadID:"all-mail-root",Subject:"Re: Project",LastFrom:"bob@example.com"}
+ second,err:=store.Record(ctx,"email:me@gmail.com",reinterpreted,"shared-rfc-message-id",
+  "alice@example.com,bob@example.com",time.Unix(200,0))
+ if err!=nil{t.Fatal(err)}
+ if second.Contact!=first.Contact||second.RootID!=first.RootID||second.Thread.ThreadID!=original.ThreadID{
+  t.Fatalf("same source email migrated between v3 rooms: %#v %#v",first,second)
+ }
+ // A duplicate source email must not have created a second chain root.
+ row:=db.QueryRowContext(ctx,"SELECT COUNT(*) FROM contabo_email_chain_v3 WHERE receiver=?",
+  "email:me@gmail.com")
+ var chains int
+ if err=row.Scan(&chains);err!=nil||chains!=1{t.Fatalf("duplicate email created %d chains: %v",chains,err)}
+ // The same RFC Message-ID in another authenticated account is independent.
+ other,err:=store.Record(ctx,"email:friend@gmail.com",reinterpreted,"shared-rfc-message-id",
+  "alice@example.com,bob@example.com",time.Unix(300,0))
+ if err!=nil||other.Contact!="alice@example.com,bob@example.com"{
+  t.Fatalf("cross-account message routing leaked: %#v %v",other,err)
+ }
+}
+
 func TestContaboContactAddressSelection(t *testing.T){
  cases:=[]struct{p ParsedEmail;want string}{
   {ParsedEmail{From:"Alice <ALICE@example.com>",To:[]string{"me@gmail.com"}},"alice@example.com"},
