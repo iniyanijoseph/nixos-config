@@ -15,6 +15,10 @@ func(p *Processor)prepareContactMessage(ctx context.Context,message *EmailMessag
  if p.Contacts==nil{return nil}
  selves:=[]string{strings.TrimPrefix(string(login.ID),"email:")}
  if p.aliasResolver!=nil{selves=append(selves,p.aliasResolver(string(login.ID))...)}
+ // Gmail All Mail contains both sent and received messages. Folder names
+ // cannot identify outbound mail there; preserve the owner's attribution
+ // when the parsed sender is one of the authenticated account aliases.
+ if IsOwnContactAddress(message.ParsedEmail.From,selves){message.IsOutbound=true}
  contact,err:=ContactForEmail(message.ParsedEmail,selves);if err!=nil{return err}
  var parentIDs []string
  if !isForwardedMessage(message.ParsedEmail){
