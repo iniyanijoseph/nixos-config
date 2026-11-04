@@ -347,6 +347,28 @@ class Tests(unittest.TestCase):
                 '!direct:iniyanjoseph.com',group,'email:me@gmail.com'))
             self.assertEqual(c.matrimail_v3_duplicate_counts(db)['v3_shared_matrix_rooms'],1)
 
+    def test_matrimail_reset_plan_is_limited_to_owner_conversations(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            database = home / 'bridge.db'
+            config = home / 'config.yaml'
+            config.write_text('database:\n  uri: file:' + str(database) + '\n')
+            config.chmod(0o600)
+            with sqlite3.connect(database) as db:
+                db.execute('CREATE TABLE user_login(bridge_id TEXT,id TEXT,user_mxid TEXT)')
+                db.execute('CREATE TABLE portal(bridge_id TEXT,id TEXT,receiver TEXT,mxid TEXT)')
+                db.executemany('INSERT INTO user_login VALUES (?,?,?)', [
+                    ('mail','email:mine',c.OWNER),
+                    ('mail','email:friend','@friend:iniyanjoseph.com')])
+                db.executemany('INSERT INTO portal VALUES (?,?,?,?)', [
+                    ('mail','thread:one','email:mine','!one:iniyanjoseph.com'),
+                    ('mail','contact-v3:two','email:mine','!two:iniyanjoseph.com'),
+                    ('mail','thread:friend','email:friend','!friend:iniyanjoseph.com')])
+            result = c.matrimail_reset_plan(home)
+            self.assertEqual(len(result['rooms']), 2)
+            self.assertEqual(len(result['accounts']), 1)
+            self.assertNotIn('!friend', str(result))
+
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
         self.assertTrue(c.mapping_proof(events, now=1000, minutes=1)['recent_both_directions'])
