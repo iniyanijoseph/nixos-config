@@ -255,3 +255,59 @@ does not remove already-misgrouped newer `contact:` rooms, and does not
 reset credentials or the native mapping database. A wholesale clean import
 requires a distinct, backed-up versioned rebuild before old contact rooms
 can be safely purged.
+
+## Automatic Matrimail room rebuild (v3)
+
+Matrimail now rebuilds all owner-scoped superseded email rooms into fresh
+`contact-v3:` rooms. It does **not** reset the account, native E2EE state,
+SMTP settings, bridge registration, or historical source IMAP mail.
+The old `thread:` and first-generation `contact:` rooms remain readable
+while a new `contact-v3-email:` message namespace and new chain tables are
+populated. This also corrects previous misgroupings; changing a room title
+alone would not move events.
+
+At Matrimail startup, a background read-only worker replays the entire retained
+mail history into v3 rooms. Gmail accounts include `[Gmail]/All Mail` in addition
+to selected folders, so an INBOX-only scan is not accepted as full historical
+coverage. Each account records a hashed identity and **incomplete** source
+scope until every mailbox UID checkpoint reaches its frozen waterline.
+A failed or interrupted worker retries every 20 minutes, using the same
+checkpoints without restarting Discord or rebuilding NixOS.
+
+Once the v3 source scope is complete, the original `thread:` and
+`contact:` Matrix rooms are archived by Matrimail only where each old
+native message part has a real Matrix event in a v3 room. The setup runner's
+2-hour post-mail retry checks all owner-scoped old rooms, performs a fresh
+verified R2 backup, then starts bounded Synapse room deletions (10 per
+attempt) and saves their returned deletion IDs to a private ledger. It waits
+for confirmation that **every** deletion has completed, then proceeds
+automatically with photo remediation and the remaining Nextcloud checks.
+
+A Synapse administrator session is needed for true unattended room purging.
+Set it up **once** on Contabo without exposing the credentials here:
+
+```fish
+sudo contabo-admin mail-admin-auth
+```
+
+The command validates administrator status and stores the session privately.
+It never prints your password or access token. The rebuild remains automatic
+after this one-time setup. If the admin token expires, the worker will defer
+purging and preserve the old rooms until reauthenticated.
+
+Read-only status and retry checks:
+
+```fish
+sudo contabo-admin mail-consolidation
+sudo contabo-admin mail-auto-rebuild
+sudo bash /etc/nixos/hosts/contabo/finish-setup.sh --status
+sudo journalctl -u matrimail --since '1 hour ago' --no-pager -o cat | rg -i 'v3|rebuild|history|paused'
+```
+
+The cleanup never touches Discord, WhatsApp, Slack, Google Messages, other
+users' mail rooms, or any new v3 contact room. If source messages no longer
+exist in IMAP, native attachment mappings are incomplete, no administrator
+session is cached, or Synapse returns a failed deletion, existing rooms
+remain protected and the launcher reports the exact blocker. Even a verified
+native mapping is not proof that all old Matrix content (e.g. edits/reactions)
+was reproduced. Do not claim those independent media/encryption checks passed.
