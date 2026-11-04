@@ -300,7 +300,8 @@ class Setup:
             return 2
         backed_up = self.step('Offsite backup', self.backup)
         if backed_up:
-            self.step('Discord native deployment', self.discord_native)
+            # Email reconstruction has priority; avoid a premature Discord
+            # reconfiguration or expensive archive walk before the mail audit.
             messaging_ok = self.step('Messaging service deployment', self.integrations)
             if messaging_ok:
                 self.step('Mail service deployment', self.mail)
@@ -318,6 +319,14 @@ class Setup:
                             'Waiting for email-room consolidation; Discord authentication does not block photos')
                 self.record('Nextcloud apps', 'deferred',
                             'Scheduled after email consolidation and photo work')
+            if ((DISCORD_NATIVE / 'archive.sqlite').is_file()
+                    and (DISCORD_NATIVE / 'bridge.db').is_file()):
+                self.step('Discord native deployment', self.discord_native)
+            elif email_ok:
+                self.step('Discord native deployment', self.discord_native)
+            else:
+                self.record('Discord native deployment', 'deferred',
+                            'Existing email replay takes priority over new Discord provisioning')
         else:
             self.record('Photo Files dates', 'blocked', 'Fresh backup prerequisite failed')
             self.record('Nextcloud apps', 'blocked', 'Fresh backup prerequisite failed')
