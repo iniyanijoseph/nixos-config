@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 
@@ -215,14 +216,29 @@ class Setup:
 
     def discord_native(self):
         module = load_script('commission_integrations', os.environ['CONTABO_COMMISSION_SCRIPT'])
+        directory = Path('/var/lib/mautrix-discord-native')
+        snapshot, mapping = directory / 'archive.sqlite', directory / 'bridge.db'
+        # Once the user has native historical state, ordinary commissioning
+        # must not repeatedly POST the archive, re-pair, or restart its bridge.
+        # The archive and native mappings can be checked without a login.
+        if snapshot.is_file() and mapping.is_file():
+            with sqlite3.connect('file:' + str(snapshot) + '?mode=ro', uri=True) as source:
+                channels = [row[0] for row in source.execute(
+                    "SELECT id FROM channels WHERE kind IN ('dms','guild:804408079940583475')")]
+            owner = None
+            if module.discord_pilot_verified():
+                owner = json.loads((module.STATE / 'discord-pilot-verified.json').read_text())['receiver']
+            expected, mapped = module.discord_coverage(snapshot, mapping, channels, owner)
+            verified = bool(owner and expected and expected == mapped)
+            self.record('Discord historical mapping coverage',
+                        'done' if verified else 'blocked',
+                        f'{mapped}/{expected} selected-scope historical message mappings; '
+                        + ('receiver verified' if owner else 'account receiver not independently verified')
+                        + '; live session and media parity are separate checks')
+            return 'Existing Discord native import preserved; no repeated historical replay or bridge re-pairing'
         self.record('Discord history and live cutover', 'blocked', module.commission_discord())
-        # Live login state is not a historical-import completeness proof.
-        # Do not gate the independent, backed-up photo work on whether a
-        # Discord token happens to be connected during this setup run.
-        self.discord_import_unverified = json.loads(
-            (module.STATE/'discord-progress.json').read_text()).get('import_in_progress', True)
         self.backup()
-        return 'Discord service state recorded separately; it is not a prerequisite for photo work'
+        return 'Discord service provisioned; import and live login require separate acceptance'
 
     def email_consolidation(self):
         """Require verifiable contact-room history before automatic photo work.
