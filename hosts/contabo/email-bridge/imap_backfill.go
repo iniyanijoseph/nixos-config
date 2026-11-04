@@ -107,6 +107,23 @@ func contaboBackfillMailbox(ctx context.Context,path string,validity,waterline u
  return cursor.Processed,contaboSaveMailCursor(path,cursor)
 }
 
+// Gmail's labels expose the same RFC messages in overlapping folders.
+// A full reset must start with the chronological All Mail copy rather than
+// materializing a late reply from INBOX before the archived chain root.
+// Keep explicitly chosen Spam/Trash, which All Mail does not contain.
+func contaboHistoryFolders(host string, mailboxes []string, days int)[]string{
+ if days!=0||!strings.EqualFold(host,"imap.gmail.com"){return append([]string(nil),mailboxes...)}
+ unique:=[]string{"[Gmail]/All Mail"}
+ for _,folder:=range mailboxes{
+  if strings.EqualFold(folder,"[Gmail]/Spam")||strings.EqualFold(folder,"[Gmail]/Trash"){
+   exists:=false
+   for _,kept:=range unique{if strings.EqualFold(folder,kept){exists=true}}
+   if !exists{unique=append(unique,folder)}
+  }
+ }
+ return unique
+}
+
 // ContaboBackfill imports all retained mail in the selected folders, or the
 // requested day window. Drafts are skipped by the existing native processor.
 // A repeated command resumes its frozen snapshot, not a moving date window.
@@ -118,22 +135,7 @@ func(c *Client)ContaboBackfill(ctx context.Context,mailboxes []string,days int,p
  worker.Host=c.Host;worker.Port=c.Port;worker.TLS=c.TLS
  worker.UseXOAUTH2=c.UseXOAUTH2;worker.AccessToken=c.AccessToken;worker.TokenProvider=c.TokenProvider
  worker.SetProcessor(c.processor)
- if days==0 && strings.EqualFold(c.Host,"imap.gmail.com"){
-  // For Gmail the INBOX, Sent Mail and label folders are overlapping
-  // views of All Mail. Reading those first can materialize a later reply
-  // before its archived parent and fragment one RFC thread into many rooms.
-  // Read All Mail once in UID order. Spam and Trash, if explicitly
-  // selected, are separate stores and do not duplicate All Mail.
-  unique:=[]string{"[Gmail]/All Mail"}
-  for _,folder:=range mailboxes{
-   if strings.EqualFold(folder,"[Gmail]/Spam")||strings.EqualFold(folder,"[Gmail]/Trash"){
-    present:=false
-    for _,kept:=range unique{if strings.EqualFold(folder,kept){present=true}}
-    if !present{unique=append(unique,folder)}
-   }
-  }
-  mailboxes=unique
- }
+ mailboxes=contaboHistoryFolders(c.Host,mailboxes,days)
  accountHash:=sha256.Sum256([]byte(string(c.login.ID)))
  scope:=contaboMailRebuildScope{Version:3,AccountHash:fmt.Sprintf("%x",accountHash),Folders:append([]string(nil),mailboxes...)}
  cursorFor:=func(mailbox string)string{
