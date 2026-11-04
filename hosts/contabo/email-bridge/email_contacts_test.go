@@ -54,9 +54,9 @@ func TestContaboContactAddressSelection(t *testing.T){
  // Regression from Nov 4: a historical message without parseable From/To/Cc
  // used to halt the entire INBOX import. Preserve it in the self room.
  for _,p:=range []*ParsedEmail{
-  {MessageID:"no-headers",Subject:"System-generated"},
+  {MessageID:"no-usable-address",From:"mailer-daemon",Subject:"System-generated"},
   {MessageID:"bad-from",From:"not-an-address",To:[]string{"unparseable"}},
-  {MessageID:"bcc-only",Bcc:[]string{"other@example.com"}},
+  {MessageID:"bcc-only",From:"automated-system",Bcc:[]string{"other@example.com"}},
  }{
   got,err:=ContactForEmail(p,[]string{"me@gmail.com","me+alias@gmail.com"})
   if err!=nil||got!="me@gmail.com"{t.Fatalf("addressless mail must use owner-scoped self room, got %q: %v",got,err)}
@@ -111,12 +111,12 @@ func TestContaboAddresslessHistoryKeepsAnExistingChain(t *testing.T){
  login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:networkid.UserLoginID("email:me@gmail.com")}}
  root:=&ParsedEmail{MessageID:"root",Subject:"Conversation",From:"alice@example.com",To:[]string{"me@gmail.com"},Date:time.Unix(100,0)}
  first,err:=processor.ProcessParsedEmail(ctx,root,login,"INBOX");if err!=nil{t.Fatal(err)}
- reply:=&ParsedEmail{MessageID:"reply",InReplyTo:"root",References:[]string{"root"},Subject:"Re: Conversation",Date:time.Unix(101,0)}
+ reply:=&ParsedEmail{MessageID:"reply",InReplyTo:"root",References:[]string{"root"},From:"malformed-sender",Subject:"Re: Conversation",Date:time.Unix(101,0)}
  second,err:=processor.ProcessParsedEmail(ctx,reply,login,"INBOX");if err!=nil{t.Fatal(err)}
  if second.PortalKey!=first.PortalKey||second.ContactRoot!=first.ContactRoot{
   t.Fatal("missing headers split a reply away from its established contact chain")
  }
- independent:=&ParsedEmail{MessageID:"standalone",Subject:"Automatic system message",Date:time.Unix(102,0)}
+ independent:=&ParsedEmail{MessageID:"standalone",From:"mailer-daemon",Subject:"Automatic system message",Date:time.Unix(102,0)}
  third,err:=processor.ProcessParsedEmail(ctx,independent,login,"INBOX");if err!=nil{t.Fatal(err)}
  if third.PortalKey.ID!=ContactPortalID("me@gmail.com"){
   t.Fatalf("addressless source email must appear in account self room, got %q",third.PortalKey.ID)
