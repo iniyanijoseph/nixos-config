@@ -132,18 +132,18 @@ func(ec *EmailConnector) finalizeLegacyConsolidation(ctx context.Context, login 
  return complete,len(portals),nil
 }
 
-func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient){
- if client==nil || client.UserLogin==nil || ec.Contacts==nil{return}
+func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient)bool{
+ if client==nil || client.UserLogin==nil || ec.Contacts==nil{return false}
  ctx:=client.ctx
  // Replay uses a separate read-only IMAP socket; live IDLE readiness is not required.
  portals,err:=ec.legacyPortalsFor(ctx,client.UserLogin)
- if err!=nil{client.UserLogin.Log.Error().Err(err).Msg("Legacy email portal audit failed");return}
- if len(portals)==0{client.UserLogin.Log.Info().Msg("Email consolidation: no legacy per-subject rooms found");return}
- if client.IMAPClient==nil{client.UserLogin.Log.Warn().Int("legacy_rooms",len(portals)).Msg("Email consolidation blocked: no IMAP account; old rooms preserved");return}
+ if err!=nil{client.UserLogin.Log.Error().Err(err).Msg("Legacy email portal audit failed");return false}
+ if len(portals)==0{client.UserLogin.Log.Info().Msg("No superseded Matrimail portals require v3 replay");return true}
+ if client.IMAPClient==nil{client.UserLogin.Log.Warn().Int("legacy_rooms",len(portals)).Msg("V3 rebuild deferred: no authenticated IMAP client");return false}
  key:=string(client.UserLogin.ID)
- if _,busy:=contaboMailJobs.LoadOrStore(key,true);busy{client.UserLogin.Log.Info().Msg("Email consolidation deferred: another backfill running");return}
+ if _,busy:=contaboMailJobs.LoadOrStore(key,true);busy{client.UserLogin.Log.Info().Msg("V3 rebuild deferred: another backfill running");return false}
  defer contaboMailJobs.Delete(key)
- if _,busy:=contaboLegacyRun.LoadOrStore(key,true);busy{return}
+ if _,busy:=contaboLegacyRun.LoadOrStore(key,true);busy{return false}
  defer contaboLegacyRun.Delete(key)
  folders:=append([]string(nil),client.MonitoredFolders...)
  if len(folders)==0{folders=[]string{"INBOX"}}
@@ -167,19 +167,27 @@ func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient){
  })
  if err!=nil{
   client.UserLogin.Log.Error().Err(err).Int("processed",total).
-    Msg("Contact-room migration paused; source rooms preserved; resume with !matrimail backfill all")
-  return
+    Msg("V3 history rebuild paused; original rooms preserved; will retry automatically")
+  return false
  }
  archived,seen,err:=ec.finalizeLegacyConsolidation(ctx,client.UserLogin)
- if err!=nil{client.UserLogin.Log.Error().Err(err).Msg("Legacy email room retirement paused");return}
+ if err!=nil{client.UserLogin.Log.Error().Err(err).Msg("V3 email room retirement paused");return false}
  client.UserLogin.Log.Info().Int("processed",total).Int("archived_rooms",archived).
    Int("legacy_rooms",seen).Msg("Contact-room replay and legacy coverage audit finished")
  if archived<seen{client.UserLogin.Log.Warn().Int("unverified_rooms",seen-archived).
    Msg("Superseded rooms remain unchanged where v3 IMAP history or message-part mapping is incomplete")}
+ return archived==seen
 }
 
 func(ec *EmailConnector) startAutoConsolidation(client *EmailClient){
- if ec.Contacts==nil{return}
- go ec.autoConsolidateLegacy(client)
+ if ec.Contacts==nil||client==nil{return}
+ go func(){
+  // IMAP and Matrix delivery can fail temporarily. Reuse v3 UID checkpoints
+  // rather than requiring a new NixOS rebuild or manual backfill command.
+  for {
+   if ec.autoConsolidateLegacy(client){return}
+   select{case<-client.ctx.Done():return;case<-time.After(20*time.Minute):}
+  }
+ }()
 }
 
