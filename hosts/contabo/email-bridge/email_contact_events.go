@@ -15,8 +15,19 @@ func(p *Processor)prepareContactMessage(ctx context.Context,message *EmailMessag
  if p.Contacts==nil{return nil}
  selves:=[]string{strings.TrimPrefix(string(login.ID),"email:")}
  if p.aliasResolver!=nil{selves=append(selves,p.aliasResolver(string(login.ID))...)}
+ // Gmail All Mail contains both sent and received messages. Folder names
+ // cannot identify outbound mail there; preserve the owner's attribution
+ // when the parsed sender is one of the authenticated account aliases.
+ if IsOwnContactAddress(message.ParsedEmail.From,selves){message.IsOutbound=true}
  contact,err:=ContactForEmail(message.ParsedEmail,selves);if err!=nil{return err}
- chain,err:=p.Contacts.Record(ctx,string(login.ID),message.Thread,message.ParsedEmail.MessageID,contact,message.Timestamp)
+ var parentIDs []string
+ if !isForwardedMessage(message.ParsedEmail){
+  if message.ParsedEmail.InReplyTo!=""{parentIDs=append(parentIDs,message.ParsedEmail.InReplyTo)}
+  for i:=len(message.ParsedEmail.References)-1;i>=0;i--{
+   parentIDs=append(parentIDs,message.ParsedEmail.References[i])
+  }
+ }
+ chain,err:=p.Contacts.RecordWithParents(ctx,string(login.ID),message.Thread,message.ParsedEmail.MessageID,contact,message.Timestamp,parentIDs)
  if err!=nil{return fmt.Errorf("persist email contact routing: %w",err)}
  message.PortalKey=networkid.PortalKey{ID:ContactPortalID(chain.Contact),Receiver:login.ID}
  message.MessageID=ContactMessageID(message.ParsedEmail.MessageID)

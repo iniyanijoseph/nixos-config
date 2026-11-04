@@ -79,9 +79,18 @@ func TestContaboContactAddressSelection(t *testing.T){
   {ParsedEmail{From:"Alice <ALICE@example.com>",To:[]string{"me+alias@gmail.com"},Cc:[]string{"Bob <BOB@example.com>","alice@example.com"}},"alice@example.com,bob@example.com"},
   {ParsedEmail{From:"me@gmail.com",To:[]string{"ME@gmail.com","b@example.com","a@example.com"}},"a@example.com,b@example.com"},
   {ParsedEmail{From:"me+alias@gmail.com",To:[]string{"a@example.com"}},"a@example.com"},
+  {ParsedEmail{From:"a@example.com",To:[]string{"me+tracking@gmail.com"}},
+    "a@example.com"},
+  {ParsedEmail{From:"b@example.com",To:[]string{"m.e@gmail.com"},Cc:[]string{"a@example.com"}},
+    "a@example.com,b@example.com"},
+  {ParsedEmail{From:"a@example.com",To:[]string{"me@googlemail.com","bob@example.com"}},
+    "a@example.com,bob@example.com"},
  }
  for _,tc:=range cases{got,err:=ContactForEmail(&tc.p,[]string{"me@gmail.com","me+alias@gmail.com"});if err!=nil||got!=tc.want{t.Fatalf("got %q %v want %q",got,err,tc.want)}}
  if contact,err:=ContactForEmail(&ParsedEmail{From:"me@gmail.com",To:[]string{"me@gmail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{t.Fatal("self-only mail must have its own room rather than pausing the import")}
+ if contact,err:=ContactForEmail(&ParsedEmail{From:"m.e+other@gmail.com",To:[]string{"me@googlemail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{
+  t.Fatalf("self aliases must not create different self rooms: %q %v",contact,err)
+ }
  // Regression from Nov 4: a historical message without parseable From/To/Cc
  // used to halt the entire INBOX import. Preserve it in the self room.
  for _,p:=range []*ParsedEmail{
@@ -131,6 +140,68 @@ func TestContaboGroupConversationStaysInOneRoomAcrossReplyAll(t *testing.T){
  if err!=nil||message.PortalKey.ID!=ContactPortalID("alice@example.com"){t.Fatalf("independent direct conversation incorrectly merged: %#v %v",message,err)}
 }
 
+// A restarted IMAP replay can see the same RFC conversation with a different
+// inferred thread ID or narrower To/Cc list. Persisted ancestry must win.
+func TestContaboPersistentReplyAncestryPreventsGroupFragmentation(t *testing.T){
+ ctx:=context.Background()
+ db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"group-replies.db"));if err!=nil{t.Fatal(err)}
+ defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ log:=zerolog.Nop()
+ login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:networkid.UserLoginID("email:me@gmail.com")}}
+ proc:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ proc.Contacts=store
+ first,err:=proc.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"root",From:"alice@example.com",
+  To:[]string{"me@gmail.com","bob@example.com"},
+  Subject:"Three-person research",Date:time.Unix(100,0),
+ },login,"INBOX")
+ if err!=nil{t.Fatal(err)}
+ // Simulate cache loss and a reply-only-to-sender that does not mention Bob.
+ proc2:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ proc2.Contacts=store
+ second,err:=proc2.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"reply-narrow",InReplyTo:"root",References:[]string{"root"},
+  From:"alice@example.com",To:[]string{"me+archive@gmail.com"},
+  Subject:"Re: Three-person research",Date:time.Unix(101,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if second.PortalKey!=first.PortalKey||second.ContactRoot!=first.ContactRoot{
+  t.Fatalf("lost group room across cache eviction or CC removal: %#v vs %#v",first.PortalKey,second.PortalKey)
+ }
+ // A third reply with a missing immediate parent can still follow References.
+ proc3:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ proc3.Contacts=store
+ third,err:=proc3.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"reply-grandparent",InReplyTo:"missing-parent",
+  References:[]string{"root","missing-parent"},
+  From:"bob@example.com",To:[]string{"me@gmail.com"},
+  Subject:"Re: Three-person research",Date:time.Unix(102,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if third.PortalKey!=first.PortalKey||third.ContactRoot!=first.ContactRoot{
+  t.Fatalf("grandparent reference failed to preserve group room: %#v",third.PortalKey)
+ }
+ // Identical subject and one overlapping participant do not justify merging.
+ independent,err:=proc3.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"independent",From:"alice@example.com",To:[]string{"me@gmail.com"},
+  Subject:"Three-person research",Date:time.Unix(103,0),
+ },login,"INBOX")
+ if err!=nil{t.Fatal(err)}
+ if independent.PortalKey.ID!=ContactPortalID("alice@example.com"){
+  t.Fatal("unrelated direct mail was absorbed into a group")
+ }
+ another,err:=proc3.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"independent-group",From:"alice@example.com",
+  To:[]string{"me@gmail.com","carol@example.com"},
+  Subject:"Three-person research",Date:time.Unix(104,0),
+ },login,"INBOX")
+ if err!=nil{t.Fatal(err)}
+ if another.PortalKey.ID!=ContactPortalID("alice@example.com,carol@example.com"){
+  t.Fatal("unrelated group was merged based on subject/contact overlap")
+ }
+}
+
 func TestContaboAddresslessHistoryKeepsAnExistingChain(t *testing.T){
  ctx:=context.Background()
  db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"addressless.db"));if err!=nil{t.Fatal(err)}
@@ -152,6 +223,34 @@ func TestContaboAddresslessHistoryKeepsAnExistingChain(t *testing.T){
  if third.PortalKey.ID!=ContactPortalID("me@gmail.com"){
   t.Fatalf("addressless source email must appear in account self room, got %q",third.PortalKey.ID)
  }
+}
+
+func TestContaboGmailAllMailSentMessagesAreAttributedToOwner(t *testing.T){
+ ctx:=context.Background()
+ db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"sent-messages.db"));if err!=nil{t.Fatal(err)}
+ defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ log:=zerolog.Nop()
+ processor:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ processor.Contacts=store
+ login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:networkid.UserLoginID("email:me@gmail.com")}}
+ sent,err:=processor.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"sent-from-all-mail",From:"M. E. <m.e+archive@gmail.com>",
+  To:[]string{"alice@example.com","bob@example.com"},
+  Subject:"Three-person mail",Date:time.Unix(200,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if !sent.IsOutbound{t.Fatal("sent mail in All Mail must be attributed to the owner")}
+ if sent.PortalKey.ID!=ContactPortalID("alice@example.com,bob@example.com"){
+  t.Fatal("Gmail own-alias accidentally introduced an extra group member")
+ }
+ received,err:=processor.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"incoming-from-all-mail",From:"alice@example.com",
+  To:[]string{"me+other@gmail.com","bob@example.com"},
+  Subject:"Other message",Date:time.Unix(201,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if received.IsOutbound{t.Fatal("incoming All Mail message was misattributed to owner")}
 }
 
 func TestContaboContactProcessorAndThreadRelations(t *testing.T){

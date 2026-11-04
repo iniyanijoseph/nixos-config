@@ -76,3 +76,19 @@ func TestContaboV3SourceScopeIsAtomicAndPrivate(t *testing.T){
  }
  info,err:=os.Stat(path);if err!=nil||info.Mode().Perm()!=0600{t.Fatal("scope file permissions unsafe")}
 }
+
+func TestContaboFullHistoryGmailUsesSingleAllMailSource(t *testing.T){
+ input:=[]string{"INBOX","[Gmail]/Sent Mail","[Gmail]/All Mail","Labels/Research","INBOX"}
+ got:=contaboHistoryFolders("imap.gmail.com",input,0)
+ if len(got)!=1||got[0]!="[Gmail]/All Mail"{
+  t.Fatalf("overlapping Gmail labels must not produce multiple scans or split group roots: %v",got)
+ }
+ withDeleted:=contaboHistoryFolders("imap.gmail.com",append(input,"[Gmail]/Trash","[Gmail]/Spam","[Gmail]/Trash"),0)
+ if len(withDeleted)!=3||withDeleted[0]!="[Gmail]/All Mail"{
+  t.Fatalf("explicit non-AllMail source mailboxes must be retained exactly once: %v",withDeleted)
+ }
+ manual:=contaboHistoryFolders("imap.gmail.com",input,7)
+ if len(manual)!=len(input){t.Fatal("explicit date-limited backfill must retain selected folders")}
+ other:=contaboHistoryFolders("imap.fastmail.com",input,0)
+ if len(other)!=len(input){t.Fatal("non-Gmail source scope was unexpectedly rewritten")}
+}

@@ -53,6 +53,22 @@ in
           User = "matrimail";
           Group = "matrimail";
           WorkingDirectory = "/var/lib/matrimail";
+          # If a reboot occurs after Synapse room deletion begins but before
+          # native portal mappings are reset, do not restart the old bridge
+          # and accidentally recreate/duplicate deleted conversation rooms.
+          # The pre-start check uses privileged '+' because the private
+          # administrator ledger is intentionally not readable by matrimail.
+          ExecStartPre = "+${pkgs.writeShellScript "matrimail-clean-reset-guard" ''
+            if [ -f /var/lib/contabo-admin/matrimail-owner-clean-reset.json ]; then
+              ${pkgs.python3}/bin/python3 - <<'PY'
+import json
+from pathlib import Path
+ledger=json.loads(Path('/var/lib/contabo-admin/matrimail-owner-clean-reset.json').read_text())
+if ledger.get('phase') in ('deleting', 'native-reset'):
+    raise SystemExit('Matrimail clean reset is incomplete; resume it before restarting bridge')
+PY
+            fi
+          ''}";
           ExecStart = "${lib.getExe cfg.package} --config /var/lib/matrimail/config.yaml";
           EnvironmentFile = "/var/lib/secrets/matrimail.env";
           Restart = "on-failure";

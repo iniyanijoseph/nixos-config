@@ -306,6 +306,19 @@ class Tests(unittest.TestCase):
             ambiguous = c.matrimail_v3_rebuild_status(home)
             self.assertFalse(ambiguous['ready'])
             self.assertEqual(ambiguous['blocked_rooms'], 1)
+            with sqlite3.connect(dbpath) as db:
+                db.execute("DELETE FROM portal WHERE id='contact-v3:shared'")
+            plan = c.matrimail_reset_plan(home)
+            self.assertEqual(len(plan['rooms']), 3)
+            self.assertEqual(c.matrimail_reset_clear_native(home, plan), 3)
+            with sqlite3.connect(dbpath) as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM user_login").fetchone()[0], 2)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM portal").fetchone()[0], 1)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM message").fetchone()[0], 1)
+                self.assertEqual(db.execute("SELECT id FROM portal").fetchone()[0], 'thread:friend')
+            self.assertTrue((cpdir / ('reset-' + digest + '.pending')).exists())
+            self.assertFalse(scope.exists())
+            self.assertFalse(checkpoint.exists())
 
     def test_v3_duplicate_audit_only_flags_conflicts_within_new_rooms(self):
         import base64
@@ -346,6 +359,63 @@ class Tests(unittest.TestCase):
             db.execute('UPDATE portal SET mxid=? WHERE id=? AND receiver=?', (
                 '!direct:iniyanjoseph.com',group,'email:me@gmail.com'))
             self.assertEqual(c.matrimail_v3_duplicate_counts(db)['v3_shared_matrix_rooms'],1)
+
+    def test_matrimail_reset_plan_is_limited_to_owner_conversations(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            database = home / 'bridge.db'
+            config = home / 'config.yaml'
+            config.write_text('database:\n  uri: file:' + str(database) + '\n')
+            config.chmod(0o600)
+            with sqlite3.connect(database) as db:
+                db.execute('CREATE TABLE user_login(bridge_id TEXT,id TEXT,user_mxid TEXT)')
+                db.execute('CREATE TABLE portal(bridge_id TEXT,id TEXT,receiver TEXT,mxid TEXT)')
+                db.execute('CREATE TABLE message(bridge_id TEXT,room_receiver TEXT,room_id TEXT,id TEXT)')
+                db.executemany('INSERT INTO user_login VALUES (?,?,?)', [
+                    ('mail','email:mine',c.OWNER),
+                    ('mail','email:friend','@friend:iniyanjoseph.com')])
+                db.executemany('INSERT INTO portal VALUES (?,?,?,?)', [
+                    ('mail','thread:one','email:mine','!one:iniyanjoseph.com'),
+                    ('mail','contact-v3:two','email:mine','!two:iniyanjoseph.com'),
+                    ('mail','thread:friend','email:friend','!friend:iniyanjoseph.com')])
+            result = c.matrimail_reset_plan(home)
+            self.assertEqual(len(result['rooms']), 2)
+            self.assertEqual(len(result['accounts']), 1)
+            self.assertNotIn('!friend', str(result))
+            # Simulate Synapse acknowledging each asynchronous deletion while
+            # verifying the complete operator workflow is restart-safe.
+            from unittest.mock import Mock
+            from types import SimpleNamespace
+            private=home / 'private'
+            private.mkdir()
+            (private / 'admin-session.json').touch()
+            receipt=home / 'recent-backup.json'
+            receipt.touch()
+            def fake_api(path, token=None, body=None, method=None):
+                if method == 'DELETE':
+                    return {'delete_id': path}
+                if '/delete_status/' in path:
+                    return {'status': 'complete'}
+                raise AssertionError(path)
+            run=Mock(return_value=SimpleNamespace(returncode=1))
+            with patch.object(c.os, 'uname', return_value=SimpleNamespace(nodename='contabo')), \
+                 patch.object(c.subprocess, 'run', run), \
+                 patch.object(c, 'admin_token', return_value='cached'), \
+                 patch.object(c, 'api', side_effect=fake_api), \
+                 patch.object(c.time, 'sleep'):
+                finished=c.matrimail_clean_reset(home, private, receipt, apply=True,
+                    worker_lock=private / 'setup-worker.lock')
+                prior_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
+                repeated=c.matrimail_clean_reset(home, private, receipt, apply=True,
+                    worker_lock=private / 'setup-worker.lock')
+                later_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
+                self.assertEqual(later_stops,prior_stops)
+            self.assertEqual(finished['status'],'complete')
+            self.assertEqual(repeated['status'],'complete')
+            with sqlite3.connect(database) as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM portal").fetchone()[0],1)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM user_login").fetchone()[0],2)
+            self.assertEqual(len(list(private.glob('matrimail-before-clean-reset-*.sqlite'))),1)
 
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]

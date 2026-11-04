@@ -60,17 +60,39 @@ func canonicalContactAddress(value string)string{
  parsed,err:=mail.ParseAddress(value);if err!=nil{return ""};return strings.ToLower(parsed.Address)
 }
 
+// Public Gmail addresses are case-insensitive, dot-insensitive and use
+// plus-addressing. This is *only* for excluding the owner's own aliases
+// from a room key; never rewrite external recipients or outgoing headers.
+func gmailOwnerKey(value string)string{
+ parts:=strings.Split(value,"@")
+ if len(parts)!=2{return value}
+ domain:=parts[1]
+ if domain!="gmail.com"&&domain!="googlemail.com"{return value}
+ local:=strings.SplitN(parts[0],"+",2)[0]
+ return strings.ReplaceAll(local,".","")+"@gmail.com"
+}
+
+func IsOwnContactAddress(raw string,selves []string)bool{
+ addr:=canonicalContactAddress(raw)
+ if addr==""{return false}
+ key:=gmailOwnerKey(addr)
+ for _,self:=range selves{
+  if own:=canonicalContactAddress(self);own!=""&&gmailOwnerKey(own)==key{return true}
+ }
+ return false
+}
+
 // A direct exchange maps to one contact room; a reply-all exchange maps to
 // a group room named by the sorted external participants. Exclude all of the
 // owner's configured addresses/aliases, preserve plus-tags, and never use the
 // sender alone when a third party is on To or Cc. Once a thread is recorded,
 // Record freezes its original room, even when later replies add/remove people.
 func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
- own:=map[string]bool{};for _,value:=range selves{if addr:=canonicalContactAddress(value);addr!=""{own[addr]=true}}
+ own:=map[string]bool{};for _,value:=range selves{if addr:=canonicalContactAddress(value);addr!=""{own[gmailOwnerKey(addr)]=true}}
  from:=canonicalContactAddress(parsed.From)
  others:=map[string]bool{}
  for _,value:=range append(append([]string{parsed.From},parsed.To...),parsed.Cc...){
-  addr:=canonicalContactAddress(value);if addr!=""&&!own[addr]{others[addr]=true}
+  addr:=canonicalContactAddress(value);if addr!=""&&!own[gmailOwnerKey(addr)]{others[addr]=true}
  }
  values:=make([]string,0,len(others));for value:=range others{values=append(values,value)};sort.Strings(values)
  if len(values)>0{return strings.Join(values,","),nil}
@@ -79,6 +101,12 @@ func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
  // than inventing an external recipient, joining unrelated mail by subject,
  // or silently discarding the source message. Record() retains an already
  // established chain's room when this is a reply with missing headers.
+ // If every address belongs to the owner (including Gmail's plus/dot
+ // aliases), use the stable primary account room instead of making one
+ // self-only room for each tagged variant of the sender.
+ if from!=""&&own[gmailOwnerKey(from)]{
+  for _,self:=range selves{if addr:=canonicalContactAddress(self);addr!=""{return addr,nil}}
+ }
  if from!=""{return from,nil}
  for _,self:=range selves{if addr:=canonicalContactAddress(self);addr!=""{return addr,nil}}
  return "",fmt.Errorf("email account has no usable own address for an addressless message")
@@ -105,6 +133,16 @@ func(s *ContactStore)ResolveThread(ctx context.Context,receiver,messageID string
 // context, and updates the chain tail only for chronologically newer messages.
 // An older backfill must not overwrite current recipients or the quote body.
 func(s *ContactStore)Record(ctx context.Context,receiver string,thread *EmailThread,messageID,contact string,observed time.Time)(*ContactChain,error){
+ return s.RecordWithParents(ctx,receiver,thread,messageID,contact,observed,nil)
+}
+
+// RecordWithParents uses exact RFC In-Reply-To and References links before
+// trusting an inferred in-memory ThreadID. The source IMAP replay may observe
+// a reply before its root (or after cache eviction), and the two would
+// otherwise produce separate direct/group rooms. Never merge independent
+// threads based merely on shared participants or matching subjects.
+func(s *ContactStore)RecordWithParents(ctx context.Context,receiver string,thread *EmailThread,
+ messageID,contact string,observed time.Time,parents []string)(*ContactChain,error){
  if thread==nil||thread.ThreadID==""||messageID==""{return nil,fmt.Errorf("missing email chain identity")}
  s.mu.Lock();defer s.mu.Unlock()
  tx,err:=s.DB.BeginTx(ctx,nil);if err!=nil{return nil,err};defer tx.Rollback()
@@ -125,6 +163,31 @@ func(s *ContactStore)Record(ctx context.Context,receiver string,thread *EmailThr
   return &saved,nil
  }
  if !errors.Is(err,sql.ErrNoRows){return nil,err}
+ // Link back to any previously persisted message in the same login.
+ // Prefer the immediate parent, then the nearest surviving ancestor;
+ // a distinct thread with merely overlapping CCs is never combined.
+ for _,raw:=range parents{
+  raw=RawEmailMessageID(raw)
+  if raw==""||raw==RawEmailMessageID(messageID){continue}
+  var parentData string
+  e:=tx.QueryRowContext(ctx,`SELECT data FROM contabo_email_message_v3
+     WHERE bridge_id=$1 AND receiver=$2 AND message_id=$3`,
+     s.BridgeID,receiver,raw).Scan(&parentData)
+  if errors.Is(e,sql.ErrNoRows){continue}
+  if e!=nil{return nil,e}
+  var parent ContactChain
+  if e=json.Unmarshal([]byte(parentData),&parent);e!=nil{return nil,e}
+  if parent.Contact==""||parent.RootID==""||parent.Thread==nil||parent.Thread.ThreadID==""{
+   return nil,fmt.Errorf("incomplete RFC parent contact mapping")
+  }
+  // The shared cached thread is mutable. Never change its ThreadID in
+  // place, since unrelated message processing could observe that change.
+  copyThread:=*thread
+  copyThread.ThreadID=parent.Thread.ThreadID
+  thread=&copyThread
+  contact=parent.Contact
+  break
+ }
  chain:=ContactChain{Contact:contact,RootID:ContactMessageID(messageID),Thread:thread}
  var oldContact,oldRoot string
  err=tx.QueryRowContext(ctx,`SELECT contact,root_id FROM contabo_email_chain_v3 WHERE bridge_id=$1 AND receiver=$2 AND thread_id=$3`,s.BridgeID,receiver,thread.ThreadID).Scan(&oldContact,&oldRoot)
