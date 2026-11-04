@@ -140,7 +140,7 @@ class Tests(unittest.TestCase):
         module.STATE = finish.STATE
         module.discord_pilot_verified.return_value = True
         module.discord_coverage.return_value = (3, 3)
-        with patch.object(finish, 'DISCORD_NATIVE', directory), \\
+        with patch.object(finish, 'DISCORD_NATIVE', directory), \
              patch.object(finish, 'load_script', return_value=module):
             detail = finish.Setup.discord_native(self.setup)
         self.assertIn('preserved', detail)
@@ -160,7 +160,7 @@ class Tests(unittest.TestCase):
         module.STATE = finish.STATE
         module.discord_pilot_verified.return_value = False
         module.discord_coverage.return_value = (3, 1)
-        with patch.object(finish, 'DISCORD_NATIVE', directory), \\
+        with patch.object(finish, 'DISCORD_NATIVE', directory), \
              patch.object(finish, 'load_script', return_value=module):
             finish.Setup.discord_native(self.setup)
         self.assertEqual(self.setup.results['Discord historical mapping coverage']['status'], 'blocked')
