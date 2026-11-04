@@ -79,6 +79,12 @@ func TestContaboContactAddressSelection(t *testing.T){
   {ParsedEmail{From:"Alice <ALICE@example.com>",To:[]string{"me+alias@gmail.com"},Cc:[]string{"Bob <BOB@example.com>","alice@example.com"}},"alice@example.com,bob@example.com"},
   {ParsedEmail{From:"me@gmail.com",To:[]string{"ME@gmail.com","b@example.com","a@example.com"}},"a@example.com,b@example.com"},
   {ParsedEmail{From:"me+alias@gmail.com",To:[]string{"a@example.com"}},"a@example.com"},
+  {ParsedEmail{From:"a@example.com",To:[]string{"me+tracking@gmail.com"}},
+    "a@example.com"},
+  {ParsedEmail{From:"b@example.com",To:[]string{"m.e@gmail.com"},Cc:[]string{"a@example.com"}},
+    "a@example.com,b@example.com"},
+  {ParsedEmail{From:"a@example.com",To:[]string{"me@googlemail.com","bob@example.com"}},
+    "a@example.com,bob@example.com"},
  }
  for _,tc:=range cases{got,err:=ContactForEmail(&tc.p,[]string{"me@gmail.com","me+alias@gmail.com"});if err!=nil||got!=tc.want{t.Fatalf("got %q %v want %q",got,err,tc.want)}}
  if contact,err:=ContactForEmail(&ParsedEmail{From:"me@gmail.com",To:[]string{"me@gmail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{t.Fatal("self-only mail must have its own room rather than pausing the import")}
