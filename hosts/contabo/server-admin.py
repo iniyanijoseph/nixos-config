@@ -705,6 +705,7 @@ def main():
     subs.add_parser('whatsapp-secret'); subs.add_parser('storage'); subs.add_parser('mail-consolidation')
     p = subs.add_parser('mail-prune-legacy'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=25)
     p = subs.add_parser('mail-auto-rebuild'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=10)
+    subs.add_parser('mail-admin-auth')
     subs.add_parser('configure-bridges')
     p = subs.add_parser('cleanup'); p.add_argument('--apply', action='store_true')
     p = subs.add_parser('serve'); p.add_argument('--port', type=int, default=8766)
@@ -756,11 +757,18 @@ def main():
     elif args.command == 'storage':
         storage_audit()
     elif args.command == 'mail-consolidation':
-        print(json.dumps(mail_consolidation_status(), indent=2))
+        report = mail_consolidation_status()
+        if Path('/var/lib/matrimail/contabo-backfill-contacts-v3').is_dir():
+            v3 = matrimail_v3_rebuild_status()
+            report['v3_rebuild'] = {k: v for k, v in v3.items() if not k.startswith('_')}
+        print(json.dumps(report, indent=2))
     elif args.command == 'mail-prune-legacy':
         print(json.dumps(prune_matrimail_legacy_rooms(apply=args.apply, limit=args.limit), indent=2))
     elif args.command == 'mail-auto-rebuild':
         print(json.dumps(matrimail_auto_rebuild_cleanup(apply=args.apply, limit=args.limit), indent=2))
+    elif args.command == 'mail-admin-auth':
+        admin_token()
+        print('Matrix administrator session authenticated and cached privately for safe, unattended Matrimail room cleanup.')
     elif args.command == 'cleanup':
         cleanup(args.apply)
     elif args.command == 'serve':
