@@ -348,3 +348,63 @@ behavior, `sudo systemctl stop matrimail`. This interrupts only email
 bridging; do not clear the private database or checkpoints. Resume
 deliberately with `sudo systemctl start matrimail` after deploying a
 verified fix.
+
+## Clean one-time Matrimail reset (operator-approved)
+
+This is an **alternative** to preserving all three generations of legacy
+email rooms. The owner has explicitly authorized discarding the current
+Matrimail conversation rooms and rebuilding them from source IMAP.
+
+**Warning:** Synapse room deletion is permanent. Old email messages or
+attachments that no longer exist in the source IMAP mailbox will not be
+reconstructed. The private pre-reset SQLite snapshot preserves native
+mapping metadata, not a standalone export of all Matrix event bodies.
+Ensure the latest offsite restic snapshot is usable before using --apply.
+
+This command affects owner-scoped Matrimail conversation portals only:
+\`thread:\`, \`contact:\`, and \`contact-v3:\`. It preserves the private
+Matrimail bot management DM, current login credentials, mail account
+connection state, other users' rooms, and Discord/Slack/WhatsApp/
+Google Messages portals.
+
+After deploying the updated NixOS code, preview:
+
+\`\`\`fish
+sudo contabo-admin mail-reset
+\`\`\`
+
+Then run the reset as a persistent systemd job; disconnecting SSH will not
+interrupt the job:
+
+\`\`\`fish
+sudo systemd-run --unit=matrimail-clean-reset --collect \
+  /run/current-system/sw/bin/contabo-admin mail-reset --apply
+\`\`\`
+
+The command requires the cached admin login from
+\`sudo contabo-admin mail-admin-auth\` and a fresh verified R2 backup receipt.
+It refuses to race an active Contabo setup or post-mail worker. It stops
+Matrimail, creates and verifies a private SQLite backup, records all
+owner Matrimail room IDs and Synapse deletion IDs in an atomic root-only
+ledger, waits for the asynchronous purges, and deletes only those owner
+native portal rows using SQLite foreign keys. It then clears this
+account's v3 contact tables and IMAP checkpoint cursors, leaves a
+full-replay marker, and starts Matrimail. After the complete read-only
+IMAP replay the marker is removed and the photo timer can proceed.
+
+Progress and recovery:
+
+\`\`\`fish
+sudo contabo-admin mail-reset
+sudo systemctl status matrimail-clean-reset --no-pager
+sudo journalctl -u matrimail-clean-reset -n 60 --no-pager
+sudo contabo-admin mail-consolidation
+\`\`\`
+
+If the reset stops partway through, the private deletion ledger preserves
+confirmed work. Resume with \`sudo contabo-admin mail-reset --apply\`
+when the systemd job is no longer active; do **not** discard the ledger or
+database backup. Until all Matrix deletions are acknowledged, Matrimail
+remains stopped rather than recreating already-deleted rooms. The reset
+command is idempotent: a completed reset does not re-delete rooms or
+stop the running service.
