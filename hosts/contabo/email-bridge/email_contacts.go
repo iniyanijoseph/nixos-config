@@ -59,19 +59,24 @@ func canonicalContactAddress(value string)string{
  parsed,err:=mail.ParseAddress(value);if err!=nil{return ""};return strings.ToLower(parsed.Address)
 }
 
-// Incoming conversations are anchored to their first external sender. Sent-first
-// conversations use their external recipient set. Never fold different accounts
-// together, or strip address components such as plus-tags.
+// Route a new chain by its external participant set, not just the sender.
+// A three-person email is a group room regardless of which participant replies
+// later. The durable chain record below freezes the first observed room so
+// reply-all/list membership changes do not move the conversation mid-thread.
+// Receiver scope remains part of the portal key, and plus aliases stay distinct.
 func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
- own:=map[string]bool{};for _,value:=range selves{own[canonicalContactAddress(value)]=true}
- from:=canonicalContactAddress(parsed.From)
- if from!=""&&!own[from]{return from,nil}
- others:=map[string]bool{}
- for _,value:=range append(append([]string{},parsed.To...),parsed.Cc...){
-  addr:=canonicalContactAddress(value);if addr!=""&&!own[addr]{others[addr]=true}
+ own:=map[string]bool{};for _,value:=range selves{if addr:=canonicalContactAddress(value);addr!=""{own[addr]=true}}
+ participants:=map[string]bool{}
+ appendExternal:=func(raw string){addr:=canonicalContactAddress(raw);if addr!=""&&!own[addr]{participants[addr]=true}}
+ appendExternal(parsed.From)
+ for _,raw:=range parsed.To{appendExternal(raw)}
+ for _,raw:=range parsed.Cc{appendExternal(raw)}
+ values:=make([]string,0,len(participants));for addr:=range participants{values=append(values,addr)};sort.Strings(values)
+ if len(values)==0{
+  // Self-only messages still have a room and must not block the import.
+  if from:=canonicalContactAddress(parsed.From);from!=""{return from,nil}
+  return "",fmt.Errorf("email has no usable participant address")
  }
- values:=make([]string,0,len(others));for value:=range others{values=append(values,value)};sort.Strings(values)
- if len(values)==0{if from!=""{return from,nil};return "",fmt.Errorf("email has no usable contact address")}
  return strings.Join(values,","),nil
 }
 
