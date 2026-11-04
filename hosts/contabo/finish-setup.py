@@ -279,36 +279,40 @@ class Setup:
         return 'Matrimail contact routing enabled; existing account and Matrix room state preserved'
 
     def email_consolidation(self):
-        """Require verifiable contact-room history before automatic photo work.
+        """Require a completed v3 IMAP scope and exact, owner-scoped message parity.
 
-        This read-only audit cannot prove content or source IMAP completeness,
-        but prevents a silent, unfinished Matrimail replay from being treated
-        as completed simply because the service was restarted.
+        Older contact rooms remain readable until a new generation has copied
+        each legacy message part. No room is removed by this read-only stage.
         """
         script = os.environ.get('CONTABO_ADMIN_SCRIPT')
         if not script:
             raise RuntimeError('Private Matrimail audit script is not configured')
         admin = load_script('contabo_mail_admin', script)
-        report = admin.mail_consolidation_status()
-        atomic(STATE / 'mail-consolidation.json', json.dumps(report, indent=2) + '\n')
-        if not report.get('contact_routing_enabled'):
-            raise RuntimeError('Contact-based email routing is not enabled')
-        if not report.get('bridge_logins'):
-            raise RuntimeError('No saved Matrimail account login for historical import')
-        if not report.get('contact_rooms') or not report.get('contact_message_parts'):
-            raise RuntimeError('No populated contact-based email rooms; consolidation is not confirmed')
-        old = report['legacy_rooms']
-        if old:
-            if report['legacy_message_parts'] == 0:
-                raise RuntimeError('Legacy email rooms exist but have no auditable native message mappings')
-            if report['legacy_parts_with_contact_mappings'] < report['legacy_message_parts']:
-                raise RuntimeError('Matrimail history replay is incomplete; preserve old email rooms')
-            if report['archived_legacy_rooms'] < old:
-                raise RuntimeError('Matrimail contact rooms exist but historical room retirement is incomplete')
-        return (f"Contact-room audit passed: {report['legacy_parts_with_contact_mappings']}/"
-                f"{report['legacy_message_parts']} legacy parts mapped; "
-                f"{report['archived_legacy_rooms']}/{old} legacy rooms archived. "
-                "Email sending and attachment parity need separate acceptance.")
+        report = admin.matrimail_v3_rebuild_status()
+        sanitized = {k: v for k, v in report.items() if not k.startswith('_')}
+        atomic(STATE / 'mail-consolidation.json', json.dumps(sanitized, indent=2) + '\n')
+        if not report.get('ready'):
+            raise RuntimeError('Matrimail v3 full history or native per-part mapping is incomplete; old rooms preserved')
+        return (f"V3 history complete across {report['complete_accounts']} owner account(s); "
+                f"{report['verified_v3_parts']}/{report['old_parts']} old message parts verified "
+                f"in {report['eligible_rooms']} replacement-backed rooms.")
+
+    def matrimail_cleanup(self):
+        """Submit/verify asynchronous removal of superseded rooms only.
+
+        A cached Synapse administrator session is required for unattended
+        deletion. Missing auth or pending Synapse deletion never counts as
+        success; the existing post-mail timer retries this step.
+        """
+        script = os.environ.get('CONTABO_ADMIN_SCRIPT')
+        if not script:
+            raise RuntimeError('Private Matrimail cleanup script is not configured')
+        admin = load_script('contabo_mail_admin_cleanup', script)
+        result = admin.matrimail_auto_rebuild_cleanup(apply=True, limit=10)
+        atomic(STATE / 'mail-rebuild-cleanup.json', json.dumps(result, indent=2) + '\n')
+        if result.get('status') != 'complete':
+            raise RuntimeError('Matrimail automatic room cleanup is pending: ' + result.get('reason', result.get('status', 'unknown')))
+        return 'All verified superseded Matrimail rooms have completed Synapse deletion; new v3 rooms retained.'
 
     def after_email(self):
         """Timer retry: resume photo work once mail history is reconciled.
@@ -329,6 +333,9 @@ class Setup:
                         'Waiting for verified email contact-room mappings; Discord login is not the blocker')
             return 2
         if not self.step('Post-mail offsite backup', self.backup):
+            return 2
+        if not self.step('Matrimail automatic room cleanup', self.matrimail_cleanup):
+            self.record('Photo Files dates', 'deferred', 'Waiting for safe verified deletion of superseded Matrimail rooms')
             return 2
         photos_ok = self.step('Photo Files dates', self.photos)
         apps_ok = self.step('Nextcloud apps', self.apps)
@@ -359,10 +366,19 @@ class Setup:
                 email_ok = False
                 self.record('Email consolidation', 'blocked', 'Messaging deployment did not complete')
             if email_ok:
-                photos_ok = self.step('Photo Files dates', self.photos)
-                apps_ok = self.step('Nextcloud apps', self.apps)
-                if photos_ok and apps_ok:
-                    atomic(STATE / 'photo-after-email-complete', 'Photo stage and Nextcloud apps verified after email audit\n')
+                post_backup_ok = self.step('Post-mail offsite backup', self.backup)
+                cleanup_ok = (self.step('Matrimail automatic room cleanup', self.matrimail_cleanup)
+                              if post_backup_ok else False)
+                if cleanup_ok:
+                    photos_ok = self.step('Photo Files dates', self.photos)
+                    apps_ok = self.step('Nextcloud apps', self.apps)
+                    if photos_ok and apps_ok:
+                        atomic(STATE / 'photo-after-email-complete', 'Photo stage and Nextcloud apps verified after v3 rebuild\n')
+                else:
+                    self.record('Photo Files dates', 'deferred',
+                                'Waiting for backed-up automatic Matrimail room cleanup')
+                    self.record('Nextcloud apps', 'deferred',
+                                'Scheduled after verified mail rebuild and photo work')
             else:
                 self.record('Photo Files dates', 'deferred',
                             'Waiting for email-room consolidation; Discord authentication does not block photos')
