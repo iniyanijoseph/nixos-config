@@ -88,6 +88,9 @@ func TestContaboContactAddressSelection(t *testing.T){
  }
  for _,tc:=range cases{got,err:=ContactForEmail(&tc.p,[]string{"me@gmail.com","me+alias@gmail.com"});if err!=nil||got!=tc.want{t.Fatalf("got %q %v want %q",got,err,tc.want)}}
  if contact,err:=ContactForEmail(&ParsedEmail{From:"me@gmail.com",To:[]string{"me@gmail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{t.Fatal("self-only mail must have its own room rather than pausing the import")}
+ if contact,err:=ContactForEmail(&ParsedEmail{From:"m.e+other@gmail.com",To:[]string{"me@googlemail.com"}},[]string{"me@gmail.com"});err!=nil||contact!="me@gmail.com"{
+  t.Fatalf("self aliases must not create different self rooms: %q %v",contact,err)
+ }
  // Regression from Nov 4: a historical message without parseable From/To/Cc
  // used to halt the entire INBOX import. Preserve it in the self room.
  for _,p:=range []*ParsedEmail{
