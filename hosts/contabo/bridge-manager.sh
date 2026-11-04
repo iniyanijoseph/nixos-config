@@ -12,16 +12,20 @@ cleanup() {
   fi
 }
 trap cleanup EXIT INT TERM
+# Use the user's working OpenSSH host alias so HostName, IdentityFile,
+# ProxyJump and other connection settings are honored. The direct IP address
+# bypassed the alias and offered ~/.ssh/id_ed25519 instead of ~/.ssh/contabo.
+ssh_target="${CONTABO_SSH_TARGET:-contabo}"
 ssh -N -T -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
   -L 127.0.0.1:29321:127.0.0.1:29321 \
   -L 127.0.0.1:29320:127.0.0.1:29320 \
-  wug@213.199.55.255 &
+  "$ssh_target" &
 task_bridge_tunnel_pid=$!
 task_bridge_ready=false
 for ((attempt=0; attempt<120; attempt++)); do
   if ! kill -0 "$task_bridge_tunnel_pid" 2>/dev/null; then
-    echo 'The SSH tunnel failed. Check SSH access and local port conflicts.' >&2
+    echo "The SSH tunnel failed to ${ssh_target}. Try: ssh ${ssh_target}. Check key access and local port conflicts." >&2
     exit 1
   fi
   # A 401/403 is expected without a Matrix login. Require the real bridge's
