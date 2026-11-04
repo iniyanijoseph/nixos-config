@@ -864,6 +864,12 @@ def matrimail_reset_clear_native(home, manifest):
         db.execute('BEGIN IMMEDIATE')
         db.execute('PRAGMA defer_foreign_keys=ON')
         for portal in manifest['portals']:
+            # Explicitly discard only mappings in the selected owner room.
+            # Do not depend on ON DELETE CASCADE being present in every
+            # historical schema version.
+            db.execute("""
+                DELETE FROM message WHERE bridge_id=? AND room_receiver=? AND room_id=?
+            """, (portal['bridge_id'], portal['receiver'], portal['portal_id']))
             cur = db.execute("""
                 DELETE FROM portal WHERE bridge_id=? AND receiver=? AND id=?
             """, (portal['bridge_id'], portal['receiver'], portal['portal_id']))
