@@ -30,11 +30,11 @@ func TestContaboLegacyCoverageRequiresEveryPartInOwnerContactRoom(t *testing.T){
  insert("owner","email:first","text","$old1","thread:first")
  insert("owner","email:first","attachment","$old2","thread:first")
  insert("owner","email:second","text","$old3","thread:second")
- insert("owner","contact-email:first","text","$new1","contact:alice")
- insert("owner","contact-email:second","text","$new3","contact:alice")
+ insert("owner","contact-v3-email:first","text","$new1","contact-v3:alice")
+ insert("owner","contact-v3-email:second","text","$new3","contact-v3:alice")
  // Another user's mapping and a fake Matrix event must not count.
- insert("friend","contact-email:first","attachment","$friend","contact:alice")
- insert("owner","contact-email:first","attachment","~fake:not-delivered","contact:alice")
+ insert("friend","contact-v3-email:first","attachment","$friend","contact-v3:alice")
+ insert("owner","contact-v3-email:first","attachment","~fake:not-delivered","contact-v3:alice")
  check:=func(room string,wantMapped int){
   t.Helper()
   coverage,err:=legacyCoverageForDB(ctx,db,"mail",room,"owner")
@@ -45,25 +45,29 @@ func TestContaboLegacyCoverageRequiresEveryPartInOwnerContactRoom(t *testing.T){
  }
  check("thread:first",0)
  check("thread:second",1)
- insert("owner","contact-email:first","attachment","$new2","contact:alice")
+ insert("owner","contact-v3-email:first","attachment","$new2","contact-v3:alice")
  check("thread:first",1)
  // The old room's messages may map to two target contact rooms because of
  // an unusual participant change, but each individual message's parts
  // must remain within one target portal.
  insert("owner","email:third","text","$old4","thread:third")
  insert("owner","email:third","attachment","$old5","thread:third")
- insert("owner","contact-email:third","text","$new4","contact:alice")
- insert("owner","contact-email:third","attachment","$new5","contact:bob")
+ insert("owner","contact-v3-email:third","text","$new4","contact-v3:alice")
+ insert("owner","contact-v3-email:third","attachment","$new5","contact-v3:bob")
  check("thread:third",0)
  // Counts alone are insufficient: a new attachment part with a different
  // PartID must never certify the original part.
  insert("owner","email:fourth","text","$old6","thread:fourth")
  insert("owner","email:fourth","attachment","$old7","thread:fourth")
- insert("owner","contact-email:fourth","text","$new6","contact:alice")
- insert("owner","contact-email:fourth","other-attachment","$new7","contact:alice")
+ insert("owner","contact-v3-email:fourth","text","$new6","contact-v3:alice")
+ insert("owner","contact-v3-email:fourth","other-attachment","$new7","contact-v3:alice")
  check("thread:fourth",0)
- insert("owner","contact-email:fourth","attachment","$new8","contact:alice")
+ insert("owner","contact-v3-email:fourth","attachment","$new8","contact-v3:alice")
  check("thread:fourth",1)
+ // Previously misgrouped contact portals also need to be rebuilt.
+ insert("owner","contact-email:previous","text","$old8","contact:misgrouped")
+ insert("owner","contact-v3-email:previous","text","$new8","contact-v3:correct")
+ check("contact:misgrouped",1)
 }
 
 func TestContaboContactRoutingSurvivesNetworkConfigUpgrade(t *testing.T){
