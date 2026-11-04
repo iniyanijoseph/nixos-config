@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -120,6 +121,46 @@ class Tests(unittest.TestCase):
         self.setup.apps = Mock(side_effect=RuntimeError('apps unavailable'))
         self.assertEqual(self.setup.after_email(), 2)
         self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
+
+    def test_completed_discord_native_import_is_never_replayed_on_setup_rerun(self):
+        directory = Path(self.tmp.name) / 'discord-native'
+        directory.mkdir()
+        snapshot, mapping = directory / 'archive.sqlite', directory / 'bridge.db'
+        with sqlite3.connect(snapshot) as db:
+            db.execute('CREATE TABLE channels (id TEXT,kind TEXT)')
+            db.execute("INSERT INTO channels VALUES ('123','dms')")
+        mapping.touch()
+        (finish.STATE / 'discord-pilot-verified.json').write_text('{"receiver":"456"}')
+        module = Mock()
+        module.STATE = finish.STATE
+        module.discord_pilot_verified.return_value = True
+        module.discord_coverage.return_value = (3, 3)
+        with patch.object(finish, 'DISCORD_NATIVE', directory), \\
+             patch.object(finish, 'load_script', return_value=module):
+            detail = finish.Setup.discord_native(self.setup)
+        self.assertIn('preserved', detail)
+        self.assertEqual(self.setup.results['Discord historical mapping coverage']['status'], 'done')
+        module.commission_discord.assert_not_called()
+        module.discord_coverage.assert_called_once_with(snapshot, mapping, ['123'], '456')
+
+    def test_unverified_discord_native_import_is_not_restarted(self):
+        directory = Path(self.tmp.name) / 'discord-native'
+        directory.mkdir()
+        snapshot, mapping = directory / 'archive.sqlite', directory / 'bridge.db'
+        with sqlite3.connect(snapshot) as db:
+            db.execute('CREATE TABLE channels (id TEXT,kind TEXT)')
+            db.execute("INSERT INTO channels VALUES ('123','dms')")
+        mapping.touch()
+        module = Mock()
+        module.STATE = finish.STATE
+        module.discord_pilot_verified.return_value = False
+        module.discord_coverage.return_value = (3, 1)
+        with patch.object(finish, 'DISCORD_NATIVE', directory), \\
+             patch.object(finish, 'load_script', return_value=module):
+            finish.Setup.discord_native(self.setup)
+        self.assertEqual(self.setup.results['Discord historical mapping coverage']['status'], 'blocked')
+        module.commission_discord.assert_not_called()
+        module.discord_coverage.assert_called_once_with(snapshot, mapping, ['123'], None)
 
     def test_audit_cannot_treat_partial_scan_as_success(self):
         text = ('Media files found: 100\nSample: 100\nExif inspected: 50\n'
