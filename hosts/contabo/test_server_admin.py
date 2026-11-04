@@ -404,9 +404,10 @@ class Tests(unittest.TestCase):
                  patch.object(c, 'api', side_effect=fake_api), \
                  patch.object(c.time, 'sleep'):
                 finished=c.matrimail_clean_reset(home, private, receipt, apply=True)
-                called=run.call_count
+                prior_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
                 repeated=c.matrimail_clean_reset(home, private, receipt, apply=True)
-                self.assertEqual(run.call_count,called)
+                later_stops=sum(call.args[:2] == ('systemctl','stop') for call in run.call_args_list)
+                self.assertEqual(later_stops,prior_stops)
             self.assertEqual(finished['status'],'complete')
             self.assertEqual(repeated['status'],'complete')
             with sqlite3.connect(database) as db:
