@@ -306,6 +306,19 @@ class Tests(unittest.TestCase):
             ambiguous = c.matrimail_v3_rebuild_status(home)
             self.assertFalse(ambiguous['ready'])
             self.assertEqual(ambiguous['blocked_rooms'], 1)
+            with sqlite3.connect(dbpath) as db:
+                db.execute("DELETE FROM portal WHERE id='contact-v3:shared'")
+            plan = c.matrimail_reset_plan(home)
+            self.assertEqual(len(plan['rooms']), 3)
+            self.assertEqual(c.matrimail_reset_clear_native(home, plan), 3)
+            with sqlite3.connect(dbpath) as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM user_login").fetchone()[0], 2)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM portal").fetchone()[0], 1)
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM message").fetchone()[0], 1)
+                self.assertEqual(db.execute("SELECT id FROM portal").fetchone()[0][0], 'thread:friend')
+            self.assertTrue((cpdir / ('reset-' + digest + '.pending')).exists())
+            self.assertFalse(scope.exists())
+            self.assertFalse(checkpoint.exists())
 
     def test_v3_duplicate_audit_only_flags_conflicts_within_new_rooms(self):
         import base64
