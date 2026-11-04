@@ -898,7 +898,10 @@ def matrimail_reset_clear_native(home, manifest):
     # The restarted bridge runs as the Matrimail account and must be able to
     # traverse and write this directory even if the reset created it first.
     account_home = Path(home).stat()
-    os.chown(base, account_home.st_uid, account_home.st_gid)
+    directory_info = base.stat()
+    if (directory_info.st_uid != account_home.st_uid
+            or directory_info.st_gid != account_home.st_gid):
+        os.chown(base, account_home.st_uid, account_home.st_gid)
     for account in manifest['accounts']:
         digest = hashlib.sha256(account['receiver'].encode()).hexdigest()
         scope_path = base / ('scope-' + digest + '.json')
