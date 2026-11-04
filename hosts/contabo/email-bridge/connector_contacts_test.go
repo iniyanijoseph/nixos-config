@@ -72,6 +72,25 @@ func TestContaboContactRoomPermissionsAndOwnership(t *testing.T){
  portal.Receiver=login.ID;portal.ID="unrelated-room";if contactRoomOwnedBy(portal,login){t.Fatal("arbitrary invite accepted")}
 }
 
+func TestContaboGroupReplyUsesLatestEmailNotEntireHistoricalParticipantSet(t *testing.T){
+ group:=&email.EmailThread{
+  Participants:[]string{"me@gmail.com","alice@example.com","bob@example.com"},
+  LastFrom:"alice@example.com",
+  LastTo:[]string{"me@gmail.com"},
+  LastCc:[]string{},
+ }
+ to,cc,err:=resolveReplyAllRecipients(group,[]string{"me@gmail.com"})
+ if err!=nil{t.Fatal(err)}
+ if len(to)!=1||to[0].Address!="alice@example.com"||len(cc)!=0{
+  t.Fatalf("reply-all should honor newest message's recipients, not historical group: to=%v cc=%v",to,cc)
+ }
+ group.LastCc=[]string{"bob@example.com"}
+ to,cc,err=resolveReplyAllRecipients(group,[]string{"me@gmail.com"})
+ if err!=nil||len(to)!=1||len(cc)!=1||cc[0].Address!="bob@example.com"{
+  t.Fatalf("reply-all must restore Bob only when he is CC'd on selected mail: to=%v cc=%v err=%v",to,cc,err)
+ }
+}
+
 func TestContaboGroupRoomMetadata(t *testing.T){
  ec:=&EmailConnector{}
  group:=email.ContactPortalID("alice@example.com,bob@example.com")
