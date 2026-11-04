@@ -120,7 +120,12 @@ func(c *Client)ContaboBackfill(ctx context.Context,mailboxes []string,days int,p
     var disk syscall.Statfs_t
     if err:=syscall.Statfs(".",&disk);err!=nil{return err}
     if uint64(disk.Bavail)*uint64(disk.Bsize)<5*1024*1024*1024{return fmt.Errorf("mail history paused: less than 5 GiB free")}
-    return worker.processMessageWith(ctx,worker.client,imaplib.UID(uid),mailbox,true)
+    if err:=worker.processMessageWith(ctx,worker.client,imaplib.UID(uid),mailbox,true);err!=nil{
+     // UID and mailbox identify the point of failure without logging headers,
+     // subjects, bodies, recipients, account passwords, or OAuth tokens.
+     return fmt.Errorf("email history stopped at mailbox %q UID %d: %w",mailbox,uid,err)
+    }
+    return nil
    },func(done,count int){if progress!=nil{progress(mailbox,done,count)}},500*time.Millisecond)
   total+=processed
   if err!=nil{return total,err}

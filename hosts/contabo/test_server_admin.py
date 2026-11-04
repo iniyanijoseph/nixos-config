@@ -140,6 +140,76 @@ class Tests(unittest.TestCase):
             with sqlite3.connect(db_path) as db:
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM message').fetchone()[0], 3)
 
+    def test_legacy_room_prune_is_owner_scoped_verified_and_preview_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / 'matrimail'
+            home.mkdir()
+            db_path = home / 'bridge.db'
+            config = home / 'config.yaml'
+            config.write_text('network:\n  contact_rooms: true\ndatabase:\n  uri: file:' +
+                              str(db_path) + '\n')
+            config.chmod(0o600)
+            cursors = home / 'contabo-backfill-contacts-v2'
+            cursors.mkdir()
+            cp = cursors / 'full.json'
+            cp.write_text(json.dumps({'waterline': 20, 'after': 20}))
+            cp.chmod(0o600)
+            with sqlite3.connect(db_path) as db:
+                db.execute('CREATE TABLE portal (bridge_id TEXT, id TEXT, receiver TEXT, mxid TEXT)')
+                db.execute('CREATE TABLE message (bridge_id TEXT, room_receiver TEXT, id TEXT, part_id TEXT, room_id TEXT, mxid TEXT)')
+                db.execute('CREATE TABLE user_login (bridge_id TEXT, user_mxid TEXT, id TEXT)')
+                db.execute('CREATE TABLE contabo_legacy_mail_retirement (bridge_id TEXT, receiver TEXT, portal_id TEXT)')
+                db.execute("INSERT INTO user_login VALUES ('mail', ?, 'email:mine')", (c.OWNER,))
+                db.execute("INSERT INTO user_login VALUES ('mail', '@friend:iniyanjoseph.com', 'email:friend')")
+                db.executemany('INSERT INTO portal VALUES (?,?,?,?)', [
+                    ('mail','thread:mine','email:mine','!old:iniyanjoseph.com'),
+                    ('mail','thread:friend','email:friend','!friend:iniyanjoseph.com'),
+                    ('mail','contact:alice','email:mine','!new:iniyanjoseph.com'),
+                ])
+                db.executemany('INSERT INTO message VALUES (?,?,?,?,?,?)', [
+                    ('mail','email:mine','email:old','text','thread:mine','$old'),
+                    ('mail','email:mine','contact-email:old','text','contact:alice','$new'),
+                    ('mail','email:friend','email:friend','text','thread:friend','$friendold'),
+                    ('mail','email:friend','contact-email:friend','text','contact:alice','$friendnew'),
+                ])
+                db.executemany('INSERT INTO contabo_legacy_mail_retirement VALUES (?,?,?)', [
+                    ('mail','email:mine','thread:mine'),
+                    ('mail','email:friend','thread:friend')
+                ])
+            self.assertEqual(c.matrimail_legacy_cleanup_candidates(home), ['!old:iniyanjoseph.com'])
+            private = root / 'private'
+            backup = root / 'backup.json'
+            with patch.object(c, 'api', side_effect=AssertionError('preview must never use Synapse')):
+                preview = c.prune_matrimail_legacy_rooms(home, private, backup_path=backup)
+            self.assertEqual(preview['eligible_not_submitted'], 1)
+            self.assertEqual(preview['next_batch'], ['!old:iniyanjoseph.com'])
+            with patch.object(c, 'admin_token', side_effect=AssertionError('no backup, no credential read')):
+                with self.assertRaisesRegex(RuntimeError, 'fresh, verified'):
+                    c.prune_matrimail_legacy_rooms(home, private, apply=True, backup_path=backup)
+            backup.write_text('{}')
+            requests = []
+            def api(path, token, body=None, method=None):
+                requests.append((path, token, body, method))
+                return {'delete_id': 'accepted-1'}
+            with patch.object(c, 'admin_token', return_value='admin-token'), patch.object(c, 'api', side_effect=api):
+                submitted = c.prune_matrimail_legacy_rooms(home, private, apply=True, backup_path=backup)
+                again = c.prune_matrimail_legacy_rooms(home, private, apply=True, backup_path=backup)
+            self.assertEqual(submitted['submitted'], ['!old:iniyanjoseph.com'])
+            self.assertEqual(again['submitted'], [])
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0][3], 'DELETE')
+            self.assertEqual(requests[0][2], {'block': True, 'purge': True})
+            self.assertNotIn('friend', str(submitted))
+            self.assertNotIn('!new', str(submitted))
+            cp.write_text(json.dumps({'waterline': 20, 'after': 19}))
+            cp.chmod(0o600)
+            with self.assertRaisesRegex(RuntimeError, 'checkpoint'):
+                c.matrimail_legacy_cleanup_candidates(home)
+            with sqlite3.connect(db_path) as db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM portal').fetchone()[0], 3)
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM message').fetchone()[0], 4)
+
     def test_mapping_proof_requires_both_recent_directions(self):
         events = [{'sender': c.OWNER, 'timestamp': '1000000'}, {'sender': '@other', 'timestamp': '999999'}]
         self.assertTrue(c.mapping_proof(events, now=1000, minutes=1)['recent_both_directions'])
