@@ -668,7 +668,17 @@ def matrimail_v3_rebuild_status(home=Path('/var/lib/matrimail')):
                 eligible.append(mxid)
     unique = len(set(eligible)) == len(eligible) and not set(eligible).intersection(
         {x[3] for x in blocked})
-    ready = bool(eligible and not blocked and unique
+    # An explicitly reset account has no old portals to retire: its complete
+    # full-history source scope and populated v3 rooms are the final condition.
+    # An outstanding reset marker prevents prematurely accepting a replay.
+    fresh = (not portals and duplicates['v3_rooms'] > 0)
+    if fresh:
+        for bridge_id, receiver in accounts:
+            digest = hashlib.sha256(receiver.encode()).hexdigest()
+            if (base / ('reset-' + digest + '.pending')).exists():
+                fresh = False
+                break
+    ready = bool((eligible or fresh) and not blocked and unique
                  and complete_accounts == len(accounts)
                  and duplicates['v3_conflicting_message_ids'] == 0
                  and duplicates['v3_shared_matrix_rooms'] == 0)
@@ -696,6 +706,9 @@ def matrimail_auto_rebuild_cleanup(home=Path('/var/lib/matrimail'),
     candidates = report.pop('_eligible_mxids', [])
     if not report['ready']:
         return {'status': 'deferred', **report}
+    if not candidates:
+        return {'status': 'complete', 'eligible_rooms': 0,
+                'reason': 'Fresh IMAP rebuild finished; no superseded rooms remain'}
     ledger_path = directory / 'matrimail-v3-deletion-ledger.json'
     ledger = json.loads(read_private(ledger_path)) if ledger_path.exists() else {}
     if not isinstance(ledger, dict):
