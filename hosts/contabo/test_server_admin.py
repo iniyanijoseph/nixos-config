@@ -105,8 +105,8 @@ class Tests(unittest.TestCase):
             root = Path(directory)
             config = root / 'config.yaml'
             db_path = root / 'matrimail.db'
-            config.write_text('network:\\n  contact_rooms: true\\ndatabase:\\n  uri: file:' +
-                              str(db_path) + '?_fk=1\\n')
+            config.write_text('network:\n  contact_rooms: true\ndatabase:\n  uri: file:' +
+                              str(db_path) + '?_fk=1\n')
             config.chmod(0o600)
             with sqlite3.connect(db_path) as db:
                 db.execute('CREATE TABLE portal (id TEXT, mxid TEXT)')
