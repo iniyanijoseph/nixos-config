@@ -32,6 +32,7 @@ class Tests(unittest.TestCase):
         self.setup.mail = Mock(return_value='mail fixture')
         self.setup.discord_native = Mock(return_value='discord fixture')
         self.setup.email_consolidation = Mock(return_value='email audit fixture')
+        self.setup.ensure_matrimail_contact_routing = Mock(return_value='contact routing ready')
         self.commission_env = patch.dict(os.environ, {'CONTABO_COMMISSION_SCRIPT': '/offline/mock-commission.py'})
         self.commission_env.start()
         self.addCleanup(self.commission_env.stop)
@@ -103,6 +104,59 @@ class Tests(unittest.TestCase):
         self.setup.photos.assert_not_called()
         self.setup.apps.assert_not_called()
         self.assertEqual(self.setup.results['Photo Files dates']['status'], 'deferred')
+        self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
+
+    def test_routing_repair_after_mail_switch_restarts_only_matrimail(self):
+        directory = Path(self.tmp.name) / 'matrimail'
+        directory.mkdir()
+        config = directory / 'config.yaml'
+        config.write_text('network:\\n  contact_rooms: false\\n')
+        (directory / '.contact-registration-loaded.json').write_text(
+            json.dumps({'sha256': 'loaded-appservice'}))
+        module = Mock()
+        def apply(home):
+            self.assertEqual(home, directory)
+            config.write_text('network:\\n  contact_rooms: true\\n')
+            return True, 'loaded-appservice'
+        module.enable_matrimail_contact_rooms.side_effect = apply
+        with patch.object(finish, 'MATRIMAIL_HOME', directory), \\
+             patch.object(finish, 'load_script', return_value=module), \\
+             patch.object(finish, 'command') as cmd:
+            result = finish.Setup.ensure_matrimail_contact_routing(self.setup)
+        self.assertIn('Re-enabled', result)
+        self.assertEqual(cmd.call_args_list[0].args[0],
+                         ['systemctl', 'restart', 'matrimail.service'])
+        self.assertEqual(cmd.call_args_list[1].args[0],
+                         ['systemctl', 'is-active', '--quiet', 'matrimail.service'])
+        self.assertEqual(cmd.call_count, 2)
+
+    def test_routing_repair_is_idempotent_and_preserves_registration_guard(self):
+        directory = Path(self.tmp.name) / 'matrimail'
+        directory.mkdir()
+        (directory / 'config.yaml').write_text('network:\\n  contact_rooms: true\\n')
+        marker = directory / '.contact-registration-loaded.json'
+        marker.write_text(json.dumps({'sha256': 'original'}))
+        module = Mock()
+        module.enable_matrimail_contact_rooms.return_value = False, 'original'
+        with patch.object(finish, 'MATRIMAIL_HOME', directory), \\
+             patch.object(finish, 'load_script', return_value=module), \\
+             patch.object(finish, 'command') as cmd:
+            self.assertIn('enabled', finish.Setup.ensure_matrimail_contact_routing(self.setup))
+            cmd.assert_not_called()
+            module.enable_matrimail_contact_rooms.return_value = True, 'unexpected-change'
+            with self.assertRaisesRegex(RuntimeError, 'registration changed'):
+                finish.Setup.ensure_matrimail_contact_routing(self.setup)
+            cmd.assert_not_called()
+
+    def test_duplicate_systemd_start_skips_without_running_setup(self):
+        # Activation of the timer and boot-resume unit during NixOS switch
+        # must not race the original worker through its nonblocking lock.
+        with patch.object(finish.os, 'geteuid', return_value=0), \\
+             patch.object(finish.os, 'uname', return_value=Mock(nodename='contabo')), \\
+             patch.object(finish.fcntl, 'flock', side_effect=BlockingIOError), \\
+             patch.object(finish, 'Setup', side_effect=AssertionError('must not run')), \\
+             patch.object(finish.sys, 'argv', ['contabo-finish-setup']):
+            self.assertEqual(finish.main(), 0)
         self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
 
     def test_email_audit_cannot_certify_unpopulated_contact_rooms(self):
