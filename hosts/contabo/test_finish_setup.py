@@ -116,7 +116,7 @@ class Tests(unittest.TestCase):
         module = Mock()
         def apply(home):
             self.assertEqual(home, directory)
-            config.write_text('network:\n  contact_rooms: true\n')
+            config.write_text('network:\n  contact_rooms: true\n  auto_join_rooms: true\n')
             return True, 'loaded-appservice'
         module.enable_matrimail_contact_rooms.side_effect = apply
         with patch.object(finish, 'MATRIMAIL_HOME', directory), \
