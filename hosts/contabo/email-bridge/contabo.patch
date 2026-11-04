@@ -58,7 +58,7 @@
 -	thread, err := ec.resolveThreadForPortalWithMetadata(msg.Portal)
 +	var thread *email.EmailThread
 +	var err error
-+	if ec.Main.Contacts != nil && strings.HasPrefix(string(msg.Portal.ID), "contact:") {
++	if ec.Main.Contacts != nil && strings.HasPrefix(string(msg.Portal.ID), "contact-v3:") {
 +		thread, err = ec.contactOutboundThread(ctx, msg)
 +	} else {
 +		thread, err = ec.resolveThreadForPortalWithMetadata(msg.Portal)
@@ -87,7 +87,7 @@
  	// ThreadManager TTL eviction (or a bridge restart) doesn't lose the
  	// References chain. Best-effort; failure is logged but not fatal — the
  	// in-memory cache is still good for at least 24h.
-+	if ec.Main.Contacts != nil && strings.HasPrefix(string(msg.Portal.ID), "contact:") {
++	if ec.Main.Contacts != nil && strings.HasPrefix(string(msg.Portal.ID), "contact-v3:") {
 +		return ec.recordContactSend(ctx, msg, thread, dedupKey), nil
 +	}
  	pm := &PortalMetadata{
@@ -242,7 +242,7 @@
  
  // GetChatInfo implements the bridgev2 interface for portal/room creation
  func (ec *EmailConnector) GetChatInfo(ctx context.Context, portal *bridgev2.Portal, userLogin *bridgev2.UserLogin, portalID networkid.PortalKey) (*bridgev2.ChatInfo, error) {
-+	if ec.Contacts != nil && strings.HasPrefix(string(portalID.ID), "contact:") { return ec.contactChatInfo(portalID.ID) }
++	if ec.Contacts != nil && strings.HasPrefix(string(portalID.ID), "contact-v3:") { return ec.contactChatInfo(portalID.ID) }
  	// Extract thread ID from portal ID
  	threadID := string(portalID.ID)
  	if len(threadID) > 7 && threadID[:7] == "thread:" {
