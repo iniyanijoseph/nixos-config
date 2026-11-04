@@ -26,8 +26,11 @@ nix run 'github:iniyanijoseph/nixos-config?dir=hosts/contabo#contabo-bridge-mana
 
 The launcher downloads the upstream 0.2.1 Linux x64 release with a pinned SHA256,
 runs its bundled Electron inside Nix's free Steam runtime, and opens SSH
-forwards to `wug@213.199.55.255`. The local listeners bind only to 127.0.0.1.
-You may be prompted to verify the server's host key or authenticate SSH.
+forwards through your existing `ssh contabo` host alias. The local listeners
+bind only to 127.0.0.1. The alias preserves its configured identity file
+(e.g. `~/.ssh/contabo`), host, and user. Verify `ssh contabo` succeeds before
+launching the manager; a key passphrase may be requested. If you use a different
+host alias, set `CONTABO_SSH_TARGET` to that alias when launching.
 The terminal and SSH tunnel stay open until you close the application.
 
 In the application, sign in to `https://matrix.iniyanjoseph.com` as
