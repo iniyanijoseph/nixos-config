@@ -445,6 +445,94 @@ def prune_matrimail_legacy_rooms(home=Path('/var/lib/matrimail'),
 
 
 
+def matrimail_v3_duplicate_counts(db):
+    """Sanitized, read-only v3 metrics. Old/v2-to-v3 copies are expected.
+
+    A native source Message-ID assigned to multiple v3 portals is *not*
+    expected and must block all automatic room purging. Do not disclose
+    email addresses, Message-IDs, room IDs, or email bodies in this report.
+    """
+    tables = {row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    if not {'portal', 'message', 'user_login'}.issubset(tables):
+        return {'v3_rooms': 0, 'v3_group_rooms': 0,
+                'v3_conflicting_message_ids': 0, 'v3_shared_matrix_rooms': 0,
+                'v3_native_parts': 0, 'v3_schema_available': False}
+    portals = db.execute("""
+        SELECT p.id,p.mxid FROM portal p JOIN user_login u
+          ON u.bridge_id=p.bridge_id AND u.id=p.receiver
+        WHERE u.user_mxid=? AND p.id LIKE 'contact-v3:%'
+          AND p.mxid IS NOT NULL AND p.mxid!=''
+    """, (OWNER,)).fetchall()
+    groups = 0
+    for portal_id, _ in portals:
+        try:
+            raw = portal_id.split(':', 1)[1]
+            from base64 import urlsafe_b64decode
+            contact = urlsafe_b64decode(
+                raw + '=' * ((-len(raw)) % 4)).decode('utf-8')
+            if ',' in contact:
+                groups += 1
+        except (ValueError, UnicodeError):
+            # An invalid contact key is also suspicious; make it visible
+            # as a potential group rather than exposing its raw contents.
+            groups += 1
+    conflicts = db.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT m.bridge_id,m.room_receiver,m.id
+            FROM message m JOIN user_login u
+              ON u.bridge_id=m.bridge_id AND u.id=m.room_receiver
+            WHERE u.user_mxid=? AND m.id LIKE 'contact-v3-email:%'
+              AND m.room_id LIKE 'contact-v3:%'
+              AND m.mxid IS NOT NULL AND m.mxid!=''
+              AND m.mxid NOT LIKE '~fake:%'
+            GROUP BY m.bridge_id,m.room_receiver,m.id
+            HAVING COUNT(DISTINCT m.room_id)>1
+        )
+    """, (OWNER,)).fetchone()[0]
+    shared_rooms = db.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT p.bridge_id,p.receiver,p.mxid
+            FROM portal p JOIN user_login u
+              ON u.bridge_id=p.bridge_id AND u.id=p.receiver
+            WHERE u.user_mxid=? AND p.id LIKE 'contact-v3:%'
+              AND p.mxid IS NOT NULL AND p.mxid!=''
+            GROUP BY p.bridge_id,p.receiver,p.mxid
+            HAVING COUNT(DISTINCT p.id)>1
+        )
+    """, (OWNER,)).fetchone()[0]
+    parts = db.execute("""
+        SELECT COUNT(*) FROM message m JOIN user_login u
+          ON u.bridge_id=m.bridge_id AND u.id=m.room_receiver
+        WHERE u.user_mxid=? AND m.id LIKE 'contact-v3-email:%'
+          AND m.room_id LIKE 'contact-v3:%'
+          AND m.mxid IS NOT NULL AND m.mxid!=''
+          AND m.mxid NOT LIKE '~fake:%'
+    """, (OWNER,)).fetchone()[0]
+    return {'v3_rooms': len(portals), 'v3_group_rooms': groups,
+            'v3_conflicting_message_ids': conflicts,
+            'v3_shared_matrix_rooms': shared_rooms,
+            'v3_native_parts': parts, 'v3_schema_available': True}
+
+
+def matrimail_v3_duplicate_audit(home=Path('/var/lib/matrimail')):
+    home = Path(home)
+    config = yaml.safe_load(read_private(home / 'config.yaml'))
+    uri = config.get('database', {}).get('uri', '')
+    if not isinstance(uri, str) or not uri.startswith('file:'):
+        raise RuntimeError('Expected a private Matrimail SQLite database URI')
+    path = Path(uri.split('?', 1)[0][5:])
+    if not path.is_absolute():
+        path = home / path
+    if not path.resolve().is_relative_to(home.resolve()) or not path.is_file():
+        raise RuntimeError('Matrimail database outside private directory')
+    with sqlite3.connect('file:' + str(path) + '?mode=ro', uri=True, timeout=10) as db:
+        counts = matrimail_v3_duplicate_counts(db)
+    return {**counts, 'note': ('Old rooms alongside new v3 rooms are expected during replacement; '
+                              'multiple v3 destinations for the same source Message-ID are not. '
+                              'Native mappings cannot detect orphan Matrix events.')}
+
+
 def matrimail_v3_rebuild_status(home=Path('/var/lib/matrimail')):
     """Read-only owner-scoped proof that source mail and old native parts
     have all been delivered into a *new* contact-v3: Matrix room.
@@ -469,10 +557,12 @@ def matrimail_v3_rebuild_status(home=Path('/var/lib/matrimail')):
     copied_parts_total = 0
     with sqlite3.connect('file:' + str(path) + '?mode=ro', uri=True, timeout=10) as db:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        duplicates = matrimail_v3_duplicate_counts(db)
         required = {'portal', 'message', 'user_login', 'contabo_mail_v3_retirement'}
         if not required.issubset(tables):
-            return {'ready': False, 'reason': 'v3 bridge tables or retirement markers missing',
-                    'eligible_rooms': 0, 'blocked_rooms': 0, 'complete_accounts': 0}
+            return {'ready': False, 'reason': 'v3 replay/retirement stage incomplete',
+                    'eligible_rooms': 0, 'blocked_rooms': 0, 'complete_accounts': 0,
+                    **duplicates}
         accounts = db.execute(
             'SELECT bridge_id,id FROM user_login WHERE user_mxid=?', (OWNER,)).fetchall()
         if not accounts:
@@ -577,11 +667,14 @@ def matrimail_v3_rebuild_status(home=Path('/var/lib/matrimail')):
                 eligible.append(mxid)
     unique = len(set(eligible)) == len(eligible) and not set(eligible).intersection(
         {x[3] for x in blocked})
-    ready = bool(eligible and not blocked and unique and complete_accounts == len(accounts))
+    ready = bool(eligible and not blocked and unique
+                 and complete_accounts == len(accounts)
+                 and duplicates['v3_conflicting_message_ids'] == 0
+                 and duplicates['v3_shared_matrix_rooms'] == 0)
     return {'ready': ready, 'eligible_rooms': len(eligible) if unique else 0,
             'blocked_rooms': len(blocked), 'complete_accounts': complete_accounts,
             'owner_accounts': len(accounts), 'old_parts': old_parts_total,
-            'verified_v3_parts': copied_parts_total,
+            'verified_v3_parts': copied_parts_total, **duplicates,
             'assessment': ('All owner-scoped old rooms can be retired after offsite backup'
                            if ready else 'Waiting for complete v3 source replay and exact native mapping parity'),
             '_eligible_mxids': eligible if unique else []}
@@ -714,6 +807,7 @@ def main():
     subs.add_parser('whatsapp-secret'); subs.add_parser('storage'); subs.add_parser('mail-consolidation')
     p = subs.add_parser('mail-prune-legacy'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=25)
     p = subs.add_parser('mail-auto-rebuild'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=10)
+    subs.add_parser('mail-duplicates')
     subs.add_parser('mail-admin-auth')
     subs.add_parser('configure-bridges')
     p = subs.add_parser('cleanup'); p.add_argument('--apply', action='store_true')
@@ -775,6 +869,8 @@ def main():
         print(json.dumps(prune_matrimail_legacy_rooms(apply=args.apply, limit=args.limit), indent=2))
     elif args.command == 'mail-auto-rebuild':
         print(json.dumps(matrimail_auto_rebuild_cleanup(apply=args.apply, limit=args.limit), indent=2))
+    elif args.command == 'mail-duplicates':
+        print(json.dumps(matrimail_v3_duplicate_audit(), indent=2))
     elif args.command == 'mail-admin-auth':
         admin_token()
         print('Matrix administrator session authenticated and cached privately for safe, unattended Matrimail room cleanup.')
