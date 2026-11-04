@@ -269,7 +269,13 @@ class Setup:
         if changed:
             command(['systemctl', 'restart', 'matrimail.service'])
             command(['systemctl', 'is-active', '--quiet', 'matrimail.service'])
-            return 'Re-enabled Matrimail contact routing and restarted only Matrimail; historical replay is asynchronous'
+            # Matrimail upgrades its YAML in LoadConfig(). Verify the file
+            # AFTER that upgrade, not merely after our own overlay write.
+            after = yaml.safe_load((MATRIMAIL_HOME / 'config.yaml').read_text())
+            network = after.get('network') or {}
+            if network.get('contact_rooms') is not True or network.get('auto_join_rooms') is not True:
+                raise RuntimeError('Matrimail discarded contact routing flags during startup config upgrade')
+            return 'Matrimail restarted and contact routing verified after its config upgrade; history replay is asynchronous'
         return 'Matrimail contact routing enabled; existing account and Matrix room state preserved'
 
     def email_consolidation(self):

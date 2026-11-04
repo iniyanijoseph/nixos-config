@@ -5,7 +5,11 @@ import(
  "database/sql"
  "path/filepath"
  "testing"
+ "os"
+ "strings"
 
+ up "go.mau.fi/util/configupgrade"
+ "gopkg.in/yaml.v3"
  _ "github.com/mattn/go-sqlite3"
 )
 
@@ -60,4 +64,26 @@ func TestContaboLegacyCoverageRequiresEveryPartInOwnerContactRoom(t *testing.T){
  check("thread:fourth",0)
  insert("owner","contact-email:fourth","attachment","$new8","contact:alice")
  check("thread:fourth",1)
+}
+
+func TestContaboContactRoutingSurvivesNetworkConfigUpgrade(t *testing.T){
+ ec:=&EmailConnector{}
+ example,_,networkUpgrader:=ec.GetConfig()
+ if !strings.Contains(example,"contact_rooms: false") ||
+    !strings.Contains(example,"auto_join_rooms: false"){
+  t.Fatal("Matrimail example config must advertise both migration flags")
+ }
+ path:=filepath.Join(t.TempDir(),"config.yaml")
+ if err:=os.WriteFile(path,[]byte("network:\n  contact_rooms: true\n  auto_join_rooms: true\n"),0600);err!=nil{t.Fatal(err)}
+ fullExample:="network:\n  "+strings.ReplaceAll(strings.TrimSuffix(example,"\n"),"\n","\n  ")+"\n"
+ upgrader:=up.MergeUpgraders(fullExample,&up.ProxyUpgrader{
+  Target:networkUpgrader,Prefix:[]string{"network"},
+ })
+ upgraded,_,err:=up.Do(path,false,upgrader)
+ if err!=nil{t.Fatal(err)}
+ var result struct{Network Config `yaml:"network"`}
+ if err=yaml.Unmarshal(upgraded,&result);err!=nil{t.Fatal(err)}
+ if !result.Network.ContactRooms||!result.Network.AutoJoinRooms{
+  t.Fatalf("Matrimail erased contact-room flags during config upgrade: %+v",result.Network)
+ }
 }
