@@ -32,6 +32,7 @@ class Tests(unittest.TestCase):
         self.setup.mail = Mock(return_value='mail fixture')
         self.setup.discord_native = Mock(return_value='discord fixture')
         self.setup.email_consolidation = Mock(return_value='email audit fixture')
+        self.setup.matrimail_cleanup = Mock(return_value='all old email rooms safely deleted')
         self.setup.ensure_matrimail_contact_routing = Mock(return_value='contact routing ready')
         self.commission_env = patch.dict(os.environ, {'CONTABO_COMMISSION_SCRIPT': '/offline/mock-commission.py'})
         self.commission_env.start()
@@ -89,6 +90,7 @@ class Tests(unittest.TestCase):
             setattr(self.setup,name,Mock(return_value='fixture'))
         self.setup.run()
         self.setup.email_consolidation.assert_called_once()
+        self.setup.matrimail_cleanup.assert_called_once()
         self.setup.photos.assert_called_once()
         self.assertEqual(self.setup.results['Photo Files dates']['status'], 'done')
         self.assertTrue((finish.STATE / 'photo-after-email-complete').is_file())
@@ -183,22 +185,18 @@ class Tests(unittest.TestCase):
         self.assertFalse((finish.STATE / 'photo-after-email-complete').exists())
 
     def test_email_audit_cannot_certify_unpopulated_contact_rooms(self):
-        # The old bridge may have lost its legacy portal mappings. Zero
-        # legacy rows is not evidence that the client's old rooms are gone.
-        report = {'contact_routing_enabled': True, 'bridge_logins': 1,
-                  'contact_rooms': 0, 'contact_message_parts': 0,
-                  'legacy_rooms': 0, 'legacy_message_parts': 0,
-                  'legacy_parts_with_contact_mappings': 0,
-                  'archived_legacy_rooms': 0}
+        # A v2 contact room is not proof of the new generation's history.
+        report = {'ready': False, 'eligible_rooms': 0, 'complete_accounts': 0,
+                  'old_parts': 4, 'verified_v3_parts': 0, 'reason': 'replay incomplete'}
         module = Mock()
-        module.mail_consolidation_status.return_value = report
+        module.matrimail_v3_rebuild_status.return_value = report
         with patch.dict(os.environ, {'CONTABO_ADMIN_SCRIPT': '/offline/admin.py'}), \
              patch.object(finish, 'load_script', return_value=module):
-            with self.assertRaisesRegex(RuntimeError, 'No populated contact'):
+            with self.assertRaisesRegex(RuntimeError, 'v3 full history'):
                 finish.Setup.email_consolidation(self.setup)
-            report['contact_rooms'] = 1
-            report['contact_message_parts'] = 1
-            self.assertIn('Contact-room audit passed', finish.Setup.email_consolidation(self.setup))
+            report.update({'ready': True, 'eligible_rooms': 1, 'complete_accounts': 1,
+                           'verified_v3_parts': 4})
+            self.assertIn('V3 history complete', finish.Setup.email_consolidation(self.setup))
         self.assertTrue((finish.STATE / 'mail-consolidation.json').is_file())
 
     def test_post_mail_retry_never_modifies_photos_before_verified_email(self):
@@ -217,6 +215,31 @@ class Tests(unittest.TestCase):
         self.assertTrue((finish.STATE / 'photo-after-email-complete').exists())
         self.assertEqual(self.setup.after_email(), 0)
         self.assertEqual(self.setup.photos.call_count, 1)
+
+    def test_post_mail_automatic_cleanup_blocks_photos_until_synapse_confirms(self):
+        self.setup.preflight = Mock(return_value='healthy')
+        self.setup.backup = Mock(return_value='backup')
+        self.setup.photos = Mock(return_value='photos')
+        self.setup.apps = Mock(return_value='apps')
+        self.setup.matrimail_cleanup.side_effect = RuntimeError('Synapse deletion still in progress')
+        self.assertEqual(self.setup.after_email(), 2)
+        self.setup.photos.assert_not_called()
+        self.setup.apps.assert_not_called()
+        self.assertEqual(self.setup.results['Matrimail automatic room cleanup']['status'], 'blocked')
+        self.setup.matrimail_cleanup.side_effect = None
+        self.assertEqual(self.setup.after_email(), 0)
+        self.setup.photos.assert_called_once()
+
+    def test_automatic_cleanup_requires_complete_synapse_deletion(self):
+        module = Mock()
+        module.matrimail_auto_rebuild_cleanup.return_value = {'status': 'in_progress'}
+        with patch.dict(os.environ, {'CONTABO_ADMIN_SCRIPT': '/offline/admin.py'}), \
+             patch.object(finish, 'load_script', return_value=module):
+            with self.assertRaisesRegex(RuntimeError, 'cleanup is pending'):
+                finish.Setup.matrimail_cleanup(self.setup)
+            module.matrimail_auto_rebuild_cleanup.assert_called_with(apply=True, limit=10)
+            module.matrimail_auto_rebuild_cleanup.return_value = {'status': 'complete', 'eligible_rooms': 2}
+            self.assertIn('completed Synapse deletion', finish.Setup.matrimail_cleanup(self.setup))
 
     def test_photo_stage_requires_app_checks_to_mark_complete(self):
         self.setup.preflight = Mock(return_value='healthy')
