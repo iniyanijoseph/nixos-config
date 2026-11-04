@@ -410,7 +410,8 @@ def matrimail_legacy_cleanup_candidates(home=Path('/var/lib/matrimail')):
 
 
 def prune_matrimail_legacy_rooms(home=Path('/var/lib/matrimail'),
-                                directory=PRIVATE, apply=False, limit=25):
+                                directory=PRIVATE, apply=False, limit=25,
+                                backup_path=Path('/var/lib/migration-queue/finish-setup/backup.json')):
     """Preview by default. Delete only archived native thread rooms after replay."""
     if limit < 1 or limit > 100:
         raise ValueError('Choose 1–100 rooms per run')
@@ -424,8 +425,7 @@ def prune_matrimail_legacy_rooms(home=Path('/var/lib/matrimail'),
                 'eligible_not_submitted': len(pending),
                 'next_batch': pending[:limit],
                 'warning': 'Deleting a room permanently purges its Matrix events; it does not alter source IMAP mail or the native bridge mapping database.'}
-    backup = Path('/var/lib/migration-queue/finish-setup/backup.json')
-    if not backup.is_file() or time.time() - backup.stat().st_mtime > 24*3600:
+    if not backup_path.is_file() or time.time() - backup_path.stat().st_mtime > 24*3600:
         raise RuntimeError('A fresh, verified offsite snapshot from the setup runner is required before deleting Matrix rooms')
     token = admin_token(directory)
     submitted = []
