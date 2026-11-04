@@ -96,7 +96,7 @@
         export PYTHONDONTWRITEBYTECODE=1
         export CONTABO_FINISH_SCRIPT="${./finish-setup.py}"
         ${pkgs.bash}/bin/bash -n ${./finish-setup.sh}
-        ${pkgs.python3}/bin/python3 ${./test_finish_setup.py}
+        ${pkgs.python3.withPackages (ps: [ ps.pyyaml ])}/bin/python3 ${./test_finish_setup.py}
         touch "$out"
       '';
 

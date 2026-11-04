@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import yaml
 import shutil
 import sqlite3
 import subprocess
@@ -15,6 +16,7 @@ import sys
 STATE = Path('/var/lib/migration-queue/finish-setup')
 OCC = '/run/current-system/sw/bin/nextcloud-occ'
 DISCORD_NATIVE = Path('/var/lib/mautrix-discord-native')
+MATRIMAIL_HOME = Path('/var/lib/matrimail')
 CORE = ('matrix-synapse', 'nginx', 'mautrix-whatsapp', 'postgresql')
 
 
@@ -241,6 +243,35 @@ class Setup:
         self.backup()
         return 'Discord service provisioned; import and live login require separate acceptance'
 
+    def ensure_matrimail_contact_routing(self):
+        """Restore and verify contact routing after all mail-service switches.
+
+        The initial commissioning applies this overlay before its NixOS
+        switches, but a later switch may leave a different live config.
+        Reapply only this bridge's non-secret settings, preserving tokens,
+        encrypted state and existing email accounts.
+        """
+        module = load_script('commission_integrations',
+                             os.environ['CONTABO_COMMISSION_SCRIPT'])
+        changed, registration_digest = module.enable_matrimail_contact_rooms(MATRIMAIL_HOME)
+        config = yaml.safe_load((MATRIMAIL_HOME / 'config.yaml').read_text())
+        if config.get('network', {}).get('contact_rooms') is not True:
+            raise RuntimeError('Matrimail contact routing is disabled after applying pinned settings')
+        # An appservice namespace update requires Synapse reload. The
+        # earlier commission() step must handle it before any bridge restart.
+        marker = MATRIMAIL_HOME / '.contact-registration-loaded.json'
+        try:
+            loaded = json.loads(marker.read_text()).get('sha256')
+        except (OSError, ValueError):
+            loaded = None
+        if loaded != registration_digest:
+            raise RuntimeError('Matrimail registration changed after Synapse reload; rerun messaging commissioning')
+        if changed:
+            command(['systemctl', 'restart', 'matrimail.service'])
+            command(['systemctl', 'is-active', '--quiet', 'matrimail.service'])
+            return 'Re-enabled Matrimail contact routing and restarted only Matrimail; historical replay is asynchronous'
+        return 'Matrimail contact routing enabled; existing account and Matrix room state preserved'
+
     def email_consolidation(self):
         """Require verifiable contact-room history before automatic photo work.
 
@@ -283,6 +314,10 @@ class Setup:
             return 0
         if not self.step('Post-mail preflight', self.preflight):
             return 2
+        if not self.step('Matrimail contact routing', self.ensure_matrimail_contact_routing):
+            self.record('Photo Files dates', 'deferred',
+                        'Waiting for valid Matrimail contact routing; Discord login is not the blocker')
+            return 2
         if not self.step('Email consolidation', self.email_consolidation):
             self.record('Photo Files dates', 'deferred',
                         'Waiting for verified email contact-room mappings; Discord login is not the blocker')
@@ -306,8 +341,14 @@ class Setup:
             # reconfiguration or expensive archive walk before the mail audit.
             messaging_ok = self.step('Messaging service deployment', self.integrations)
             if messaging_ok:
-                self.step('Mail service deployment', self.mail)
-                email_ok = self.step('Email consolidation', self.email_consolidation)
+                mail_ok = self.step('Mail service deployment', self.mail)
+                routing_ok = (self.step('Matrimail contact routing', self.ensure_matrimail_contact_routing)
+                              if mail_ok else False)
+                email_ok = (self.step('Email consolidation', self.email_consolidation)
+                            if routing_ok else False)
+                if not mail_ok or not routing_ok:
+                    self.record('Email consolidation', 'blocked',
+                                'Mail deployment or Matrimail routing did not complete')
             else:
                 email_ok = False
                 self.record('Email consolidation', 'blocked', 'Messaging deployment did not complete')
@@ -359,9 +400,12 @@ def main():
         except BlockingIOError:
             # An already-running commissioning worker owns the host. The
             # timer retries later; never overlap private data migrations.
-            if len(sys.argv) > 1 and sys.argv[1] == '--after-email':
-                return 0
-            raise
+            # A new NixOS generation can start the boot-resume unit while
+            # this very worker is switching that generation. Treat the
+            # duplicate invocation as a no-op, not an unhandled traceback.
+            # The primary worker retains the lock and writes real results.
+            print('Another Contabo commissioning worker is already active; duplicate start skipped', flush=True)
+            return 0
         if len(sys.argv) > 1 and sys.argv[1] == '--after-email':
             return Setup().after_email()
         if len(sys.argv) > 1:
