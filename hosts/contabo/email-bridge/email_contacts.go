@@ -72,6 +72,16 @@ func gmailOwnerKey(value string)string{
  return strings.ReplaceAll(local,".","")+"@gmail.com"
 }
 
+func IsOwnContactAddress(raw string,selves []string)bool{
+ addr:=canonicalContactAddress(raw)
+ if addr==""{return false}
+ key:=gmailOwnerKey(addr)
+ for _,self:=range selves{
+  if own:=canonicalContactAddress(self);own!=""&&gmailOwnerKey(own)==key{return true}
+ }
+ return false
+}
+
 // A direct exchange maps to one contact room; a reply-all exchange maps to
 // a group room named by the sorted external participants. Exclude all of the
 // owner's configured addresses/aliases, preserve plus-tags, and never use the
