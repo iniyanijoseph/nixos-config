@@ -159,7 +159,7 @@
  	// Top-level blocks to match example-config.yaml structure
  	IMAP       IMAPConfig       `yaml:"imap"`
  	Logging    LoggingConfig    `yaml:"logging"`
-@@ -144,6 +146,10 @@ func upgradeConfig(helper up.Helper) {
+@@ -145,5 +147,9 @@ func upgradeConfig(helper up.Helper) {
  	// Copy all keys that exist in the embedded example (pkg/connector/example-config.yaml)
  	
 +	// Keep these opt-in contact routing flags through config upgrades.
