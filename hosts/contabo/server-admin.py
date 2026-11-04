@@ -358,6 +358,91 @@ def mail_consolidation_status(home=Path('/var/lib/matrimail')):
     }
 
 
+
+def matrimail_legacy_cleanup_candidates(home=Path('/var/lib/matrimail')):
+    """Only owner-scoped, verified retired *thread:* portals qualify.
+
+    No contact room, non-Matrimail room, or unverified history can appear in
+    this list. Do not rewrite the bridge database: native mapping evidence
+    remains available after Synapse deletes the former Matrix room.
+    """
+    home = Path(home)
+    report = mail_consolidation_status(home)
+    if (not report['contact_routing_enabled'] or not report['contact_rooms']
+            or report['legacy_message_parts'] == 0
+            or report['legacy_parts_with_contact_mappings'] != report['legacy_message_parts']
+            or report['archived_legacy_rooms'] < report['legacy_rooms']):
+        raise RuntimeError('Legacy Matrimail cleanup blocked: verified replacement rooms and complete native mappings required')
+    checkpoints = list((home / 'contabo-backfill-contacts-v2').glob('*.json'))
+    if not checkpoints:
+        raise RuntimeError('Legacy Matrimail cleanup blocked: no historical IMAP checkpoints')
+    for path in checkpoints:
+        checkpoint = json.loads(read_private(path))
+        if checkpoint.get('after', -1) < checkpoint.get('waterline', 0):
+            raise RuntimeError('Legacy Matrimail cleanup blocked: an IMAP history checkpoint has not completed')
+
+    config = yaml.safe_load(read_private(home / 'config.yaml'))
+    uri = config['database']['uri']
+    if not isinstance(uri, str) or not uri.startswith('file:'):
+        raise RuntimeError('Unexpected Matrimail SQLite URI')
+    db_path = Path(uri.split('?', 1)[0][5:])
+    if not db_path.is_absolute():
+        db_path = home / db_path
+    if not db_path.resolve().is_relative_to(home.resolve()):
+        raise RuntimeError('Matrimail database is outside its private directory')
+    with sqlite3.connect('file:' + str(db_path) + '?mode=ro', uri=True, timeout=5) as db:
+        rows = db.execute("""
+            SELECT p.mxid FROM portal p
+            JOIN user_login u ON u.bridge_id=p.bridge_id AND u.id=p.receiver
+            JOIN contabo_legacy_mail_retirement r ON r.bridge_id=p.bridge_id
+                AND r.receiver=p.receiver AND r.portal_id=p.id
+            WHERE u.user_mxid=? AND p.id LIKE 'thread:%'
+                AND p.mxid IS NOT NULL AND p.mxid!=''
+            ORDER BY p.mxid
+        """, (OWNER,)).fetchall()
+    room_ids = [row[0] for row in rows]
+    if len(room_ids) != len(set(room_ids)):
+        raise RuntimeError('Duplicate native Matrimail room identifiers; refusing cleanup')
+    for room_id in room_ids:
+        if not isinstance(room_id, str) or not room_id.startswith('!') or not room_id.endswith(':iniyanjoseph.com'):
+            raise RuntimeError('Unexpected/nonlocal Matrimail room; refusing cleanup')
+    return room_ids
+
+
+def prune_matrimail_legacy_rooms(home=Path('/var/lib/matrimail'),
+                                directory=PRIVATE, apply=False, limit=25):
+    """Preview by default. Delete only archived native thread rooms after replay."""
+    if limit < 1 or limit > 100:
+        raise ValueError('Choose 1–100 rooms per run')
+    candidates = matrimail_legacy_cleanup_candidates(home)
+    ledger_path = directory / 'matrimail-legacy-room-deletions.json'
+    ledger = json.loads(read_private(ledger_path)) if ledger_path.exists() else {}
+    pending = [room for room in candidates if room not in ledger]
+    if not apply:
+        return {'mode': 'preview', 'verified_legacy_rooms': len(candidates),
+                'previously_submitted': len(candidates)-len(pending),
+                'eligible_not_submitted': len(pending),
+                'next_batch': pending[:limit],
+                'warning': 'Deleting a room permanently purges its Matrix events; it does not alter source IMAP mail or the native bridge mapping database.'}
+    backup = Path('/var/lib/migration-queue/finish-setup/backup.json')
+    if not backup.is_file() or time.time() - backup.stat().st_mtime > 24*3600:
+        raise RuntimeError('A fresh, verified offsite snapshot from the setup runner is required before deleting Matrix rooms')
+    token = admin_token(directory)
+    submitted = []
+    for room_id in pending[:limit]:
+        result = api('/_synapse/admin/v2/rooms/' + quote(room_id, safe=''),
+                     token, body={'block': True, 'purge': True}, method='DELETE')
+        delete_id = result.get('delete_id')
+        if not isinstance(delete_id, str) or not delete_id:
+            raise RuntimeError('Synapse did not acknowledge a room deletion; subsequent rooms were left alone')
+        ledger[room_id] = {'delete_id': delete_id, 'submitted_at': datetime.now(timezone.utc).isoformat()}
+        atomic_private(ledger_path, json.dumps(ledger, indent=2))
+        submitted.append(room_id)
+    return {'mode': 'submitted', 'submitted': submitted,
+            'remaining': len(pending)-len(submitted),
+            'note': 'Synapse deletes asynchronously. These deletion requests were accepted; verify their status before describing the rooms as removed.'}
+
+
 def storage_audit():
     for args in (['df', '-h', '/'], ['du', '-xhd1', '/var/lib'], ['du', '-xhd1', '/nix'], ['journalctl', '--disk-usage']):
         subprocess.run(args, check=True)
@@ -412,6 +497,7 @@ def main():
     p = subs.add_parser('stats'); p.add_argument('--days', type=int, default=90); p.add_argument('--room'); p.add_argument('--timezone', default='America/New_York')
     p = subs.add_parser('bridges'); p.add_argument('--network', choices=BRIDGES); p.add_argument('--core', action='store_true'); p.add_argument('--record', action='store_true'); p.add_argument('--room'); p.add_argument('--minutes', type=int, default=30)
     subs.add_parser('whatsapp-secret'); subs.add_parser('storage'); subs.add_parser('mail-consolidation')
+    p = subs.add_parser('mail-prune-legacy'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=25)
     subs.add_parser('configure-bridges')
     p = subs.add_parser('cleanup'); p.add_argument('--apply', action='store_true')
     p = subs.add_parser('serve'); p.add_argument('--port', type=int, default=8766)
@@ -464,6 +550,8 @@ def main():
         storage_audit()
     elif args.command == 'mail-consolidation':
         print(json.dumps(mail_consolidation_status(), indent=2))
+    elif args.command == 'mail-prune-legacy':
+        print(json.dumps(prune_matrimail_legacy_rooms(apply=args.apply, limit=args.limit), indent=2))
     elif args.command == 'cleanup':
         cleanup(args.apply)
     elif args.command == 'serve':
