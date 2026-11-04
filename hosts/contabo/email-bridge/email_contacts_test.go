@@ -137,6 +137,68 @@ func TestContaboGroupConversationStaysInOneRoomAcrossReplyAll(t *testing.T){
  if err!=nil||message.PortalKey.ID!=ContactPortalID("alice@example.com"){t.Fatalf("independent direct conversation incorrectly merged: %#v %v",message,err)}
 }
 
+// A restarted IMAP replay can see the same RFC conversation with a different
+// inferred thread ID or narrower To/Cc list. Persisted ancestry must win.
+func TestContaboPersistentReplyAncestryPreventsGroupFragmentation(t *testing.T){
+ ctx:=context.Background()
+ db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"group-replies.db"));if err!=nil{t.Fatal(err)}
+ defer db.Close()
+ store,err:=NewContactStore(ctx,db,"mail");if err!=nil{t.Fatal(err)}
+ log:=zerolog.Nop()
+ login:=&bridgev2.UserLogin{UserLogin:&database.UserLogin{ID:networkid.UserLoginID("email:me@gmail.com")}}
+ proc:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ proc.Contacts=store
+ first,err:=proc.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"root",From:"alice@example.com",
+  To:[]string{"me@gmail.com","bob@example.com"},
+  Subject:"Three-person research",Date:time.Unix(100,0),
+ },login,"INBOX")
+ if err!=nil{t.Fatal(err)}
+ // Simulate cache loss and a reply-only-to-sender that does not mention Bob.
+ proc2:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ proc2.Contacts=store
+ second,err:=proc2.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"reply-narrow",InReplyTo:"root",References:[]string{"root"},
+  From:"alice@example.com",To:[]string{"me+archive@gmail.com"},
+  Subject:"Re: Three-person research",Date:time.Unix(101,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if second.PortalKey!=first.PortalKey||second.ContactRoot!=first.ContactRoot{
+  t.Fatalf("lost group room across cache eviction or CC removal: %#v vs %#v",first.PortalKey,second.PortalKey)
+ }
+ // A third reply with a missing immediate parent can still follow References.
+ proc3:=NewProcessor(&log,NewThreadManager(nil),true,"test")
+ proc3.Contacts=store
+ third,err:=proc3.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"reply-grandparent",InReplyTo:"missing-parent",
+  References:[]string{"root","missing-parent"},
+  From:"bob@example.com",To:[]string{"me@gmail.com"},
+  Subject:"Re: Three-person research",Date:time.Unix(102,0),
+ },login,"[Gmail]/All Mail")
+ if err!=nil{t.Fatal(err)}
+ if third.PortalKey!=first.PortalKey||third.ContactRoot!=first.ContactRoot{
+  t.Fatalf("grandparent reference failed to preserve group room: %#v",third.PortalKey)
+ }
+ // Identical subject and one overlapping participant do not justify merging.
+ independent,err:=proc3.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"independent",From:"alice@example.com",To:[]string{"me@gmail.com"},
+  Subject:"Three-person research",Date:time.Unix(103,0),
+ },login,"INBOX")
+ if err!=nil{t.Fatal(err)}
+ if independent.PortalKey.ID!=ContactPortalID("alice@example.com"){
+  t.Fatal("unrelated direct mail was absorbed into a group")
+ }
+ another,err:=proc3.ProcessParsedEmail(ctx,&ParsedEmail{
+  MessageID:"independent-group",From:"alice@example.com",
+  To:[]string{"me@gmail.com","carol@example.com"},
+  Subject:"Three-person research",Date:time.Unix(104,0),
+ },login,"INBOX")
+ if err!=nil{t.Fatal(err)}
+ if another.PortalKey.ID!=ContactPortalID("alice@example.com,carol@example.com"){
+  t.Fatal("unrelated group was merged based on subject/contact overlap")
+ }
+}
+
 func TestContaboAddresslessHistoryKeepsAnExistingChain(t *testing.T){
  ctx:=context.Background()
  db,err:=sql.Open("sqlite3",filepath.Join(t.TempDir(),"addressless.db"));if err!=nil{t.Fatal(err)}
