@@ -1,7 +1,8 @@
 package email
 
-// Contact rooms use their own namespace so retained mail can be copied from
-// legacy per-subject rooms without deleting events or rewriting native mappings.
+// Version 3 uses new native room/message IDs and chain tables. This allows a
+// complete side-by-side replay into correctly grouped rooms while old thread:
+// and contact: Matrix rooms remain readable until strictly verified for removal.
 import (
  "context"
  "database/sql"
@@ -29,11 +30,11 @@ func NewContactStore(ctx context.Context, db *sql.DB, bridgeID string)(*ContactS
  if db==nil{return nil,fmt.Errorf("contact email database is unavailable")}
  s:=&ContactStore{DB:db,BridgeID:bridgeID}
  for _,query:=range []string{
-  `CREATE TABLE IF NOT EXISTS contabo_email_chain (
+  `CREATE TABLE IF NOT EXISTS contabo_email_chain_v3 (
    bridge_id TEXT NOT NULL, receiver TEXT NOT NULL, thread_id TEXT NOT NULL,
    contact TEXT NOT NULL, root_id TEXT NOT NULL, updated BIGINT NOT NULL, data TEXT NOT NULL,
    PRIMARY KEY (bridge_id,receiver,thread_id))`,
-  `CREATE TABLE IF NOT EXISTS contabo_email_message (
+  `CREATE TABLE IF NOT EXISTS contabo_email_message_v3 (
    bridge_id TEXT NOT NULL, receiver TEXT NOT NULL, message_id TEXT NOT NULL,
    thread_id TEXT NOT NULL, data TEXT NOT NULL,
    PRIMARY KEY (bridge_id,receiver,message_id))`,
@@ -41,17 +42,17 @@ func NewContactStore(ctx context.Context, db *sql.DB, bridgeID string)(*ContactS
  return s,nil
 }
 
-func ContactMessageID(raw string) networkid.MessageID {return networkid.MessageID("contact-email:"+RawEmailMessageID(raw))}
+func ContactMessageID(raw string) networkid.MessageID {return networkid.MessageID("contact-v3-email:"+RawEmailMessageID(raw))}
 func RawEmailMessageID(raw string) string {
- for _,prefix:=range []string{"contact-email:","email:"}{if strings.HasPrefix(raw,prefix){return strings.TrimPrefix(raw,prefix)}}
+ for _,prefix:=range []string{"contact-v3-email:","contact-email:","email:"}{if strings.HasPrefix(raw,prefix){return strings.TrimPrefix(raw,prefix)}}
  return strings.Trim(raw,"<>")
 }
 func ContactPortalID(contact string) networkid.PortalID {
- return networkid.PortalID("contact:"+base64.RawURLEncoding.EncodeToString([]byte(contact)))
+ return networkid.PortalID("contact-v3:"+base64.RawURLEncoding.EncodeToString([]byte(contact)))
 }
 func ContactFromPortal(portal networkid.PortalID)(string,error){
- if !strings.HasPrefix(string(portal),"contact:"){return "",fmt.Errorf("not a contact room")}
- decoded,err:=base64.RawURLEncoding.DecodeString(strings.TrimPrefix(string(portal),"contact:"))
+ if !strings.HasPrefix(string(portal),"contact-v3:"){return "",fmt.Errorf("not a contact room")}
+ decoded,err:=base64.RawURLEncoding.DecodeString(strings.TrimPrefix(string(portal),"contact-v3:"))
  if err!=nil||len(decoded)==0{return "",fmt.Errorf("invalid contact room")}
  return string(decoded),nil
 }
@@ -85,13 +86,13 @@ func ContactForEmail(parsed *ParsedEmail,selves []string)(string,error){
 
 func(s *ContactStore)GetChain(ctx context.Context,receiver,threadID string)(*ContactChain,error){
  var data string
- err:=s.DB.QueryRowContext(ctx,`SELECT data FROM contabo_email_chain WHERE bridge_id=$1 AND receiver=$2 AND thread_id=$3`,s.BridgeID,receiver,threadID).Scan(&data)
+ err:=s.DB.QueryRowContext(ctx,`SELECT data FROM contabo_email_chain_v3 WHERE bridge_id=$1 AND receiver=$2 AND thread_id=$3`,s.BridgeID,receiver,threadID).Scan(&data)
  if errors.Is(err,sql.ErrNoRows){return nil,nil};if err!=nil{return nil,err}
  var chain ContactChain;if err=json.Unmarshal([]byte(data),&chain);err!=nil{return nil,err};return &chain,nil
 }
 func(s *ContactStore)GetMessage(ctx context.Context,receiver,messageID string)(*ContactChain,error){
  var data string
- err:=s.DB.QueryRowContext(ctx,`SELECT data FROM contabo_email_message WHERE bridge_id=$1 AND receiver=$2 AND message_id=$3`,s.BridgeID,receiver,RawEmailMessageID(messageID)).Scan(&data)
+ err:=s.DB.QueryRowContext(ctx,`SELECT data FROM contabo_email_message_v3 WHERE bridge_id=$1 AND receiver=$2 AND message_id=$3`,s.BridgeID,receiver,RawEmailMessageID(messageID)).Scan(&data)
  if errors.Is(err,sql.ErrNoRows){return nil,nil};if err!=nil{return nil,err}
  var chain ContactChain;if err=json.Unmarshal([]byte(data),&chain);err!=nil{return nil,err};return &chain,nil
 }
@@ -109,16 +110,16 @@ func(s *ContactStore)Record(ctx context.Context,receiver string,thread *EmailThr
  tx,err:=s.DB.BeginTx(ctx,nil);if err!=nil{return nil,err};defer tx.Rollback()
  chain:=ContactChain{Contact:contact,RootID:ContactMessageID(messageID),Thread:thread}
  var oldContact,oldRoot string
- err=tx.QueryRowContext(ctx,`SELECT contact,root_id FROM contabo_email_chain WHERE bridge_id=$1 AND receiver=$2 AND thread_id=$3`,s.BridgeID,receiver,thread.ThreadID).Scan(&oldContact,&oldRoot)
+ err=tx.QueryRowContext(ctx,`SELECT contact,root_id FROM contabo_email_chain_v3 WHERE bridge_id=$1 AND receiver=$2 AND thread_id=$3`,s.BridgeID,receiver,thread.ThreadID).Scan(&oldContact,&oldRoot)
  if err==nil{chain.Contact=oldContact;chain.RootID=networkid.MessageID(oldRoot)}else if !errors.Is(err,sql.ErrNoRows){return nil,err}
  if chain.Contact==""{return nil,fmt.Errorf("email chain has no contact")}
  data,err:=json.Marshal(chain);if err!=nil{return nil,err}
- _,err=tx.ExecContext(ctx,`INSERT INTO contabo_email_chain (bridge_id,receiver,thread_id,contact,root_id,updated,data)
+ _,err=tx.ExecContext(ctx,`INSERT INTO contabo_email_chain_v3 (bridge_id,receiver,thread_id,contact,root_id,updated,data)
  VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (bridge_id,receiver,thread_id) DO UPDATE SET
- updated=excluded.updated,data=excluded.data WHERE excluded.updated>=contabo_email_chain.updated`,
+ updated=excluded.updated,data=excluded.data WHERE excluded.updated>=contabo_email_chain_v3.updated`,
  s.BridgeID,receiver,thread.ThreadID,chain.Contact,string(chain.RootID),observed.UnixNano(),string(data))
  if err!=nil{return nil,err}
- _,err=tx.ExecContext(ctx,`INSERT INTO contabo_email_message (bridge_id,receiver,message_id,thread_id,data)
+ _,err=tx.ExecContext(ctx,`INSERT INTO contabo_email_message_v3 (bridge_id,receiver,message_id,thread_id,data)
  VALUES ($1,$2,$3,$4,$5) ON CONFLICT (bridge_id,receiver,message_id) DO NOTHING`,
  s.BridgeID,receiver,RawEmailMessageID(messageID),thread.ThreadID,string(data))
  if err!=nil{return nil,err};if err=tx.Commit();err!=nil{return nil,err}
