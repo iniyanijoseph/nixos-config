@@ -134,19 +134,19 @@ class Tests(unittest.TestCase):
         directory = Path(self.tmp.name) / 'matrimail'
         directory.mkdir()
         config = directory / 'config.yaml'
-        config.write_text('network:\\n  contact_rooms: false\\n')
+        config.write_text('network:\n  contact_rooms: false\n')
         (directory / '.contact-registration-loaded.json').write_text(
             json.dumps({'sha256': 'original'}))
         module = Mock()
         def apply(home):
             self.assertEqual(home, directory)
-            config.write_text('network:\\n  contact_rooms: true\\n  auto_join_rooms: true\\n')
+            config.write_text('network:\n  contact_rooms: true\n  auto_join_rooms: true\n')
             return True, 'original'
         module.enable_matrimail_contact_rooms.side_effect = apply
         def invoke(args, **kw):
             if args == ['systemctl', 'restart', 'matrimail.service']:
                 # Simulate the former binary's upgrade stripping unknown keys.
-                config.write_text('network:\\n  imap: {}\\n')
+                config.write_text('network:\n  imap: {}\n')
         with patch.object(finish, 'MATRIMAIL_HOME', directory), \
              patch.object(finish, 'load_script', return_value=module), \
              patch.object(finish, 'command', side_effect=invoke):
