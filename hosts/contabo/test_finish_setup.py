@@ -32,6 +32,9 @@ class Tests(unittest.TestCase):
         self.setup.mail = Mock(return_value='mail fixture')
         self.setup.discord_native = Mock(return_value='discord fixture')
         self.setup.email_consolidation = Mock(return_value='email audit fixture')
+        self.commission_env = patch.dict(os.environ, {'CONTABO_COMMISSION_SCRIPT': '/offline/mock-commission.py'})
+        self.commission_env.start()
+        self.addCleanup(self.commission_env.stop)
 
     def test_failed_backup_never_changes_apps_or_photos(self):
         self.setup.preflight = Mock(return_value='healthy')
