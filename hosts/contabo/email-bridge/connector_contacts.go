@@ -122,8 +122,11 @@ func fnContactCompose(ce *commands.Event,ec *EmailConnector){
 }
 
 func contactRoomOwnedBy(portal *bridgev2.Portal,login *bridgev2.UserLogin)bool{
+ // Only current-generation rooms receive background permission/join repairs.
+ // Old native portals remain in the DB as historical evidence after Synapse
+ // deletion; never recreate or repeatedly touch those obsolete Matrix rooms.
  return portal!=nil&&login!=nil&&portal.MXID!=""&&portal.Receiver==login.ID&&
-  (strings.HasPrefix(string(portal.ID),"thread:")||strings.HasPrefix(string(portal.ID),"contact:")||strings.HasPrefix(string(portal.ID),"contact-v3:"))
+  strings.HasPrefix(string(portal.ID),"contact-v3:")
 }
 
 // Repair only this bridge's own native portals. Existing pending invitations
