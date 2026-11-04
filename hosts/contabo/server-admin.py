@@ -920,7 +920,8 @@ def matrimail_reset_clear_native(home, manifest):
 
 def matrimail_clean_reset(home=Path('/var/lib/matrimail'), directory=PRIVATE,
                          backup_receipt=Path('/var/lib/migration-queue/finish-setup/backup.json'),
-                         apply=False, batch_size=10):
+                         apply=False, batch_size=10,
+                         worker_lock=Path('/var/lib/migration-queue/finish-setup/worker.lock')):
     """One-time, resumable removal of owner Matrimail conversation rooms.
     This intentionally does NOT require v3 parity with obsolete Matrix rooms:
     the user elected to discard them and reconstruct from source IMAP instead.
@@ -949,8 +950,16 @@ def matrimail_clean_reset(home=Path('/var/lib/matrimail'), directory=PRIVATE,
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     lockfd = os.open(directory / 'matrimail-clean-reset.lock',
                      os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    workerfd = None
     try:
         fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # The existing setup runner and its post-mail timer use this same
+        # lock. Hold it throughout the reset to prevent a concurrent
+        # integration switch or a restarted Matrimail service.
+        worker_lock = Path(worker_lock)
+        worker_lock.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        workerfd = os.open(worker_lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        fcntl.flock(workerfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if subprocess.run(['systemctl', 'is-active', '--quiet',
                            'contabo-finish-setup.service']).returncode == 0:
             raise RuntimeError('Finish-setup is currently active; do not race a NixOS switch')
@@ -1045,6 +1054,8 @@ def matrimail_clean_reset(home=Path('/var/lib/matrimail'), directory=PRIVATE,
                 'account_logins_preserved': len(plan['accounts']),
                 'next': 'Matrimail will reconstruct only fresh v3 conversation rooms from IMAP'}
     finally:
+        if workerfd is not None:
+            os.close(workerfd)
         os.close(lockfd)
 
 
