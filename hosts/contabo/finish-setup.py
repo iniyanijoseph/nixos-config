@@ -236,7 +236,7 @@ class Setup:
             raise RuntimeError('Private Matrimail audit script is not configured')
         admin = load_script('contabo_mail_admin', script)
         report = admin.mail_consolidation_status()
-        atomic(STATE / 'mail-consolidation.json', json.dumps(report, indent=2) + '\\n')
+        atomic(STATE / 'mail-consolidation.json', json.dumps(report, indent=2) + '\n')
         if not report.get('contact_routing_enabled'):
             raise RuntimeError('Contact-based email routing is not enabled')
         if not report.get('bridge_logins'):
@@ -270,11 +270,11 @@ class Setup:
             return 2
         if not self.step('Post-mail offsite backup', self.backup):
             return 2
-        ok = self.step('Photo Files dates', self.photos)
-        self.step('Nextcloud apps', self.apps)
-        if ok:
-            atomic(STATE / 'photo-after-email-complete', 'Photo stage completed after email audit\\n')
-        return 0 if ok else 2
+        photos_ok = self.step('Photo Files dates', self.photos)
+        apps_ok = self.step('Nextcloud apps', self.apps)
+        if photos_ok and apps_ok:
+            atomic(STATE / 'photo-after-email-complete', 'Photo stage and Nextcloud apps verified after email audit\n')
+        return 0 if photos_ok and apps_ok else 2
 
     def run(self):
         # Reset stale RUNNING records after interruption; recheck actual state.
@@ -293,9 +293,9 @@ class Setup:
                 self.record('Email consolidation', 'blocked', 'Messaging deployment did not complete')
             if email_ok:
                 photos_ok = self.step('Photo Files dates', self.photos)
-                self.step('Nextcloud apps', self.apps)
-                if photos_ok:
-                    atomic(STATE / 'photo-after-email-complete', 'Photo stage completed after email audit\\n')
+                apps_ok = self.step('Nextcloud apps', self.apps)
+                if photos_ok and apps_ok:
+                    atomic(STATE / 'photo-after-email-complete', 'Photo stage and Nextcloud apps verified after email audit\n')
             else:
                 self.record('Photo Files dates', 'deferred',
                             'Waiting for email-room consolidation; Discord authentication does not block photos')
