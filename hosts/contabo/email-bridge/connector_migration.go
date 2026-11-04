@@ -7,8 +7,12 @@ package connector
 // Keep the old room and events; an IMAP folder may omit deleted/archived mail.
 import (
  "context"
+ "crypto/sha256"
  "database/sql"
  "errors"
+ "fmt"
+ "os"
+ "path/filepath"
  "strings"
  "sync"
  "time"
@@ -138,7 +142,16 @@ func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient)bool{
  // Replay uses a separate read-only IMAP socket; live IDLE readiness is not required.
  portals,err:=ec.legacyPortalsFor(ctx,client.UserLogin)
  if err!=nil{client.UserLogin.Log.Error().Err(err).Msg("Legacy email portal audit failed");return false}
- if len(portals)==0{client.UserLogin.Log.Info().Msg("No superseded Matrimail portals require v3 replay");return true}
+ digest:=sha256.Sum256([]byte(string(client.UserLogin.ID)))
+ resetMarker:=filepath.Join("contabo-backfill-contacts-v3",fmt.Sprintf("reset-%x.pending",digest))
+ _,resetErr:=os.Stat(resetMarker)
+ resetRequested:=resetErr==nil
+ if resetErr!=nil&&!errors.Is(resetErr,os.ErrNotExist){
+  client.UserLogin.Log.Error().Err(resetErr).Msg("Cannot inspect private clean-reset marker");return false
+ }
+ if len(portals)==0&&!resetRequested{
+  client.UserLogin.Log.Info().Msg("No old Matrimail rooms or pending clean reset");return true
+ }
  if client.IMAPClient==nil{client.UserLogin.Log.Warn().Int("legacy_rooms",len(portals)).Msg("V3 rebuild deferred: no authenticated IMAP client");return false}
  key:=string(client.UserLogin.ID)
  if _,busy:=contaboMailJobs.LoadOrStore(key,true);busy{client.UserLogin.Log.Info().Msg("V3 rebuild deferred: another backfill running");return false}
@@ -176,7 +189,14 @@ func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient)bool{
    Int("legacy_rooms",seen).Msg("Contact-room replay and legacy coverage audit finished")
  if archived<seen{client.UserLogin.Log.Warn().Int("unverified_rooms",seen-archived).
    Msg("Superseded rooms remain unchanged where v3 IMAP history or message-part mapping is incomplete")}
- return archived==seen
+ if archived!=seen{return false}
+ if resetRequested{
+  if err=os.Remove(resetMarker);err!=nil{
+   client.UserLogin.Log.Error().Err(err).Msg("Cannot finalize clean-reset replay marker");return false
+  }
+  client.UserLogin.Log.Info().Msg("Fresh Matrimail owner replay completed")
+ }
+ return true
 }
 
 func(ec *EmailConnector) startAutoConsolidation(client *EmailClient){
