@@ -132,25 +132,22 @@ func(ec *EmailConnector) finalizeLegacyConsolidation(ctx context.Context, login 
 }
 
 func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient){
- if client==nil || client.IMAPClient==nil || client.UserLogin==nil || ec.Contacts==nil{return}
+ if client==nil || client.UserLogin==nil || ec.Contacts==nil{return}
  ctx:=client.ctx
- // Reconnect/reauth is handled by the existing login flow; do not hammer IMAP.
- timer:=time.NewTicker(10*time.Second);defer timer.Stop()
- for !client.IsConnected(){
-  select{case<-ctx.Done():return;case<-timer.C:}
- }
+ // Replay uses a separate read-only IMAP socket; live IDLE readiness is not required.
  portals,err:=ec.legacyPortalsFor(ctx,client.UserLogin)
  if err!=nil{client.UserLogin.Log.Error().Err(err).Msg("Legacy email portal audit failed");return}
- if len(portals)==0{return}
+ if len(portals)==0{client.UserLogin.Log.Info().Msg("Email consolidation: no legacy per-subject rooms found");return}
+ if client.IMAPClient==nil{client.UserLogin.Log.Warn().Int("legacy_rooms",len(portals)).Msg("Email consolidation blocked: no IMAP account; old rooms preserved");return}
  key:=string(client.UserLogin.ID)
- if _,busy:=contaboMailJobs.LoadOrStore(key,true);busy{return}
+ if _,busy:=contaboMailJobs.LoadOrStore(key,true);busy{client.UserLogin.Log.Info().Msg("Email consolidation deferred: another backfill running");return}
  defer contaboMailJobs.Delete(key)
  if _,busy:=contaboLegacyRun.LoadOrStore(key,true);busy{return}
  defer contaboLegacyRun.Delete(key)
  folders:=append([]string(nil),client.MonitoredFolders...)
  if len(folders)==0{folders=[]string{"INBOX"}}
- client.UserLogin.Log.Info().Int("legacy_rooms",len(portals)).
-    Msg("Replaying retained IMAP history into consolidated email contact rooms")
+ client.UserLogin.Log.Info().Int("legacy_rooms",len(portals)).Strs("selected_folders",folders).
+    Msg("Starting independent IMAP replay into consolidated contact rooms")
  total,err:=client.IMAPClient.ContaboBackfill(ctx,folders,0,nil)
  if err!=nil{
   client.UserLogin.Log.Error().Err(err).Int("processed",total).
@@ -166,7 +163,7 @@ func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient){
 }
 
 func(ec *EmailConnector) startAutoConsolidation(client *EmailClient){
- if ec.Contacts==nil || client.IMAPClient==nil{return}
+ if ec.Contacts==nil{return}
  go ec.autoConsolidateLegacy(client)
 }
 
