@@ -148,7 +148,15 @@ func(ec *EmailConnector) autoConsolidateLegacy(client *EmailClient){
  if len(folders)==0{folders=[]string{"INBOX"}}
  client.UserLogin.Log.Info().Int("legacy_rooms",len(portals)).Strs("selected_folders",folders).
     Msg("Starting independent IMAP replay into consolidated contact rooms")
- total,err:=client.IMAPClient.ContaboBackfill(ctx,folders,0,nil)
+ lastFolder:=""
+ lastReported:=-1
+ total,err:=client.IMAPClient.ContaboBackfill(ctx,folders,0,func(folder string,done,expected int){
+  if folder!=lastFolder || done==expected || done-lastReported>=250{
+   client.UserLogin.Log.Info().Int("processed",done).Int("total_in_folder",expected).
+     Msg("Retrospective Matrimail contact-room import progress")
+   lastFolder=folder;lastReported=done
+  }
+ })
  if err!=nil{
   client.UserLogin.Log.Error().Err(err).Int("processed",total).
     Msg("Contact-room migration paused; source rooms preserved; resume with !matrimail backfill all")
