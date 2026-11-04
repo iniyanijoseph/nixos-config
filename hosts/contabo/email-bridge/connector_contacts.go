@@ -98,13 +98,16 @@ func fnContactCompose(ce *commands.Event,ec *EmailConnector){
  var client *EmailClient
  for _,login:=range ce.User.GetUserLogins(){if c,ok:=login.Client.(*EmailClient);ok{client=c;break}}
  if client==nil{ce.Reply("Connect an email account with !matrimail login first.");return}
- key:=networkid.PortalKey{ID:email.ContactPortalID(strings.ToLower(args.To)),Receiver:client.UserLogin.ID}
+ recipients:=&email.ParsedEmail{From:client.Email,To:[]string{args.To},Cc:args.Cc}
+ contact,err:=email.ContactForEmail(recipients,[]string{client.Email})
+ if err!=nil{ce.Reply("Invalid email recipients: %s",err);return}
+ key:=networkid.PortalKey{ID:email.ContactPortalID(contact),Receiver:client.UserLogin.ID}
  portal,err:=ce.Bridge.GetPortalByKey(ce.Ctx,key);if err!=nil{ce.Reply("Could not open contact room: %s",err);return}
  info,err:=ec.contactChatInfo(key.ID);if err!=nil{ce.Reply("%s",err);return}
  if portal.MXID==""{if err=portal.CreateMatrixRoom(ce.Ctx,client.UserLogin,info);err!=nil{ce.Reply("Could not create contact room: %s",err);return}}
  draftID:="compose-"+uuid.NewString()
- thread:=&email.EmailThread{ThreadID:draftID,Subject:args.Subject,Participants:append([]string{strings.ToLower(args.To),client.Email},args.Cc...),Cc:args.Cc,IsDraft:true}
- chain,err:=ec.Contacts.Record(ce.Ctx,string(client.UserLogin.ID),thread,draftID,strings.ToLower(args.To),time.Now())
+ thread:=&email.EmailThread{ThreadID:draftID,Subject:args.Subject,Participants:append([]string{args.To,client.Email},args.Cc...),Cc:args.Cc,IsDraft:true}
+ chain,err:=ec.Contacts.Record(ce.Ctx,string(client.UserLogin.ID),thread,draftID,contact,time.Now())
  if err!=nil{ce.Reply("Could not save draft context: %s",err);return}
  subject:=args.Subject;if subject==""{subject="(no subject)"}
  content:=&event.MessageEventContent{MsgType:event.MsgNotice,Body:"Subject: "+subject+"\nTo: "+args.To+"\nCc: "+strings.Join(args.Cc,", ")+"\nReply in this Matrix thread to send your email. Nothing has been sent yet."}
