@@ -41,14 +41,15 @@ func legacyCoverageForDB(ctx context.Context,db *sql.DB,bridgeID,portalID,receiv
  rows,err:=db.QueryContext(ctx,`SELECT o.id,
      COUNT(DISTINCT o.part_id) AS old_parts,
      COUNT(DISTINCT CASE WHEN n.mxid IS NOT NULL AND n.mxid != '' AND n.mxid NOT LIKE '~fake:%'
-         THEN n.part_id END) AS new_parts,
+         THEN o.part_id END) AS new_parts,
      MIN(CASE WHEN n.mxid IS NOT NULL AND n.mxid != '' AND n.mxid NOT LIKE '~fake:%'
          THEN n.room_id END) AS first_room,
      MAX(CASE WHEN n.mxid IS NOT NULL AND n.mxid != '' AND n.mxid NOT LIKE '~fake:%'
          THEN n.room_id END) AS last_room
    FROM message o LEFT JOIN message n
      ON n.bridge_id=o.bridge_id AND n.room_receiver=o.room_receiver
-       AND n.id='contact-email:' || substr(o.id,7) AND n.room_id LIKE 'contact:%'
+       AND n.id='contact-email:' || substr(o.id,7)
+       AND n.part_id=o.part_id AND n.room_id LIKE 'contact:%'
    WHERE o.bridge_id=$1 AND o.room_id=$2 AND o.room_receiver=$3
      AND o.id LIKE 'email:%' AND o.mxid IS NOT NULL AND o.mxid != ''
      AND o.mxid NOT LIKE '~fake:%'
