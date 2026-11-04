@@ -867,8 +867,10 @@ def matrimail_reset_clear_native(home, manifest):
             cur = db.execute("""
                 DELETE FROM portal WHERE bridge_id=? AND receiver=? AND id=?
             """, (portal['bridge_id'], portal['receiver'], portal['portal_id']))
-            if cur.rowcount != 1:
-                raise RuntimeError('Native Matrimail portal changed after the reset was planned')
+            if cur.rowcount not in (0, 1):
+                raise RuntimeError('Unexpected native Matrimail portal deletion count')
+            # A missing row can occur if the server rebooted after the SQLite
+            # transaction committed but before the reset ledger was updated.
         tables = {row[0] for row in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         for table in ('contabo_email_chain_v3', 'contabo_email_message_v3',
@@ -947,6 +949,12 @@ def matrimail_clean_reset(home=Path('/var/lib/matrimail'), directory=PRIVATE,
                 raise RuntimeError('A fresh verified R2 backup receipt is required before deleting Matrix rooms')
             if not (directory / 'admin-session.json').is_file():
                 raise RuntimeError('Authenticate once using mail-admin-auth first')
+        if manifest_path.exists():
+            previous = json.loads(read_private(manifest_path))
+            if (previous.get('phase') == 'complete' and previous.get('owner') == OWNER
+                    and previous.get('version') == 1):
+                return {'status': 'complete', 'deleted_rooms': len(previous['rooms']),
+                        'note': 'Already reset; running services were not interrupted'}
         token = admin_token(directory)
         subprocess.run(['systemctl', 'stop', 'contabo-post-mail.timer'], check=True)
         subprocess.run(['systemctl', 'stop', 'matrimail.service'], check=True)
