@@ -2,6 +2,7 @@
 """Private Contabo invitations, message metadata graphs, and bridge checks."""
 import argparse
 import csv
+import fcntl
 from datetime import datetime, timedelta, timezone
 import getpass
 import hashlib
@@ -751,6 +752,267 @@ def matrimail_auto_rebuild_cleanup(home=Path('/var/lib/matrimail'),
             'eligible_rooms': len(candidates)}
 
 
+
+RESET_PORTAL_PREFIXES = ('thread:', 'contact:', 'contact-v3:')
+RESET_MANIFEST = 'matrimail-owner-clean-reset.json'
+
+
+def matrimail_reset_plan(home=Path('/var/lib/matrimail')):
+    """List exclusively owned conversation portals. Never select bot DMs or
+    other users' portals and never infer Matrix rooms by their human names.
+    """
+    home = Path(home)
+    config = yaml.safe_load(read_private(home / 'config.yaml'))
+    uri = config.get('database', {}).get('uri', '')
+    if not isinstance(uri, str) or not uri.startswith('file:'):
+        raise RuntimeError('Reset requires a private Matrimail SQLite database')
+    db_path = Path(uri.split('?', 1)[0][5:])
+    if not db_path.is_absolute():
+        db_path = home / db_path
+    if (not db_path.resolve().is_relative_to(home.resolve())
+            or not db_path.is_file() or db_path.is_symlink()):
+        raise RuntimeError('Matrimail database path is unsafe')
+    with sqlite3.connect('file:' + str(db_path) + '?mode=ro', uri=True, timeout=10) as db:
+        if db.execute('PRAGMA quick_check').fetchone() != ('ok',):
+            raise RuntimeError('Matrimail database integrity check failed')
+        accounts = [dict(bridge_id=b, receiver=r) for b, r in db.execute(
+            'SELECT bridge_id,id FROM user_login WHERE user_mxid=? ORDER BY id',
+            (OWNER,)).fetchall()]
+        if not accounts:
+            raise RuntimeError('No owner Matrimail login; login state left unchanged')
+        portals = [dict(bridge_id=b, receiver=r, portal_id=pid, mxid=mxid)
+                   for b, r, pid, mxid in db.execute("""
+                SELECT p.bridge_id,p.receiver,p.id,p.mxid FROM portal p
+                JOIN user_login u ON u.bridge_id=p.bridge_id AND u.id=p.receiver
+                WHERE u.user_mxid=?
+                  AND (p.id LIKE 'thread:%' OR p.id LIKE 'contact:%'
+                       OR p.id LIKE 'contact-v3:%')
+                ORDER BY p.receiver,p.id
+            """, (OWNER,)).fetchall()]
+        rooms = []
+        for p in portals:
+            mxid = p['mxid']
+            if not mxid:
+                continue
+            if not isinstance(mxid, str) or not mxid.startswith('!') or not mxid.endswith(':iniyanjoseph.com'):
+                raise RuntimeError('Refusing unexpected or nonlocal Matrimail room identifier')
+            # A room shared with another portal, login, or Matrix user is not
+            # exclusively in the reset scope, regardless of its room name.
+            shared = db.execute("""
+                SELECT COUNT(*) FROM portal WHERE mxid=?
+                AND NOT (bridge_id=? AND receiver=? AND id=?)
+            """, (mxid, p['bridge_id'], p['receiver'], p['portal_id'])).fetchone()[0]
+            if shared:
+                raise RuntimeError('A Matrimail room is also referenced by another portal')
+            if 'user_portal' in {x[0] for x in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}:
+                other = db.execute("""
+                    SELECT COUNT(*) FROM user_portal
+                    WHERE bridge_id=? AND portal_id=? AND portal_receiver=? AND user_mxid!=?
+                """, (p['bridge_id'], p['portal_id'], p['receiver'], OWNER)).fetchone()[0]
+                if other:
+                    raise RuntimeError('A Matrimail room has another owner mapping; it will not be purged')
+            rooms.append(mxid)
+        if len(rooms) != len(set(rooms)):
+            raise RuntimeError('Duplicate Matrix room IDs in reset plan')
+    return {'version': 1, 'owner': OWNER, 'db_path': str(db_path),
+            'accounts': accounts, 'portals': portals, 'rooms': rooms}
+
+
+def matrimail_reset_room_status(room, delete_id, token):
+    try:
+        status = api('/_synapse/admin/v2/rooms/delete_status/' +
+                     quote(delete_id, safe=''), token)
+        if status.get('status') == 'complete':
+            return True
+        if status.get('status') == 'failed':
+            raise RuntimeError('Synapse reported a failed room deletion')
+        return False
+    except HTTPError as exc:
+        if exc.code != 404:
+            raise
+        try:
+            api('/_synapse/admin/v1/rooms/' + quote(room, safe=''), token)
+        except HTTPError as details:
+            if details.code == 404:
+                return True
+            raise
+        # Status expired, but room still exists. Never assume it was purged.
+        raise RuntimeError('Synapse forgot deletion status while the room still exists')
+
+
+def matrimail_reset_clear_native(home, manifest):
+    """Transactional, owner-scoped bridge reset, leaving login credentials,
+    remote accounts, ghost identities, and other users' portals untouched.
+    """
+    path = Path(manifest['db_path'])
+    with sqlite3.connect(str(path), timeout=30) as db:
+        db.execute('PRAGMA foreign_keys=ON')
+        db.execute('BEGIN IMMEDIATE')
+        db.execute('PRAGMA defer_foreign_keys=ON')
+        for portal in manifest['portals']:
+            cur = db.execute("""
+                DELETE FROM portal WHERE bridge_id=? AND receiver=? AND id=?
+            """, (portal['bridge_id'], portal['receiver'], portal['portal_id']))
+            if cur.rowcount != 1:
+                raise RuntimeError('Native Matrimail portal changed after the reset was planned')
+        tables = {row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        for table in ('contabo_email_chain_v3', 'contabo_email_message_v3',
+                      'contabo_email_chain', 'contabo_email_message',
+                      'contabo_mail_v3_retirement', 'contabo_legacy_mail_retirement'):
+            if table not in tables:
+                continue
+            for account in manifest['accounts']:
+                db.execute('DELETE FROM "' + table + '" WHERE bridge_id=? AND receiver=?',
+                           (account['bridge_id'], account['receiver']))
+        if db.execute('PRAGMA foreign_key_check').fetchone():
+            raise RuntimeError('Reset would violate a bridge database foreign key')
+        if db.execute('PRAGMA quick_check').fetchone() != ('ok',):
+            raise RuntimeError('Reset transaction failed database quick_check')
+        db.commit()
+    # v3 scope/cursors are per-login; never remove another user's checkpoints.
+    base = Path(home) / 'contabo-backfill-contacts-v3'
+    for account in manifest['accounts']:
+        digest = hashlib.sha256(account['receiver'].encode()).hexdigest()
+        scope_path = base / ('scope-' + digest + '.json')
+        if scope_path.is_file():
+            scope = json.loads(read_private(scope_path))
+            for filename in scope.get('cursor_files', []):
+                if (not isinstance(filename, str) or len(filename) != 69
+                        or not filename.endswith('.json')
+                        or any(ch not in '0123456789abcdef' for ch in filename[:-5])):
+                    raise RuntimeError('Unexpected historical IMAP checkpoint filename')
+                (base / filename).unlink(missing_ok=True)
+            scope_path.unlink()
+        atomic_private(base / ('reset-' + digest + '.pending'), 'full-history IMAP replay required\n')
+    return len(manifest['portals'])
+
+
+def matrimail_clean_reset(home=Path('/var/lib/matrimail'), directory=PRIVATE,
+                         backup_receipt=Path('/var/lib/migration-queue/finish-setup/backup.json'),
+                         apply=False, batch_size=10):
+    """One-time, resumable removal of owner Matrimail conversation rooms.
+    This intentionally does NOT require v3 parity with obsolete Matrix rooms:
+    the user elected to discard them and reconstruct from source IMAP instead.
+    """
+    if not 1 <= batch_size <= 20:
+        raise ValueError('Choose an API deletion concurrency of 1–20 rooms')
+    manifest_path = Path(directory) / RESET_MANIFEST
+    if not apply:
+        if manifest_path.exists():
+            existing = json.loads(read_private(manifest_path))
+            done = sum(bool(item.get('complete')) for item in existing['deletions'].values())
+            return {'status': existing.get('phase', 'deleting'),
+                    'total_rooms': len(existing['rooms']),
+                    'confirmed_deleted': done,
+                    'native_portals': len(existing['portals']),
+                    'accounts': len(existing['accounts'])}
+        plan = matrimail_reset_plan(home)
+        return {'status': 'preview', 'total_rooms': len(plan['rooms']),
+                'native_portals': len(plan['portals']),
+                'accounts': len(plan['accounts']),
+                'warning': 'Permanent Matrix room deletion; source IMAP remains unchanged. '
+                           'Bot management room, all login credentials, and other bridges are preserved.'}
+    if os.uname().nodename.split('.')[0] != 'contabo':
+        raise RuntimeError('Matrimail reset may only run on the Contabo server')
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lockfd = os.open(directory / 'matrimail-clean-reset.lock',
+                     os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lockfd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if subprocess.run(['systemctl', 'is-active', '--quiet',
+                           'contabo-finish-setup.service']).returncode == 0:
+            raise RuntimeError('Finish-setup is currently active; do not race a NixOS switch')
+        if subprocess.run(['systemctl', 'is-active', '--quiet',
+                           'contabo-post-mail.service']).returncode == 0:
+            raise RuntimeError('Post-mail worker is active; retry when it finishes')
+        if not manifest_path.exists():
+            if (not backup_receipt.is_file()
+                    or time.time() - backup_receipt.stat().st_mtime > 24*3600):
+                raise RuntimeError('A fresh verified R2 backup receipt is required before deleting Matrix rooms')
+            if not (directory / 'admin-session.json').is_file():
+                raise RuntimeError('Authenticate once using mail-admin-auth first')
+        token = admin_token(directory)
+        subprocess.run(['systemctl', 'stop', 'contabo-post-mail.timer'], check=True)
+        subprocess.run(['systemctl', 'stop', 'matrimail.service'], check=True)
+        if subprocess.run(['systemctl', 'is-active', '--quiet', 'matrimail.service']).returncode == 0:
+            raise RuntimeError('Matrimail did not stop; refusing to delete rooms')
+        if manifest_path.exists():
+            plan = json.loads(read_private(manifest_path))
+            if plan.get('owner') != OWNER or plan.get('version') != 1:
+                raise RuntimeError('Unexpected reset ledger; refusing to resume')
+        else:
+            plan = matrimail_reset_plan(home)
+            source_path = Path(plan['db_path'])
+            available = shutil.disk_usage(directory).free
+            if available < source_path.stat().st_size + 512*1024*1024:
+                raise RuntimeError('Insufficient disk for a private pre-reset SQLite backup')
+            backup_path = directory / ('matrimail-before-clean-reset-' +
+                                       datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') +
+                                       '.sqlite')
+            if backup_path.exists():
+                raise RuntimeError('Private pre-reset backup path already exists')
+            with sqlite3.connect('file:' + str(source_path) + '?mode=ro', uri=True) as src:
+                with sqlite3.connect(str(backup_path)) as dest:
+                    src.backup(dest)
+            backup_path.chmod(0o600)
+            with sqlite3.connect('file:' + str(backup_path) + '?mode=ro', uri=True) as copy:
+                if copy.execute('PRAGMA quick_check').fetchone() != ('ok',):
+                    raise RuntimeError('Pre-reset SQLite backup verification failed')
+            plan.update(phase='deleting', backup_file=str(backup_path),
+                        deletions={}, created_at=datetime.now(timezone.utc).isoformat())
+            atomic_private(manifest_path, json.dumps(plan))
+        if plan['phase'] == 'complete':
+            return {'status': 'complete', 'deleted_rooms': len(plan['rooms'])}
+        # Bound parallel Synapse purge pressure. The ledger makes interruptions
+        # safe: already accepted deletion IDs are never blindly re-submitted.
+        while plan['phase'] == 'deleting':
+            inflight = 0
+            for room in plan['rooms']:
+                row = plan['deletions'].get(room)
+                if row and row.get('complete'):
+                    continue
+                if row:
+                    if matrimail_reset_room_status(room, row['delete_id'], token):
+                        row['complete'] = True
+                        atomic_private(manifest_path, json.dumps(plan))
+                    else:
+                        inflight += 1
+                    continue
+                if inflight >= batch_size:
+                    continue
+                response = api('/_synapse/admin/v2/rooms/' + quote(room, safe=''),
+                               token, body={'block': True, 'purge': True}, method='DELETE')
+                delete_id = response.get('delete_id')
+                if not isinstance(delete_id, str) or not delete_id:
+                    raise RuntimeError('Synapse did not acknowledge room deletion')
+                plan['deletions'][room] = {'delete_id': delete_id, 'complete': False}
+                atomic_private(manifest_path, json.dumps(plan))
+                inflight += 1
+            if all(plan['deletions'].get(room, {}).get('complete') for room in plan['rooms']):
+                plan['phase'] = 'native-reset'
+                atomic_private(manifest_path, json.dumps(plan))
+                break
+            time.sleep(3)
+        if plan['phase'] == 'native-reset':
+            matrimail_reset_clear_native(home, plan)
+            plan['phase'] = 'restarting'
+            atomic_private(manifest_path, json.dumps(plan))
+        if plan['phase'] == 'restarting':
+            subprocess.run(['systemctl', 'start', 'matrimail.service'], check=True)
+            subprocess.run(['systemctl', 'start', 'contabo-post-mail.timer'], check=True)
+            plan['phase'] = 'complete'
+            atomic_private(manifest_path, json.dumps(plan))
+        return {'status': plan['phase'], 'deleted_rooms': len(plan['rooms']),
+                'native_portals_removed': len(plan['portals']),
+                'account_logins_preserved': len(plan['accounts']),
+                'next': 'Matrimail will reconstruct only fresh v3 conversation rooms from IMAP'}
+    finally:
+        os.close(lockfd)
+
+
 def storage_audit():
     for args in (['df', '-h', '/'], ['du', '-xhd1', '/var/lib'], ['du', '-xhd1', '/nix'], ['journalctl', '--disk-usage']):
         subprocess.run(args, check=True)
@@ -808,6 +1070,7 @@ def main():
     p = subs.add_parser('mail-prune-legacy'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=25)
     p = subs.add_parser('mail-auto-rebuild'); p.add_argument('--apply', action='store_true'); p.add_argument('--limit', type=int, default=10)
     subs.add_parser('mail-duplicates')
+    p = subs.add_parser('mail-reset'); p.add_argument('--apply', action='store_true'); p.add_argument('--batch-size', type=int, default=10)
     subs.add_parser('mail-admin-auth')
     subs.add_parser('configure-bridges')
     p = subs.add_parser('cleanup'); p.add_argument('--apply', action='store_true')
@@ -871,6 +1134,8 @@ def main():
         print(json.dumps(matrimail_auto_rebuild_cleanup(apply=args.apply, limit=args.limit), indent=2))
     elif args.command == 'mail-duplicates':
         print(json.dumps(matrimail_v3_duplicate_audit(), indent=2))
+    elif args.command == 'mail-reset':
+        print(json.dumps(matrimail_clean_reset(apply=args.apply, batch_size=args.batch_size), indent=2))
     elif args.command == 'mail-admin-auth':
         admin_token()
         print('Matrix administrator session authenticated and cached privately for safe, unattended Matrimail room cleanup.')
